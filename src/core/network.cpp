@@ -12,6 +12,7 @@
 #include "mqtt.h"
 #include "timekeeper.h"
 #include "../pluginsManager/pluginsManager.h"
+#include "builtin_led.hpp"
 
 #ifndef WIFI_ATTEMPTS
   #define WIFI_ATTEMPTS  16
@@ -98,7 +99,7 @@ bool MyNetwork::wifiBegin(bool silent){
     while (WiFi.status() != WL_CONNECTED) {
       if(!silent) Serial.print(".");
       delay(500);
-      if(REAL_LEDBUILTIN!=255 && !silent) digitalWrite(REAL_LEDBUILTIN, !digitalRead(REAL_LEDBUILTIN));
+      if(!silent) builtin_led_toggle();
       errcnt++;
       if (errcnt > WIFI_ATTEMPTS) {
         errcnt = 0;
@@ -206,7 +207,7 @@ void MyNetwork::begin() {
   }
   
   Serial.println("##[BOOT]#\tdone");
-  if(REAL_LEDBUILTIN!=255) digitalWrite(REAL_LEDBUILTIN, LOW);
+  builtin_led_set(false);
   
 #if RTCSUPPORTED
   if(config.isRTCFound()){

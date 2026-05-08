@@ -76,12 +76,14 @@ class TextWidget: public Widget {
     void setText(const char* txt, const char *format);
     bool uppercase() { return _uppercase; }
     void setGfxFont(const GFXfont* f) { _gfxFont = f; }
+    bool hasGfxFont() const { return _gfxFont != nullptr; }
   protected:
     char *_text;
     char *_oldtext;
     bool _uppercase;
     uint16_t  _buffsize, _textwidth, _oldtextwidth, _oldleft, _textheight;
     uint8_t _charWidth;
+    uint8_t _classicTextSize = 1;
     const GFXfont* _gfxFont = nullptr;
   protected:
     void _draw();

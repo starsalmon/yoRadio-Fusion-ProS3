@@ -10,6 +10,7 @@
 #include <time.h> /* ----- Auto On-Off Timer ----- */
 #include "../displays/tools/l10n.h"
 #include "../pluginsManager/pluginsManager.h"
+#include "builtin_led.hpp"
 #ifdef USE_NEXTION
 #include "../displays/nextion.h"
 #endif
@@ -352,7 +353,7 @@ if (
 }
 
 void Player::setOutputPins(bool isPlaying) {
-  if(REAL_LEDBUILTIN!=255) digitalWrite(REAL_LEDBUILTIN, LED_INVERT?!isPlaying:isPlaying);
+  builtin_led_set(isPlaying);
   bool _ml = MUTE_LOCK?!MUTE_VAL:(isPlaying?!MUTE_VAL:MUTE_VAL);
   if(MUTE_PIN!=255) digitalWrite(MUTE_PIN, _ml);
 }

@@ -269,14 +269,34 @@ void TextWidget::init(WidgetConfig wconf, uint16_t buffsize, bool uppercase, uin
   memset(_text, 0, _buffsize);
   _oldtext = (char *) malloc(sizeof(char) * _buffsize);
   memset(_oldtext, 0, _buffsize);
-  _charSize(_config.textsize, _charWidth, _textheight);
   _textwidth = _oldtextwidth = _oldleft = 0;
   _uppercase = uppercase;
+
+  // textsize handling:
+  // - 0            : classic 5x7 at 1x
+  // - 1..N         : DejaVu (yoScrollFont) via GFXfont
+  // - 100+X (X>=1) : classic 5x7 at Xx (keeps glcdfont icon glyphs working)
+  constexpr uint16_t CLASSIC_SCALE_BASE = 100;
+  const uint16_t ts = _config.textsize;
+  if (ts >= CLASSIC_SCALE_BASE) {
+    uint16_t scale = ts - CLASSIC_SCALE_BASE;
+    if (scale < 1) scale = 1;
+    if (scale > 10) scale = 10; // safety clamp
+    _classicTextSize = (uint8_t)scale;
+    _gfxFont = nullptr;
+  } else {
+    _classicTextSize = (uint8_t)((ts > 0) ? ts : 1);
+  }
+
+  _charSize(_classicTextSize, _charWidth, _textheight);
+
   /* Font hozzárendelés a textsize alapján:
      0 = 5x7 natív (nullptr), 1+ = yoScrollFont (DejaVuSans8, Sans13, Bold12...) */
 #ifndef DSP_LCD
-  _gfxFont = (_config.textsize > 0) ? yoScrollFont(_config.textsize) : nullptr;
-  if (_gfxFont) _textheight = yoFontHeight(_gfxFont);
+  if (ts > 0 && ts < CLASSIC_SCALE_BASE) {
+    _gfxFont = yoScrollFont((uint8_t)ts);
+    if (_gfxFont) _textheight = yoFontHeight(_gfxFont);
+  }
 #endif
 }
 
@@ -348,12 +368,12 @@ void TextWidget::_draw() {
     dsp.setCursor(_realLeft(), _baselineY());
   } else {
     dsp.setFont();
-    dsp.setTextSize(_config.textsize > 0 ? _config.textsize : 1);
+    dsp.setTextSize(_classicTextSize);
     dsp.setCursor(_realLeft(), _config.top);
   }
 #else
   dsp.setFont();
-  dsp.setTextSize(_config.textsize);
+  dsp.setTextSize(_classicTextSize);
   dsp.setCursor(_realLeft(), _config.top);
 #endif
   if (_gfxFont) yoPrintUtf8(dsp, _text, _fgcolor, _bgcolor, _gfxFont); else dsp.print(_text);

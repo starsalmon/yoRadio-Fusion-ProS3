@@ -46,10 +46,28 @@ const FillConfig heapbarConf    PROGMEM = {{ 0, 239, 0, WA_LEFT }, DSP_WIDTH, 1,
 /* WIDGETS */
 const WidgetConfig bootstrConf  PROGMEM = { 0, 190, 0, WA_CENTER };
 const WidgetConfig bitrateConf  PROGMEM = { 70, 191, 1, WA_LEFT };
-const WidgetConfig voltxtConf   PROGMEM = { 0, 210, 0, WA_CENTER };
-const WidgetConfig iptxtConf    PROGMEM = { TFT_FRAMEWDT, 210, 0, WA_LEFT };
-const WidgetConfig rssiConf     PROGMEM = { TFT_FRAMEWDT, 210, 0, WA_RIGHT };
-const WidgetConfig battxtConf   PROGMEM = { TFT_FRAMEWDT + 60, 210, 0, WA_RIGHT };
+
+// Footer volume layout:
+// - Speaker icon stays fixed
+// - Volume text is left-anchored right next to it (so 9% vs 99% doesn't shift spacing)
+#define VOL_ICON_LEFT      ((DSP_WIDTH / 2) - 18)
+#define VOL_ICON_BOX_W     12  // classic font @2x: CHARWIDTH(6)*2
+#define VOL_ICON_TEXT_PAD  2
+#define VOL_TEXT_LEFT      (VOL_ICON_LEFT + VOL_ICON_BOX_W + VOL_ICON_TEXT_PAD)
+// Footer (bottom row): use a slightly larger DejaVu GFXfont (smooth, not blocky).
+// textsize=7 maps to DejaVuSans8_HU via yoScrollFont() default branch.
+const WidgetConfig voltxtConf   PROGMEM = { VOL_TEXT_LEFT, 210, 7, WA_LEFT };
+const WidgetConfig iptxtConf    PROGMEM = { TFT_FRAMEWDT + 14, 210, 7, WA_LEFT };
+const WidgetConfig rssiConf     PROGMEM = { TFT_FRAMEWDT + 26, 210, 7, WA_RIGHT };   // leave room for wifi bars icon
+const WidgetConfig battxtConf   PROGMEM = { TFT_FRAMEWDT + 70, 210, 7, WA_RIGHT };
+
+// Footer icons (classic glcdfont, 1x) drawn as separate widgets so we can keep
+// smooth DejaVu text while still showing icon glyphs.
+// Icons at 2x (classic) to match the earlier “big icons” look.
+// 100+X forces classic font scaling (see TextWidget::init).
+const WidgetConfig ipiconConf   PROGMEM = { TFT_FRAMEWDT, 210, 102, WA_LEFT };           // "\010"
+const WidgetConfig voliconConf  PROGMEM = { VOL_ICON_LEFT, 210, 102, WA_LEFT };   // "\023"
+const WidgetConfig rssibarConf  PROGMEM = { TFT_FRAMEWDT, 210, 102, WA_RIGHT };          // "\001..\006"
 const WidgetConfig numConf      PROGMEM = { 0, 150, 0, WA_CENTER };
 const WidgetConfig apNameConf   PROGMEM = { TFT_FRAMEWDT, 66, 2, WA_CENTER };
 const WidgetConfig apName2Conf  PROGMEM = { TFT_FRAMEWDT, 90, 2, WA_CENTER };
@@ -139,8 +157,8 @@ inline ScrollConfig getDateConf() { return getDateConf(config.store.vuLayout); }
 /* STRINGEK */
 const char numtxtFmt[]  PROGMEM = "%d";
 const char   rssiFmt[]  PROGMEM = "%d";
-const char  iptxtFmt[]  PROGMEM = "\010 %s";
-const char voltxtFmt[]  PROGMEM = "\023\025%d%%";
+const char  iptxtFmt[]  PROGMEM = "%s";
+const char voltxtFmt[]  PROGMEM = "%d%%";
 const char bitrateFmt[] PROGMEM = "%d kBs";
 const char battxtFmt[]  PROGMEM = "%d%%";
 

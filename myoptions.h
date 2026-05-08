@@ -100,7 +100,7 @@
 //#define ENC2_INTERNALPULLUP		true
 /********************************************/
 
-/* ÓRA MODUL RTC DS3132 */
+/* RTC module (DS3231) */
 // #define RTC_SCL     9
 // #define RTC_SDA     8
 // #define RTC_MODULE DS3231
@@ -113,18 +113,18 @@
 #define VUMETER true
 #define CLOCK_12H true
 /********************************************/
-/*  Egyéb beállítások.  */
+/* Other settings */
 //#define MUTE_PIN     2            /*  MUTE Pin */
 //#define MUTE_VAL    LOW          /*  Write this to MUTE_PIN when player is stop */
 //#define PLAYER_FORCE_MONO false  /*  mono option on boot - false stereo, true mono. "false" */
 #define I2S_INTERNAL    false    /*  If true - use esp32 internal DAC. "false" */
 //#define ROTATE_90   false        /*  Optional 90 degree rotation for square displays."false"*/
 #define TFT_ROTATE      2        /*  Display rotation. 0 - 0, 1 - 90, 2 - 180, 3 - 270 degrees */
-//#define HIDE_VOLPAGE             /* Hangerő elrejtés, navigálj a hangerő folyamatjelző sávjával.*/
+//#define HIDE_VOLPAGE             /* Hide volume page; navigate using the volume progress bar. */
 //#define WAKE_PIN      1
 //#define LIGHT_SENSOR      40               /*  Light sensor  */
 //#define AUTOBACKLIGHT(x)  *function*        /*  Autobacklight function. See options.h for example  */
-//#define NAME_STRIM              /* Az állomás nevének megjelenítése a streamből. (MOD Maleksm)*/
+//#define NAME_STRIM              /* Show station name from the stream. (MOD Maleksm) */
 
 //#define DOWN_LEVEL           2      /* lowest level brightness (from 0 to 255) */
 //#define DOWN_INTERVAL        60     /* interval for BacklightDown in sec (60 sec = 1 min) */

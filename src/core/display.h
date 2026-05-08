@@ -84,7 +84,7 @@ class Display {
     void _drawPlaylist();
     void _volume();
     void _title();
-    void _utf8_clean(char *s);  //"módosítás"
+    void _utf8_clean(char *s);  // modification
     void _station();
     void _drawNextStationNum(uint16_t num);
     void _createDspTask();

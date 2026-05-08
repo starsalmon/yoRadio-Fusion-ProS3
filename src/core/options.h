@@ -476,12 +476,12 @@ The connection tables are located here https://github.com/e2002/yoradio#connecti
 
 #define EN  1
 #define RU  2
-#define HU  3  // Módosítás plussz sor "multi_language"
-#define PL  4  // Módosítás plussz sor "multi_language"
-#define LANG_NL  5  // Módosítás plussz sor "multi_language"
-#define GR  6  // Módosítás plussz sor Görög "multi_language"
-#define CZ  7  // Módosítás plussz sor "multi_language"
-#define SK  8  // Módosítás plussz sor "multi_language"
+#define HU  3  // Added for "multi_language"
+#define PL  4  // Added for "multi_language"
+#define LANG_NL  5  // Added for "multi_language"
+#define GR  6  // Added for Greek in "multi_language"
+#define CZ  7  // Added for "multi_language"
+#define SK  8  // Added for "multi_language"
 #define UA  9
 #define DE  10
 #define LANG_IT  11
@@ -491,7 +491,7 @@ The connection tables are located here https://github.com/e2002/yoradio#connecti
 #endif
 
 /* CLOCK:TTS */
-#ifndef CLOCK_TTS_ENABLED   // Módisítás új bejegyzés "Clock_tts"
+#ifndef CLOCK_TTS_ENABLED   // Added new "Clock_tts" entry
  #define CLOCK_TTS_ENABLED false
 #endif
 #ifndef CLOCK_TTS_INTERVAL_MINUTES

@@ -13,6 +13,7 @@
 //#include "core/mqtt.h"
 #include "core/optionschecker.h"
 #include "core/timekeeper.h"
+#include "core/builtin_led.hpp"
 #include "clock/clock_tts.h"
 #include "driver/rtc_io.h"
 #include "battery.h"
@@ -100,7 +101,7 @@ void setup() {
 #if (BRIGHTNESS_PIN!=255)
   backlightPluginInit();
 #endif
-  if(REAL_LEDBUILTIN!=255) pinMode(REAL_LEDBUILTIN, OUTPUT);
+  builtin_led_init();
   if (yoradio_on_setup) yoradio_on_setup();
   pm.init();     // pluginsManager
   pm.on_setup();

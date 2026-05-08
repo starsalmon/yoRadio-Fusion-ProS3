@@ -10,6 +10,7 @@
 #include "netserver.h"
 #include "driver/rtc_io.h"
 #include "../pluginsManager/pluginsManager.h"
+#include "builtin_led.hpp"
 
 long encOldPosition  = 0;
 long enc2OldPosition  = 0;
@@ -228,7 +229,7 @@ void irBlink() {
     if (REAL_LEDBUILTIN == 255) return;
     if (player.status() == STOPPED) {
         for (uint8_t i = 0; i < 7; i++) {
-            digitalWrite(REAL_LEDBUILTIN, !digitalRead(REAL_LEDBUILTIN));
+            builtin_led_toggle();
             delay(100);
         }
     }

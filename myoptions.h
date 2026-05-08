@@ -40,7 +40,24 @@
 
 /******************************************/
 #define LED_BUILTIN_S3    18     /* S3-onboard RGB led pin */
-#define USE_BUILTIN_LED true /* The RGB LED does not turn on.. */
+#define USE_BUILTIN_LED true /* The RGB LED turns on.. */
+
+// Optional cap for the ledstrip plugin (separate from LEDSTRIP_BRIGHTNESS).
+// Uncomment if you ever enable `USE_LEDSTRIP_PLUGIN`.
+// #define LEDSTRIP_MAX_BRIGHTNESS_PCT 5
+
+// Built-in status LED brightness (0..100).
+// On ProS3 the "built-in LED" is a NeoPixel; 5% white can still look bright,
+// so we keep this lower.
+#define BUILTIN_LED_BRIGHTNESS_PCT 2
+
+// This board has an onboard NeoPixel (addressable RGB).
+// PWM dimming won't work; we must drive it as a NeoPixel.
+#define BUILTIN_NEOPIXEL_PIN LED_BUILTIN_S3
+
+// While prototyping it's easy for the status NeoPixel to be annoying.
+// Comment this out when you want the "white while playing" indicator back.
+#define BUILTIN_NEOPIXEL_DISABLE 1
 /*****************************************/
 //#define DSP_MODEL DSP_ILI9486
 //#define DSP_MODEL DSP_ILI9488

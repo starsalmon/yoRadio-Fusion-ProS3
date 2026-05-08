@@ -689,7 +689,11 @@ void ledstripPluginInit() {
 
 void LedStripPlugin::on_setup() {
   strip.begin();
-  strip.setBrightness(map(config.store.lsBrightness, 0, 100, 0, 255));
+  uint8_t br = config.store.lsBrightness;
+#ifdef LEDSTRIP_MAX_BRIGHTNESS_PCT
+  if (br > (uint8_t)LEDSTRIP_MAX_BRIGHTNESS_PCT) br = (uint8_t)LEDSTRIP_MAX_BRIGHTNESS_PCT;
+#endif
+  strip.setBrightness(map(br, 0, 100, 0, 255));
   strip.clear();
   strip.show();
 
@@ -744,7 +748,11 @@ void LedStripPlugin::on_loop() {
   static uint8_t s_lastBr = 255;
   if (config.store.lsBrightness != s_lastBr) {
     s_lastBr = config.store.lsBrightness;
-    strip.setBrightness(map(s_lastBr, 0, 100, 0, 255));
+    uint8_t br = s_lastBr;
+#ifdef LEDSTRIP_MAX_BRIGHTNESS_PCT
+    if (br > (uint8_t)LEDSTRIP_MAX_BRIGHTNESS_PCT) br = (uint8_t)LEDSTRIP_MAX_BRIGHTNESS_PCT;
+#endif
+    strip.setBrightness(map(br, 0, 100, 0, 255));
   }
 
   if (millis() - g_lastFrame < LEDSTRIP_FRAME_MS) return;

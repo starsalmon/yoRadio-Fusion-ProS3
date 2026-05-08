@@ -76,6 +76,9 @@ class Display {
     Page *_boot;
     TextWidget *_bootstring, *_volip, *_voltxt, *_rssi, *_bitrate;
     TextWidget* _battxt = nullptr;
+    TextWidget* _ipIcon = nullptr;
+    TextWidget* _volIcon = nullptr;
+    TextWidget* _rssiIcon = nullptr;
     bool _locked = false;
     uint8_t _bootStep;
     void _time(bool redraw = false);

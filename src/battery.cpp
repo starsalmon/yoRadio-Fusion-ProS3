@@ -25,7 +25,11 @@ void battery_init() {
     Serial.printf("5V sense initial: %s\n", lastUsbPresent ? "ON" : "OFF");
 #endif
 
-    batteryWire.begin(BATTERY_SDA, BATTERY_SCL);
+    // Adafruit_MAX1704X (via Adafruit_BusIO) calls wire->begin() internally.
+    // On ESP32 this would re-begin I2C without pins unless we pre-set them.
+#if defined(ESP32)
+    batteryWire.setPins(BATTERY_SDA, BATTERY_SCL);
+#endif
 
     if (!maxlipo.begin(&batteryWire)) {
         Serial.println("MAX17048 not found!");
@@ -34,6 +38,7 @@ void battery_init() {
     }
 
     Serial.println("MAX17048 detected");
+    batteryWire.setClock(400000);
     maxlipo.quickStart();   // recommended by Adafruit
     batteryReady = true;
 

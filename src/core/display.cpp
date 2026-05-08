@@ -124,7 +124,7 @@ void Display::init() {
   displayQueue = xQueueCreate( 5, sizeof( requestParams_t ) );
   while(displayQueue==NULL){;}
   _createDspTask();
-  while(!_bootStep==0) { delay(10); }
+  while(_bootStep != 0) { delay(10); }
   //_pager.begin();
   //_bootScreen();
   _pager = new Pager();
@@ -225,7 +225,25 @@ void Display::_buildPager(){
     _volip = new TextWidget(iptxtConf, 30, false, config.theme.ip, config.theme.background);
   #endif
   #ifndef HIDE_RSSI
-    _rssi = new TextWidget(rssiConf, 20, false, config.theme.rssi, config.theme.background);
+    #if DSP_MODEL!=DSP_ILI9341
+      _rssi = new TextWidget(rssiConf, 20, false, config.theme.rssi, config.theme.background);
+    #endif
+  #endif
+
+  // Footer icons for ILI9341: keep classic glyph icons alongside smooth text.
+  #if DSP_MODEL==DSP_ILI9341
+    #ifndef HIDE_IP
+      _ipIcon = new TextWidget(ipiconConf, 4, false, config.theme.ip, config.theme.background);
+      _ipIcon->setText("\010"); // IP icon glyph in glcdfont_EN.c
+    #endif
+    #ifndef HIDE_VOL
+      _volIcon = new TextWidget(voliconConf, 4, false, config.theme.vol, config.theme.background);
+      _volIcon->setText("\023"); // speaker glyph
+    #endif
+    #ifndef HIDE_RSSI
+      _rssiIcon = new TextWidget(rssibarConf, 4, false, config.theme.rssi, config.theme.background);
+      _rssiIcon->setText("\001\002"); // default (weak signal) until first RSSI update
+    #endif
   #endif
   _nums->init(numConf, 10, false, config.theme.digit, config.theme.background);
   #ifndef HIDE_WEATHER
@@ -237,6 +255,11 @@ void Display::_buildPager(){
   #endif
   
   if(_volbar)   _footer->addWidget( _volbar);
+  #if DSP_MODEL==DSP_ILI9341
+    if(_volIcon)  _footer->addWidget(_volIcon);
+    if(_ipIcon)   _footer->addWidget(_ipIcon);
+    if(_rssiIcon) _footer->addWidget(_rssiIcon);
+  #endif
   if(_voltxt)   _footer->addWidget( _voltxt);
   if(_volip)    _footer->addWidget( _volip);
   if(_battxt)   _footer->addWidget( _battxt);
@@ -378,7 +401,7 @@ void Display::_start() {
   if(_weather && config.store.showweather)  _weather->setText(LANG::const_getWeather);
 
   if(_vuwidget) _vuwidget->lock();
-  if(_rssi)     _setRSSI(WiFi.RSSI());
+  if(_rssi || _rssiIcon) _setRSSI(WiFi.RSSI());
   /*#ifndef HIDE_IP
     if(_volip) _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
   #endif*/
@@ -692,7 +715,10 @@ void Display::loop() {
           if(_mode == SDCHANGE) _nums->setText(request.payload, "%d");
           break;
         }
-        case DSPRSSI: if(_rssi){ _setRSSI(request.payload); } if (_heapbar && config.store.audioinfo) _heapbar->setValue(player.isRunning()?player.inBufferFilled():0); break;
+        case DSPRSSI:
+          if (_rssi || _rssiIcon) _setRSSI(request.payload);
+          if (_heapbar && config.store.audioinfo) _heapbar->setValue(player.isRunning()?player.inBufferFilled():0);
+          break;
         case PSTART: _layoutChange(true);   break;
         case PSTOP:  _layoutChange(false);  break;
         case DSP_START: _start();  break;
@@ -738,9 +764,7 @@ void Display::loop() {
           if (_weather && config.store.showweather) {
              _weather->setText(LANG::const_getWeather);
           }
-          if (_rssi) {
-            _setRSSI(WiFi.RSSI());
-          }
+          if (_rssi || _rssiIcon) _setRSSI(WiFi.RSSI());
           if (_speechWidget) _speechWidget->setStat(config.store.ttsEnabled  != 0);
           if (_blfadeWidget) _blfadeWidget->setStat(config.store.blDimEnable != 0);
           if (_lstripWidget) _lstripWidget->setStat(config.store.lsEnabled   != 0);
@@ -772,11 +796,30 @@ void Display::loop() {
 }
 
 void Display::_setRSSI(int rssi) {
-  if(!_rssi) return;
+  if(!_rssi && !_rssiIcon) return;
 #if RSSI_DIGIT
-  _rssi->setText(rssi, rssiFmt);
+  if (_rssi) _rssi->setText(rssi, rssiFmt);
   return;
 #endif
+  // If we have a dedicated RSSI icon widget, show bars there and keep digits on the main RSSI widget.
+  if (_rssiIcon) {
+    char rssiG[3];
+    int rssi_steps[] = {RSSI_STEPS};
+    if(rssi >= rssi_steps[0]) strlcpy(rssiG, "\004\006", 3);
+    if(rssi >= rssi_steps[1] && rssi < rssi_steps[0]) strlcpy(rssiG, "\004\005", 3);
+    if(rssi >= rssi_steps[2] && rssi < rssi_steps[1]) strlcpy(rssiG, "\004\002", 3);
+    if(rssi >= rssi_steps[3] && rssi < rssi_steps[2]) strlcpy(rssiG, "\003\002", 3);
+    if(rssi <  rssi_steps[3] || rssi >=  0) strlcpy(rssiG, "\001\002", 3);
+    _rssiIcon->setText(rssiG);
+    return;
+  }
+
+  // If the RSSI widget uses a GFXfont (DejaVu), the legacy icon-bar codes
+  // (\001..\006) will not render correctly. Fall back to digits.
+  if (_rssi && _rssi->hasGfxFont()) {
+    _rssi->setText(rssi, rssiFmt);
+    return;
+  }
   char rssiG[3];
   int rssi_steps[] = {RSSI_STEPS};
   if(rssi >= rssi_steps[0]) strlcpy(rssiG, "\004\006", 3);
@@ -784,7 +827,7 @@ void Display::_setRSSI(int rssi) {
   if(rssi >= rssi_steps[2] && rssi < rssi_steps[1]) strlcpy(rssiG, "\004\002", 3);
   if(rssi >= rssi_steps[3] && rssi < rssi_steps[2]) strlcpy(rssiG, "\003\002", 3);
   if(rssi <  rssi_steps[3] || rssi >=  0) strlcpy(rssiG, "\001\002", 3);
-  _rssi->setText(rssiG);
+  if (_rssi) _rssi->setText(rssiG);
 }
 
 void Display::_station() {
@@ -1106,7 +1149,7 @@ void Display::_rebuildUI() {
     default:         _pager->setPage(pages[PG_DIALOG]);     break;
   }
 
-  if (_rssi) _setRSSI(WiFi.RSSI());
+  if (_rssi || _rssiIcon) _setRSSI(WiFi.RSSI());
   _volume();
   _station();
   _refreshWeatherUI();

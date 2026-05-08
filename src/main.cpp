@@ -146,25 +146,25 @@ void loop() {
   timekeeper.loop1();
   telnet.loop();
 #ifdef USE_DLNA
-  // DLNA build/append után runtime playlist refresh (main contextben!)
+  // After DLNA build/append: refresh playlist at runtime (main context)
   static uint32_t dlnaReloadAt = 0;
 
   if (g_dlnaPlaylistDirty) {
     g_dlnaPlaylistDirty = false;
-    dlnaReloadAt = millis() + 150; // kis debounce/flush idő SPIFFS rename után
+    dlnaReloadAt = millis() + 150; // small debounce/flush delay after SPIFFS rename
   }
 
   if (dlnaReloadAt && (int32_t)(millis() - dlnaReloadAt) >= 0) {
     dlnaReloadAt = 0;
 
-    // újratölti a playlist/index cache-t → playlistLength() innentől már nem 0
+    // Reload the playlist/index cache -> playlistLength() will no longer be 0
     config.indexDLNAPlaylist();
 
-    // WebUI/index frissítés
+    // WebUI/index refresh
     netserver.resetQueue();
     netserver.requestOnChange(GETINDEX, 0);
 
-    // ha épp DLNA nézetben vagy, frissítsd a képernyőt is
+    // If you're currently in DLNA view, refresh the display too
     if (config.getMode() == PM_WEB &&
         config.store.playlistSource == (uint8_t)PL_SRC_DLNA) {
       display.resetQueue();
@@ -182,7 +182,7 @@ void loop() {
 
   battery_update();
 
-  pm.on_loop();   // ledstrip plugin – mindig fut (screensaver is)
+  pm.on_loop();   // ledstrip plugin - always runs (even in screensaver)
   loopControls();
   #ifdef NETSERVER_LOOP1
   netserver.loop();

@@ -57,10 +57,10 @@ void MyNetwork::WiFiLostConnection(WiFiEvent_t event, WiFiEventInfo_t info){
 
 bool MyNetwork::wifiBegin(bool silent){
 	
-  	// MOCNY RESET WiFi przed rozpoczęciem
+  	// Hard WiFi reset before starting
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
-    delay(1000);  // Dłuższe opóźnienie!
+    delay(1000);  // Longer delay
     WiFi.mode(WIFI_STA);
     delay(500);
 	
@@ -74,20 +74,20 @@ bool MyNetwork::wifiBegin(bool silent){
       Serial.print("##[BOOT]#\t");
       display.putRequest(BOOTSTRING, ls);
     }
-    // KLUCZOWE: Poczekaj aż WiFi będzie w stanie gotowym
+    // KEY: wait until WiFi is in a ready state
         WiFi.disconnect(true);
         while(WiFi.status() == WL_CONNECTED) {
 		delay(100);
 		};
         
-        // Sprawdź czy WiFi jest gotowy
+        // Check whether WiFi is ready
         int waitCount = 0;
         while(WiFi.status() == WL_DISCONNECTED && waitCount < 20) {
             delay(100);
             waitCount++;
         }
         
-        // Wymuś stan IDLE jeśli nadal łączy
+        // Force IDLE state if it's still connecting
         if(WiFi.status() != WL_IDLE_STATUS && WiFi.status() != WL_DISCONNECTED) {
             WiFi.mode(WIFI_OFF);
             delay(500);

@@ -16,8 +16,6 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
   - It contains its own `.gitignore` that ignores everything in that folder except the `.gitignore` itself.
   - Put anything private there (tokens, local config blobs, etc).
 
-> Note: `myoptions.h` is currently committed. If you later add Wi‑Fi credentials or other secrets there, consider switching to a `myoptions.example.h` pattern and keeping your private `myoptions.h` untracked.
-
 ### Build requirements
 
 - PlatformIO Core (installed via the PlatformIO extension or CLI)

@@ -1,4 +1,4 @@
-//Módosítva v0.9.710 "vol_step" by Tamás Várai
+// Modified in v0.9.710 ("vol_step") by Tamás Várai
 #include "Arduino.h"
 #include "options.h"
 #include "WiFi.h"
@@ -249,10 +249,10 @@ void Display::_buildPager(){
   if(_title2) pages[PG_PLAYER]->addWidget(_title2);
   if(_weather) pages[PG_PLAYER]->addWidget(_weather);
   #if DSP_MODEL==DSP_ILI9488 || DSP_MODEL==DSP_ILI9486 || DSP_MODEL==DSP_NV3041A || DSP_MODEL==DSP_ST7796 || DSP_MODEL==DSP_ST7789  || DSP_MODEL==DSP_ILI9341
-  // Minden layouton legyen weather ikon
+  // Show the weather icon on all layouts
     if (_weatherIcon) pages[PG_PLAYER]->addWidget(_weatherIcon);
   #elif DSP_MODEL==DSP_ST7789_170
-  // Csak nem-Default layouton legyen weather ikon
+  // Show the weather icon only on non-default layouts
     if (_weatherIcon && config.store.vuLayout != 0) {
       pages[PG_PLAYER]->addWidget(_weatherIcon);
     }
@@ -264,7 +264,7 @@ void Display::_buildPager(){
     _bitrate = new TextWidget(bitrateConf, 30, false, config.theme.bitrate, config.theme.background);
     pages[PG_PLAYER]->addWidget( _bitrate);
   #endif
-  // Állomás sorszám és lejátszás mód widgetek (meta sor bal/jobb oldala)
+  // Station number and play-mode widgets (left/right side of meta row)
   #if STATION_WIDGETS
    #if DSP_MODEL!=DSP_ST7735 && DSP_MODEL!=DSP_ST7789_240 && DSP_MODEL!=DSP_GC9A01 && DSP_MODEL!=DSP_GC9A01A && DSP_MODEL!=DSP_GC9A01_I80
     _stationNum = new StationNumWidget(getstationNumConf(), config.theme.div, config.theme.background);
@@ -628,7 +628,7 @@ void Display::loop() {
         case DRAWPLAYLIST: _drawPlaylist(); break;
         case DRAWVOL: _volume(); break;
         case DBITRATE: {
-          if(_mode==PLAYER){   // csak a lejátszás képernyőn frissíti a bitrateWidgetet
+          if(_mode==PLAYER){   // only update the bitrate widget on the player screen
             char buf[20]; 
             snprintf(buf, 20, bitrateFmt, config.station.bitrate); 
             if(_bitrate) { _bitrate->setText(config.station.bitrate==0?"":buf); } 
@@ -790,7 +790,7 @@ void Display::_setRSSI(int rssi) {
 void Display::_station() {
   _meta->setAlign(metaConf.widget.align);
   _meta->setText(config.station.name);
-  // Sorszám és mód widget frissítése
+  // Refresh station number and play-mode widgets
   #if STATION_WIDGETS
   if (_stationNum) _stationNum->setNum(config.lastStation());
   if (_playMode) {
@@ -816,7 +816,7 @@ char *split(char *str, const char *delim) {
 }
 
 void Display::_title() {
-  // Ha üres a title, de a player fut, essünk vissza az állomásnévre
+  // If title is empty but the player is running, fall back to station name
   if (strlen(config.station.title) == 0 && player.isRunning()) {
     strlcpy(config.station.title, config.station.name, sizeof(config.station.title));
   }
@@ -825,7 +825,7 @@ void Display::_title() {
     char tmpbuf[strlen(config.station.title) + 1];
     strlcpy(tmpbuf, config.station.title, sizeof(tmpbuf));
      //Serial.printf("display.cpp -> _title(be) -> tmpbuf %s\r\n", tmpbuf);
-    // <<< FONTOS: hibás UTF-8 takarítása még a split előtt!
+    // IMPORTANT: clean invalid UTF-8 before splitting!
     _utf8_clean(tmpbuf);
     // Serial.printf("display.cpp -> _title(ki) -> tmpbuf %s\r\n", tmpbuf);
     char *stitle = split(tmpbuf, " - ");
@@ -858,7 +858,7 @@ void Display::_utf8_clean(char *s)
     while (*in) {
         unsigned char c = (unsigned char)*in;
 
-        // --- ZERO-WIDTH karakterek kiszűrése ---
+        // --- Filter zero-width characters ---
         if (c == 0xE2 && (unsigned char)in[1] == 0x80 &&
            ((unsigned char)in[2] == 0x8B || 
             (unsigned char)in[2] == 0x8C || 
@@ -873,8 +873,8 @@ void Display::_utf8_clean(char *s)
             continue;
         }
 
-        // --- MINDEN UTF-8 maradjon érintetlen ---
-        // Csak másoljuk byte-onként
+        // --- Keep all other UTF-8 intact ---
+        // Just copy byte-by-byte
         *out++ = *in++;
     }
 
@@ -940,7 +940,7 @@ void Display::_time(bool redraw) {
         const int16_t dY = (int16_t)dc.widget.top - (int16_t)cc.top;
         dm.y = (uint16_t)((int16_t)pos.y + dY);
 
-        const int16_t dX = (int16_t)pos.x - (int16_t)cc.left;   // cc.left az óra “bázis” X-e
+        const int16_t dX = (int16_t)pos.x - (int16_t)cc.left;   // cc.left is the clock "base" X
         dm.x = (uint16_t)((int16_t)dc.widget.left + dX);
 
         _date->moveTo(dm);
@@ -982,7 +982,7 @@ void Display::_volume() {
 
 /* original function */
 void Display::_volume() {
-  if (_volbar) {                                // Módosítás "vol_step"
+  if (_volbar) {                                // "vol_step" modification
     int vol = (config.store.volume ); 
     if (vol > 100)
       vol = 100;
@@ -991,8 +991,8 @@ void Display::_volume() {
     _volbar->setValue(vol);
   }
   #ifndef HIDE_VOL
-  if(_voltxt) // ha az alapképernyő van
-    _voltxt->setText(config.store.volume, voltxtFmt); // Módosítás "vol_step"
+  if(_voltxt) // if we're on the main screen
+    _voltxt->setText(config.store.volume, voltxtFmt); // "vol_step" modification
   #endif
   if(_mode==VOL) {
     timekeeper.waitAndReturnPlayer(2);

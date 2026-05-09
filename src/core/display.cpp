@@ -402,6 +402,9 @@ void Display::_start() {
 
   if(_vuwidget) _vuwidget->lock();
   if(_rssi || _rssiIcon) _setRSSI(WiFi.RSSI());
+  #ifndef HIDE_BAT
+    if (_battxt) _battxt->setText((int)battery_get_percent(), battxtFmt);
+  #endif
   /*#ifndef HIDE_IP
     if(_volip) _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
   #endif*/

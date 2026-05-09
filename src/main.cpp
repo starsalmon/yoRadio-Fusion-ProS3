@@ -13,7 +13,6 @@
 //#include "core/mqtt.h"
 #include "core/optionschecker.h"
 #include "core/timekeeper.h"
-#include "core/builtin_led.hpp"
 #include "clock/clock_tts.h"
 #include "driver/rtc_io.h"
 #include "battery.h"
@@ -101,7 +100,7 @@ void setup() {
 #if (BRIGHTNESS_PIN!=255)
   backlightPluginInit();
 #endif
-  builtin_led_init();
+  if(REAL_LEDBUILTIN!=255) pinMode(REAL_LEDBUILTIN, OUTPUT);
   if (yoradio_on_setup) yoradio_on_setup();
   pm.init();     // pluginsManager
   pm.on_setup();
@@ -109,8 +108,6 @@ void setup() {
   clock_tts_setup();
 
   display.init();
-  //SPI.setFrequency(40000000);
-  Serial.printf("SPI clock after display.init: %u\n", SPI2.getClockDivider());
   player.init();
   network.begin();
   if (network.status != CONNECTED && network.status!=SDREADY) {
@@ -182,6 +179,51 @@ void loop() {
   }
 
   battery_update();
+
+#if (WAKE_PIN1 != 255) || (WAKE_PIN2 != 255)
+  #ifndef AUTO_DEEPSLEEP_BATT_PCT
+    #define AUTO_DEEPSLEEP_BATT_PCT 5
+  #endif
+  #ifndef AUTO_DEEPSLEEP_IDLE_MINUTES
+    #define AUTO_DEEPSLEEP_IDLE_MINUTES 15
+  #endif
+
+  static uint32_t s_lastPlayingMs = 0;
+  static uint32_t s_lastPowerCheckMs = 0;
+  const uint32_t now = millis();
+
+  if (s_lastPlayingMs == 0) s_lastPlayingMs = now;
+  if (player.isRunning()) s_lastPlayingMs = now;
+
+  // Check at a low cadence (avoid extra work in the main loop).
+  if (s_lastPowerCheckMs == 0 || (uint32_t)(now - s_lastPowerCheckMs) >= 1000) {
+    s_lastPowerCheckMs = now;
+
+    if (battery_is_ready()) {
+      const float pct = battery_get_percent();
+      if (pct > 0.1f && pct <= (float)AUTO_DEEPSLEEP_BATT_PCT && !battery_usb_present()) {
+        Serial.printf("Auto deep sleep: battery low (%.1f%%) and no 5V.\n", pct);
+        display.putRequest(NEWMODE, SLEEPING);
+        player.sendCommand({PR_STOP, 0});
+        delay(150);
+        Serial.flush();
+        config.doSleepW();
+      }
+    }
+
+    if (!player.isRunning()) {
+      const uint32_t idleMs = (uint32_t)(now - s_lastPlayingMs);
+      const uint32_t idleLimitMs = (uint32_t)AUTO_DEEPSLEEP_IDLE_MINUTES * 60UL * 1000UL;
+      if (AUTO_DEEPSLEEP_IDLE_MINUTES > 0 && idleMs >= idleLimitMs) {
+        Serial.printf("Auto deep sleep: idle for %lu ms.\n", (unsigned long)idleMs);
+        display.putRequest(NEWMODE, SLEEPING);
+        delay(150);
+        Serial.flush();
+        config.doSleepW();
+      }
+    }
+  }
+#endif
 
   pm.on_loop();   // ledstrip plugin - always runs (even in screensaver)
   loopControls();

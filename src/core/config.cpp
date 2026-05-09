@@ -186,7 +186,7 @@ void Config::_setupVersion(){
       break;
     case 4:
       saveValue(&store.abuff, (uint16_t)(VS1053_CS==255?7:10));
-      saveValue(&store.telnet, true);
+      saveValue(&store.telnet, false);
       saveValue(&store.watchdog, true);
       saveValue(&store.timeSyncInterval, (uint16_t)60);    //min
       saveValue(&store.timeSyncIntervalRTC, (uint16_t)24); //hours
@@ -763,11 +763,11 @@ void Config::setIrBtn(int val) {
 void Config::resetSystem(const char *val, uint8_t clientId){
   if (strcmp(val, "system") == 0) {
     saveValue(&store.smartstart, (uint8_t)2, false);
-    saveValue(&store.audioinfo, false, false);
-    saveValue(&store.vumeter, false, false);
+    saveValue(&store.audioinfo, true, false);
+    saveValue(&store.vumeter, true, false);
     saveValue(&store.softapdelay, (uint8_t)0, false);
     saveValue(&store.abuff, (uint16_t)(VS1053_CS==255?7:10), false);
-    saveValue(&store.telnet, true);
+    saveValue(&store.telnet, false);
     saveValue(&store.watchdog, true);
     snprintf(store.mdnsname, MDNS_LENGTH, "yoradio-%x", (unsigned int)getChipId());
     saveValue(store.mdnsname, store.mdnsname, MDNS_LENGTH, true, true);
@@ -800,7 +800,7 @@ void Config::resetSystem(const char *val, uint8_t clientId){
     saveValue(&store.tzHour, (int8_t)3, false);
     saveValue(&store.tzMin, (int8_t)0, false);
     saveValue(store.sntp1, "pool.ntp.org", 35, false);
-    saveValue(store.sntp2, "0.ru.pool.ntp.org", 35);
+    saveValue(store.sntp2, "au.pool.ntp.org", 35);
     saveValue(&store.timeSyncInterval, (uint16_t)60);
     saveValue(&store.timeSyncIntervalRTC, (uint16_t)24);
     configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1, store.sntp2);
@@ -848,14 +848,14 @@ void Config::setDefaults() {
   store.lastStation = 0;
   store.countStation = 0;
   store.lastSSID = 0;
-  store.audioinfo = false;
-  store.smartstart = 2;
-  store.tzHour = 1;
+  store.audioinfo = true;
+  store.smartstart = 1;
+  store.tzHour = 10;
   store.tzMin = 0;
   store.timezoneOffset = 0;
-  store.vumeter=false;
+  store.vumeter=true;
   store.softapdelay=0;
-  store.flipscreen=true;
+  store.flipscreen=false;
   store.invertdisplay=false;
   store.numplaylist=false;
 #if (DSP_MODEL == DSP_GC9A01) || (DSP_MODEL == DSP_GC9A01A) || (DSP_MODEL == DSP_GC9A01_I80) || (DSP_MODEL==DSP_ST7789_76) || (DSP_MODEL==DSP_ST7789_240)
@@ -942,7 +942,7 @@ void Config::setDefaults() {
   store.metaStNameSkip = 0;
   store.directChannelChange = 1;        // default ON
   store.stationsListReturnTime = 5;     // default 5 sec
-  store.hours12 = 0;        // default OFF
+  store.hours12 = 1;        // default On
   store.weatherIconSet = 0;
   store.playlistMode = 0;
   store.stallWatchdog = 0;
@@ -961,7 +961,7 @@ void Config::setDefaults() {
   store.brightness=100;
   store.contrast=55;
   strlcpy(store.sntp1,"pool.ntp.org", 35);
-  strlcpy(store.sntp2,"1.hu.pool.ntp.org", 35);
+  strlcpy(store.sntp2,"au.pool.ntp.org", 35);
   store.showweather=false;
   strlcpy(store.weatherlat,"47.1109", 10);
   strlcpy(store.weatherlon,"18.5773", 10);
@@ -996,7 +996,7 @@ void Config::setDefaults() {
   store.screensaverPlayingTimeout = 5;
   store.screensaverPlayingBlank = false;
   store.abuff = VS1053_CS==255?7:10;
-  store.telnet = true;
+  store.telnet = false;
   store.watchdog = true;
   store.timeSyncInterval = 60;    //min
   store.timeSyncIntervalRTC = 24; //hour
@@ -1546,6 +1546,13 @@ void Config::doSleep() {
 #ifdef USE_NEXTION
     nextion.sleep();
 #endif
+    // If peripherals (TFT/DAC/etc) are powered from an AUX rail, turn it off.
+#ifdef LDO2_ENABLE
+    #if LDO2_ENABLE != 255
+      pinMode(LDO2_ENABLE, OUTPUT);
+      digitalWrite(LDO2_ENABLE, LOW);
+    #endif
+#endif
     uint64_t mask = 0;
 #if WAKE_PIN1 >= 0 && WAKE_PIN1 < 64
     if (rtc_gpio_is_valid_gpio((gpio_num_t)WAKE_PIN1)) {
@@ -1567,9 +1574,17 @@ void Config::doSleep() {
 }
 
 void Config::doSleepW() {
+    if (BRIGHTNESS_PIN != 255) { analogWrite(BRIGHTNESS_PIN, 0); }
     display.deepsleep();
 #ifdef USE_NEXTION
     nextion.sleep();
+#endif
+    // If peripherals (TFT/DAC/etc) are powered from an AUX rail, turn it off.
+#ifdef LDO2_ENABLE
+    #if LDO2_ENABLE != 255
+      pinMode(LDO2_ENABLE, OUTPUT);
+      digitalWrite(LDO2_ENABLE, LOW);
+    #endif
 #endif
     uint64_t mask = 0;
 #if WAKE_PIN1 >= 0 && WAKE_PIN1 < 64

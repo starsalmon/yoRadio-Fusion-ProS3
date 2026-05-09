@@ -11,10 +11,24 @@ static uint32_t lastSample = 0;
 static float lastPercent = 0;
 static bool batteryReady = false;
 static TwoWire batteryWire(1);
+static uint8_t fastSamplesRemaining = 0;
 
 static uint32_t lastChargeCheck = 0;
 static bool lastUsbPresent = false;
 static bool usbSenseReady = false;
+
+static float samplePercentClamped() {
+    float pct = maxlipo.cellPercent();
+    // Occasionally a sample can be out of bounds; retry once immediately.
+    if (!isfinite(pct) || pct < -1.0f || pct > 101.0f) {
+        delay(60);
+        pct = maxlipo.cellPercent();
+    }
+    if (!isfinite(pct)) pct = 0.0f;
+    if (pct < 0.0f) pct = 0.0f;
+    if (pct > 100.0f) pct = 100.0f;
+    return pct;
+}
 
 void battery_init() {
 #ifdef CHARGE_SENSE_PIN
@@ -39,11 +53,18 @@ void battery_init() {
 
     Serial.println("MAX17048 detected");
     batteryWire.setClock(400000);
-    maxlipo.quickStart();   // recommended by Adafruit
+    // NOTE: We intentionally do NOT call quickStart() here.
+    // On always-powered fuel gauges, forcing quickStart on every MCU reset can
+    // produce misleading SOC (e.g. "stuck at 100%") until it settles.
     batteryReady = true;
 
-    // Force an initial update right away
+    // Prime a reasonable value immediately (without touching the display yet).
+    lastPercent = samplePercentClamped();
+    Serial.printf("Battery(init): %.1f%%\n", lastPercent);
+
+    // Force an initial update right away once the main loop starts.
     lastSample = 0;
+    fastSamplesRemaining = 3; // a few quick follow-up samples after boot
 }
 
 void battery_update() {
@@ -61,16 +82,32 @@ void battery_update() {
 
     if (!batteryReady) return;
 
-    // First sample should happen immediately, then every 30s
-    if (lastSample != 0 && (millis() - lastSample < 30000)) return;  // 30 seconds
+    // First sample should happen immediately, then do a few faster "settling"
+    // samples after boot, then every 30 seconds.
+    const uint32_t intervalMs = (fastSamplesRemaining > 0) ? 2000 : 30000;
+    if (lastSample != 0 && (millis() - lastSample < intervalMs)) return;
     lastSample = millis();
 
-    lastPercent = maxlipo.cellPercent();
+    lastPercent = samplePercentClamped();
     Serial.printf("Battery: %.1f%%\n", lastPercent);
 
     display.putRequest(NEWBATTERY);
+
+    if (fastSamplesRemaining > 0) fastSamplesRemaining--;
 }
 
 float battery_get_percent() {
     return lastPercent;
+}
+
+bool battery_is_ready() {
+    return batteryReady;
+}
+
+bool battery_usb_present() {
+#ifdef CHARGE_SENSE_PIN
+    return usbSenseReady && lastUsbPresent;
+#else
+    return false;
+#endif
 }

@@ -11,7 +11,6 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 - **Audio high-bitrate stability (auto-patched)**: patched `liblwip.a` + `libesp_netif.a` are applied before builds (see below)
 - **GFX icon glyphs (auto-patched)**: Adafruit GFX `glcdfont.c` is replaced with `fonts/glcdfont_EN.c` so custom glyphs render (IP, speaker, RSSI bars)
 - **ILI9341 footer UX**: smooth DejaVu text + separate classic icon widgets; volume icon + text are positioned so 1–3 digit values don’t “drift”
-- **Onboard NeoPixel handling**: treated as a NeoPixel (not PWM) and can be disabled while prototyping
 - **Cursor/clangd hygiene**: `.clangd` removes toolchain-only flags for cleaner diagnostics
 
 ### Automatic patching (PlatformIO pre-build)
@@ -41,9 +40,6 @@ Optional override (if you don’t want to keep the archives in-repo):
 
 - **MAX17048 I2C init**: the battery gauge init pre-sets I2C pins before the Adafruit library begins the bus (avoids “bus already started” / invalid-state noise).
 - **RSSI footer**: RSSI is shown as **bars only** (no numeric RSSI) on ILI9341 builds.
-- **Status LED / NeoPixel**:
-  - By default this firmware uses the “built-in LED” as a simple **playing indicator** (white when playing).
-  - For prototyping, it’s currently forced off via `#define BUILTIN_NEOPIXEL_DISABLE 1` in `myoptions.h`.
 
 ### Secrets / local-only files
 
@@ -88,7 +84,94 @@ platformio device monitor -b 115200
 - **Pins / display / I2S / encoder settings**: `myoptions.h`
 - **PlatformIO environment / libraries / upload settings**: `platformio.ini`
 
-### Repo
+## Controls
 
-- GitHub: `https://github.com/starsalmon/yoradio-fusion-pros3`
+<img src="images/controls.jpg" width="830" height="440"><br />
 
+---
+- [Buttons](#buttons)
+- [Encoders](#encoders)
+- [IR receiver](#ir-receiver)
+- [Joystick](#joystick)
+- [Touchscreen](#touchscreen)
+
+---
+### Buttons
+Up to 5 buttons can be connected to the device. Three buttons are enough to control it.
+
+Button actions:
+- BTN_LEFT\
+ click: volume down\
+ dblclick: previous station\
+ longpress: quick volume down
+- BTN_CENTER\
+ click: start/stop playing\
+ dblclick: switch SD/WEB mode\
+ longpress: toggle between PLAYER/PLAYLIST mode
+- BTN_RIGHT\
+ click: volume up\
+ dblclick: next station\
+ longpress: quick volume up
+- BTN_UP\
+ click: without display - next station, with display - move up\
+ dblclick: doing nothing\
+ longpress: with display - quick move up
+- BTN_DOWN\
+ click: without display - prev station, with display - move down\
+ dblclick: doing nothing\
+ longpress: with display - quick move down
+- BTN_MODE\
+ click: switch SD/WEB mode\
+ longpress: go to sleep
+ 
+---
+### Encoders
+You can connect one or two encoders to replace/complete the buttons. One encoder (without buttons) is enough to control the device.
+
+- ENCODER1\
+ rotate left: (ENC_BTNL) in PLAYER mode - volume down, in PLAYLIST mode - move up\
+ rotate right: (ENC_BTNR) in PLAYER mode - volume up, in PLAYLIST mode - move down\
+ click, dblclick, longpress: (ENC_BTNB) same as BTN_CENTER
+- ENCODER2\
+ rotate left: (ENC2_BTNL) if not pressed - switch to PLAYLIST mode and move up, if pressed - volume down\
+ rotate right: (ENC2_BTNR) if not pressed - switch to PLAYLIST mode and move down, if pressed - volume up\
+ click, dblclick: (ENC2_BTNB) toggle between PLAYER/VOLUME mode
+
+---
+### IR receiver
+Starting from version 0.6.450, adding an IR remote control has been moved to the web interface. Can be added for up to three remotes.
+1. go to Settings >> controls >> IR Recorder (fig.1)
+2. press the button you need on the left to record the IR code (fig.2)
+
+<img src="images/irRecorder01.png" width="830" height="490"><br>
+
+3. select the slot on the right and press the button on the physical IR remote (fig.3). Avoid the inscription "UNKNOWN" (fig.4)
+
+<img src="images/irRecorder02.png" width="830" height="490"><br>
+
+4. repeat steps 2 and 3 for other buttons
+5. select BACK, select DONE
+
+**Button assignment:**
+- &#9199; - start/stop playing
+- &#9194; - previous station
+- &#9193; - next station
+- &#9650; - volume up, longpress - quick volume up
+- &#9660; - volume down, longpress - quick volume down
+- &nbsp;**\#**  &nbsp;- toggle between PLAYER/PLAYLIST mode
+- **0-9** - Start entering the station number. To finish input and start playback, press the play button. To cancel, press hash.
+
+---
+### Joystick
+You can use a joystick [like this](https://aliexpress.com/item/4000681560472.html) instead of connecting five buttons
+
+<img src="images/joystick.jpg" width="300" height="300"><br />
+
+---
+### Touchscreen
+- Swipe horizontally: volume control
+- Swipe vertically: station selection
+- Tap: in PLAYER mode - start/stop playback, in PLAYLIST mode - select
+- Long tap: in PLAYLIST mode - cancel
+
+---

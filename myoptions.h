@@ -23,7 +23,8 @@
 /******************************************/
 // --- Special GPIOs on ProS3 ---
 #define LDO2_ENABLE   17 // LDO2 (3V3_AUX) - HIGH to enable
-#define RF_SWITCH     11 // Switches between internal and external Antenna - HIGH to use external 
+#define RF_SWITCH     11 // Switches between internal and external Antenna - HIGH to use external
+#define CHARGE_SENSE_PIN 33   // ProS3 GPIO33 = 5V sense
 /******************************************/
 
 /******************************************/
@@ -34,30 +35,12 @@
 /******************************************/
 
 /******************************************/
-// --- ProS3 USB/charge sense ---
-#define CHARGE_SENSE_PIN 33   // ProS3 GPIO33 = 5V sense (via divider)
-/******************************************/
-
-/******************************************/
-#define LED_BUILTIN_S3    18     /* S3-onboard RGB led pin */
-#define USE_BUILTIN_LED true /* The RGB LED turns on.. */
+//#define LED_BUILTIN_S3    18     /* S3-onboard RGB led pin */
+//#define USE_BUILTIN_LED true /* The RGB LED turns on.. */
 
 // Optional cap for the ledstrip plugin (separate from LEDSTRIP_BRIGHTNESS).
 // Uncomment if you ever enable `USE_LEDSTRIP_PLUGIN`.
 // #define LEDSTRIP_MAX_BRIGHTNESS_PCT 5
-
-// Built-in status LED brightness (0..100).
-// On ProS3 the "built-in LED" is a NeoPixel; 5% white can still look bright,
-// so we keep this lower.
-#define BUILTIN_LED_BRIGHTNESS_PCT 2
-
-// This board has an onboard NeoPixel (addressable RGB).
-// PWM dimming won't work; we must drive it as a NeoPixel.
-#define BUILTIN_NEOPIXEL_PIN LED_BUILTIN_S3
-
-// While prototyping it's easy for the status NeoPixel to be annoying.
-// Comment this out when you want the "white while playing" indicator back.
-#define BUILTIN_NEOPIXEL_DISABLE 1
 /*****************************************/
 //#define DSP_MODEL DSP_ILI9486
 //#define DSP_MODEL DSP_ILI9488
@@ -75,14 +58,14 @@
 //#define HUN_LCD
 /*****************************************/
 
-#define DSP_HSPI 1
+//#define DSP_HSPI 1
 
 #define TFT_DC 5
 #define TFT_CS 4
 #define TFT_RST 2
-#define TFT_SCK   36
-#define TFT_MOSI  35
-#define TFT_MISO  37
+//#define TFT_SCK   36
+//#define TFT_MOSI  35
+//#define TFT_MISO  37
 
 #define BRIGHTNESS_PIN 14
 /*****************************************/
@@ -127,18 +110,34 @@
 //#define IR_PIN 12
 
 /********************************************/
-#define VUMETER true
-#define CLOCK_12H true
+
 /********************************************/
 /* Other settings */
-//#define MUTE_PIN     2            /*  MUTE Pin */
-//#define MUTE_VAL    LOW          /*  Write this to MUTE_PIN when player is stop */
+#define BTN_MODE     12
+#define MUTE_PIN     39            /*  MUTE Pin */
+#define MUTE_VAL    LOW          /*  Write this to MUTE_PIN when player is stop */
 //#define PLAYER_FORCE_MONO false  /*  mono option on boot - false stereo, true mono. "false" */
 #define I2S_INTERNAL    false    /*  If true - use esp32 internal DAC. "false" */
 //#define ROTATE_90   false        /*  Optional 90 degree rotation for square displays."false"*/
-#define TFT_ROTATE      2        /*  Display rotation. 0 - 0, 1 - 90, 2 - 180, 3 - 270 degrees */
+//#define TFT_ROTATE      2        /*  Display rotation. 0 - 0, 1 - 90, 2 - 180, 3 - 270 degrees */
 //#define HIDE_VOLPAGE             /* Hide volume page; navigate using the volume progress bar. */
-//#define WAKE_PIN      1
+// Deep sleep wake button (RTC GPIO only: GPIO0..GPIO21).
+// If you already have a MODE/encoder button wired, you can point WAKE_PIN1 at that GPIO.
+// Example:
+//   #define WAKE_PIN1  1
+// Optional: second wake pin (e.g. IR wake)
+//   #define WAKE_PIN2  <gpio>
+#define WAKE_PIN1 BTN_MODE
+#define WAKE_PIN2 ENC_BTNB
+// --- Auto deep sleep (power-off) rules ---
+// 1) If battery is critically low and not on 5V, deep sleep immediately.
+// 2) If nothing has been playing for a while, deep sleep (wake via WAKE_PIN1/2).
+//
+// If WAKE_PIN1/2 are not configured, we avoid auto-sleep to prevent "bricking"
+// the device in deep sleep with no wake source.
+#define AUTO_DEEPSLEEP_IDLE_MINUTES 15
+#define AUTO_DEEPSLEEP_BATT_PCT 5
+#define FADE_PERIOD 300
 //#define LIGHT_SENSOR      40               /*  Light sensor  */
 //#define AUTOBACKLIGHT(x)  *function*        /*  Autobacklight function. See options.h for example  */
 //#define NAME_STRIM              /* Show station name from the stream. (MOD Maleksm) */

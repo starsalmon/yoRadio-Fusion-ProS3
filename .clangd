@@ -4,8 +4,6 @@ CompileFlags:
     - -mdisable-hardware-atomics
     - -fstrict-volatile-bitfields
     - -fno-tree-switch-conversion
-
-CompileFlags:
   BuiltinHeaders: QueryDriver
 Diagnostics:
   Suppress: [pp_expects_filename, unused-includes]

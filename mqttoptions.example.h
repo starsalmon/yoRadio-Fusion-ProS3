@@ -1,11 +1,14 @@
-#define MQTT_HOST "192.168.2.176"     // your Home Assistant IP
+#pragma once
+// Copy this file to `mqttoptions.h` and fill in your values.
+// `mqttoptions.h` is gitignored to avoid committing secrets.
+
+#define MQTT_HOST "192.168.x.x"     // e.g. your Home Assistant / broker IP
 #define MQTT_PORT 1883
 #define MQTT_USER "yoradio"
-#define MQTT_PASS "Pa55word!"
+#define MQTT_PASS "change-me"
 
 #define MQTT_ROOT_TOPIC  "yoradio/100/"
-#define MQTT_CLIENT_ID "yoradio-tdisplays3"
-
+#define MQTT_CLIENT_ID "yoradio-pros3"
 
 /*
 Topics:

@@ -86,7 +86,7 @@ platformio device monitor -b 115200
 
 ## Controls
 
-<img src="images/controls.jpg" width="830" height="440"><br />
+<img src="https://github.com/e2002/yoradio/blob/main/images/joystick.jpg" width="830" height="440"><br />
 
 ---
 - [Buttons](#buttons)
@@ -143,11 +143,11 @@ Starting from version 0.6.450, adding an IR remote control has been moved to the
 1. go to Settings >> controls >> IR Recorder (fig.1)
 2. press the button you need on the left to record the IR code (fig.2)
 
-<img src="images/irRecorder01.png" width="830" height="490"><br>
+<img src="https://github.com/e2002/yoradio/blob/main/images/irRecorder01.png" width="830" height="490"><br>
 
 3. select the slot on the right and press the button on the physical IR remote (fig.3). Avoid the inscription "UNKNOWN" (fig.4)
 
-<img src="images/irRecorder02.png" width="830" height="490"><br>
+<img src="https://github.com/e2002/yoradio/blob/main/images/irRecorder02.png" width="830" height="490"><br>
 
 4. repeat steps 2 and 3 for other buttons
 5. select BACK, select DONE
@@ -165,7 +165,7 @@ Starting from version 0.6.450, adding an IR remote control has been moved to the
 ### Joystick
 You can use a joystick [like this](https://aliexpress.com/item/4000681560472.html) instead of connecting five buttons
 
-<img src="images/joystick.jpg" width="300" height="300"><br />
+<img src="https://github.com/e2002/yoradio/blob/main/images/joystick.jpg" width="300" height="300"><br />
 
 ---
 ### Touchscreen

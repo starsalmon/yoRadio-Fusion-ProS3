@@ -1,14 +1,20 @@
 #include "battery.h"
 #include <Wire.h>
 #include <Adafruit_MAX1704X.h>
+#include "core/options.h"
 #include "../myoptions.h"
 #include "core/display.h"
+#ifdef MQTT_ROOT_TOPIC
+#include "core/mqtt.h"
+#endif
 
 extern Display display;
 
 static Adafruit_MAX17048 maxlipo;
 static uint32_t lastSample = 0;
 static float lastPercent = 0;
+static float lastVoltage = 0;
+static float lastChargeRate = 0;
 static bool batteryReady = false;
 static TwoWire batteryWire(1);
 static uint8_t fastSamplesRemaining = 0;
@@ -17,17 +23,72 @@ static uint32_t lastChargeCheck = 0;
 static bool lastUsbPresent = false;
 static bool usbSenseReady = false;
 
-static float samplePercentClamped() {
+static uint32_t lastQuickStartMs = 0;
+static bool pendingQuickStart = false;
+
+static bool voltageDefinitelyNoBattery(float v) {
+    // On some boards the BAT node can float high (esp. on USB power),
+    // so we only treat *very low* voltage as a reliable "no battery".
+    return isfinite(v) && v > 0.0f && v < 0.50f;
+}
+
+struct BatterySample {
+    float pct;
+    float v;
+    float rate;
+};
+
+static BatterySample sampleBatteryClamped() {
     float pct = maxlipo.cellPercent();
+    float v = maxlipo.cellVoltage();
+    float rate = maxlipo.chargeRate();
+
     // Occasionally a sample can be out of bounds; retry once immediately.
-    if (!isfinite(pct) || pct < -1.0f || pct > 101.0f) {
+    if (
+        !isfinite(pct) || pct < -1.0f || pct > 101.0f ||
+        !isfinite(v) || v < 0.0f || v > 5.0f ||
+        !isfinite(rate) || rate < -1000.0f || rate > 1000.0f
+    ) {
         delay(60);
         pct = maxlipo.cellPercent();
+        v = maxlipo.cellVoltage();
+        rate = maxlipo.chargeRate();
     }
+
     if (!isfinite(pct)) pct = 0.0f;
     if (pct < 0.0f) pct = 0.0f;
     if (pct > 100.0f) pct = 100.0f;
-    return pct;
+
+    if (!isfinite(v) || v < 0.0f) v = 0.0f;
+    if (!isfinite(rate)) rate = 0.0f;
+
+    return {pct, v, rate};
+}
+
+static bool usbPresentNow() {
+    return usbSenseReady && lastUsbPresent;
+}
+
+static bool canQuickStartNow() {
+    const uint32_t now = millis();
+    // QuickStart too often can destabilize SOC; keep a cooldown.
+    return lastQuickStartMs == 0 || (uint32_t)(now - lastQuickStartMs) >= 60000;
+}
+
+static void doQuickStartAndResample(BatterySample& s) {
+    lastQuickStartMs = millis();
+    maxlipo.quickStart();
+    delay(250);
+    s = sampleBatteryClamped();
+}
+
+// If the gauge was reset or hasn't converged yet, SOC can look stuck at 100%
+// while the voltage clearly isn't full. In that case, a one-time quickStart()
+// kick can help it converge faster without forcing quickStart on every boot.
+static bool sampleLooksLikeStaleFull(const BatterySample& s) {
+    if (s.v < 3.0f || s.v > 4.35f) return false; // ignore obviously bad/noisy voltage reads
+    // 4.11V @ 100% after a hot-plug is a common "stale" pattern.
+    return (s.pct >= 99.0f && s.v <= 4.15f);
 }
 
 void battery_init() {
@@ -59,8 +120,24 @@ void battery_init() {
     batteryReady = true;
 
     // Prime a reasonable value immediately (without touching the display yet).
-    lastPercent = samplePercentClamped();
-    Serial.printf("Battery(init): %.1f%%\n", lastPercent);
+    BatterySample s = sampleBatteryClamped();
+    lastVoltage = s.v;
+    lastChargeRate = s.rate;
+
+    if (sampleLooksLikeStaleFull(s) && canQuickStartNow()) {
+        Serial.printf("Battery(init): %.1f%% @ %.3fV looks stale; quickStart()\n", s.pct, s.v);
+        doQuickStartAndResample(s);
+    }
+
+    // If we can confidently tell there's no battery, don't show a bogus 100%.
+    lastPercent = voltageDefinitelyNoBattery(s.v) ? 0.0f : s.pct;
+    lastVoltage = s.v;
+    lastChargeRate = s.rate;
+    Serial.printf("Battery(init): %.1f%% @ %.3fV\n", lastPercent, lastVoltage);
+
+#ifdef MQTT_ROOT_TOPIC
+    mqttPublishBattery();
+#endif
 
     // Force an initial update right away once the main loop starts.
     lastSample = 0;
@@ -76,6 +153,11 @@ void battery_update() {
         if (usbPresent != lastUsbPresent) {
             lastUsbPresent = usbPresent;
             Serial.printf("5V sense changed: %s\n", usbPresent ? "ON" : "OFF");
+            // USB power-path changes can shift BAT node behavior; re-seed SOC once.
+            pendingQuickStart = true;
+#ifdef MQTT_ROOT_TOPIC
+            mqttPublishBattery();
+#endif
         }
     }
 #endif
@@ -88,10 +170,29 @@ void battery_update() {
     if (lastSample != 0 && (millis() - lastSample < intervalMs)) return;
     lastSample = millis();
 
-    lastPercent = samplePercentClamped();
-    Serial.printf("Battery: %.1f%%\n", lastPercent);
+    BatterySample s = sampleBatteryClamped();
+
+    // If voltage steps a lot between samples (e.g., battery hot-plug / power-path),
+    // give the estimator a kick.
+    if (isfinite(lastVoltage) && fabsf(s.v - lastVoltage) >= 0.20f) {
+        pendingQuickStart = true;
+    }
+
+    if ((pendingQuickStart || sampleLooksLikeStaleFull(s)) && canQuickStartNow()) {
+        Serial.printf("Battery: quickStart() (pct=%.1f%% v=%.3fV usb=%d)\n", s.pct, s.v, (int)usbPresentNow());
+        pendingQuickStart = false;
+        doQuickStartAndResample(s);
+    }
+
+    lastPercent = voltageDefinitelyNoBattery(s.v) ? 0.0f : s.pct;
+    lastVoltage = s.v;
+    lastChargeRate = s.rate;
+    Serial.printf("Battery: %.1f%% @ %.3fV\n", lastPercent, lastVoltage);
 
     display.putRequest(NEWBATTERY);
+#ifdef MQTT_ROOT_TOPIC
+    mqttPublishBattery();
+#endif
 
     if (fastSamplesRemaining > 0) fastSamplesRemaining--;
 }
@@ -102,6 +203,20 @@ float battery_get_percent() {
 
 bool battery_is_ready() {
     return batteryReady;
+}
+
+bool battery_is_present() {
+    // Best-effort only: on some power paths the BAT node can float high on USB,
+    // so "present" can't be detected reliably in all cases.
+    return batteryReady && !voltageDefinitelyNoBattery(lastVoltage);
+}
+
+float battery_get_voltage() {
+    return lastVoltage;
+}
+
+float battery_get_charge_rate() {
+    return lastChargeRate;
 }
 
 bool battery_usb_present() {

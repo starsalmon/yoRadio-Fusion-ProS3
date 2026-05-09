@@ -16,6 +16,7 @@ MQTT_ROOT_TOPIC/command     // Commands
 MQTT_ROOT_TOPIC/status      // Player status
 MQTT_ROOT_TOPIC/playlist    // Playlist URL
 MQTT_ROOT_TOPIC/volume      // Current volume
+MQTT_ROOT_TOPIC/battery     // Battery + power (usb/percent/voltage/state)
 
 Commands:
 prev          // prev station

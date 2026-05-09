@@ -12,6 +12,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 void mqttPublishStatus();
 void mqttPublishPlaylist();
 void mqttPublishVolume();
+void mqttPublishBattery();
 void zeroBuffer();
 
 #endif // #ifdef MQTT_ROOT_TOPIC

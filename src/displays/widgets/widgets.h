@@ -64,6 +64,23 @@ class Widget{
     virtual void _reset() {}
 };
 
+class BitmapWidget: public Widget {
+  public:
+    BitmapWidget() {}
+    BitmapWidget(WidgetConfig wconf, const uint8_t* bmp, uint8_t w, uint8_t h, uint16_t fgcolor, uint16_t bgcolor) {
+      init(wconf, bmp, w, h, fgcolor, bgcolor);
+    }
+    using Widget::init;
+    void init(WidgetConfig wconf, const uint8_t* bmp, uint8_t w, uint8_t h, uint16_t fgcolor, uint16_t bgcolor);
+    void setBitmap(const uint8_t* bmp, uint8_t w, uint8_t h);
+  protected:
+    const uint8_t* _bmp = nullptr;
+    uint8_t _bw = 0;
+    uint8_t _bh = 0;
+    void _draw();
+    void _clear();
+};
+
 class TextWidget: public Widget {
   public:
     TextWidget() {}

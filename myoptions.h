@@ -35,12 +35,20 @@
 /******************************************/
 
 /******************************************/
-//#define LED_BUILTIN_S3    18     /* S3-onboard RGB led pin */
-//#define USE_BUILTIN_LED true /* The RGB LED turns on.. */
+#define LED_BUILTIN_S3    255     /* S3-onboard LED pin */
+#define USE_BUILTIN_LED false /* The LED doesn't turn on.. */
+
+// ProS3 has an onboard NeoPixel (WS2812) on GPIO18.
+// We'll initialize it in `src/yoradio_user.cpp` and set it to black at boot to
+// prevent it latching random colors from boot-time pin noise.
+#define BUILTIN_NEOPIXEL_PIN 18
 
 // Optional cap for the ledstrip plugin (separate from LEDSTRIP_BRIGHTNESS).
 // Uncomment if you ever enable `USE_LEDSTRIP_PLUGIN`.
-// #define LEDSTRIP_MAX_BRIGHTNESS_PCT 5
+//#define LEDSTRIP_MAX_BRIGHTNESS_PCT 5
+//#define USE_LEDSTRIP_PLUGIN
+//#define LEDSTRIP_PIN    48      // GPIO pin connected to LED data line
+//#define LEDSTRIP_COUNT  144     // total number of LEDs (must be even)
 /*****************************************/
 //#define DSP_MODEL DSP_ILI9486
 //#define DSP_MODEL DSP_ILI9488

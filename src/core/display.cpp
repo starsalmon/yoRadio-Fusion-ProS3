@@ -15,6 +15,7 @@
 #include "../displays/widgets/pages.h"
 #include "../displays/tools/l10n.h"
 #include "../battery.h"
+#include "../displays/bitmaps/footer_icons_16.h"
 
 Display display;
 #ifdef USE_NEXTION
@@ -54,6 +55,22 @@ Nextion nextion;
 #endif
 
 QueueHandle_t displayQueue;
+
+static char batteryIconGlyph(float pct, bool charging) {
+  // 8 dedicated classic glyph slots in fonts/glcdfont_EN.c
+  // Non-charging:   027 high, 030 med, 031 low, 032 vlow
+  // Charging:       033 high, 036 med, 037 low, 017 vlow
+  if (charging) {
+    if (pct >= 75.0f) return '\033';
+    if (pct >= 45.0f) return '\036';
+    if (pct >= 20.0f) return '\037';
+    return '\017';
+  }
+  if (pct >= 75.0f) return '\027';
+  if (pct >= 45.0f) return '\030';
+  if (pct >= 20.0f) return '\031';
+  return '\032';
+}
 
 static void loopDspTask(void * pvParameters){
   while(true){
@@ -237,8 +254,26 @@ void Display::_buildPager(){
       _ipIcon->setText("\010"); // IP icon glyph in glcdfont_EN.c
     #endif
     #ifndef HIDE_VOL
-      _volIcon = new TextWidget(voliconConf, 4, false, config.theme.vol, config.theme.background);
-      _volIcon->setText("\023"); // speaker glyph
+      _volIcon = new BitmapWidget(voliconConf, ICON_SPK_24, ICON_W, ICON_H, config.theme.vol, config.theme.background);
+    #endif
+    #ifndef HIDE_BAT
+      {
+        const float pct = battery_is_ready() ? battery_get_percent() : 0.0f;
+        const bool charging = battery_usb_present() && (battery_get_charge_rate() > 0.5f);
+        const uint8_t* bmp = ICON_BAT_VLOW_24;
+        if (charging) {
+          if (pct >= 75.0f) bmp = ICON_BAT_HIGH_CHG_24;
+          else if (pct >= 45.0f) bmp = ICON_BAT_MED_CHG_24;
+          else if (pct >= 20.0f) bmp = ICON_BAT_LOW_CHG_24;
+          else bmp = ICON_BAT_VLOW_CHG_24;
+        } else {
+          if (pct >= 75.0f) bmp = ICON_BAT_HIGH_24;
+          else if (pct >= 45.0f) bmp = ICON_BAT_MED_24;
+          else if (pct >= 20.0f) bmp = ICON_BAT_LOW_24;
+          else bmp = ICON_BAT_VLOW_24;
+        }
+        _batIcon = new BitmapWidget(baticonConf, bmp, ICON_W, ICON_H, config.theme.rssi, config.theme.background);
+      }
     #endif
     #ifndef HIDE_RSSI
       _rssiIcon = new TextWidget(rssibarConf, 4, false, config.theme.rssi, config.theme.background);
@@ -258,6 +293,7 @@ void Display::_buildPager(){
   #if DSP_MODEL==DSP_ILI9341
     if(_volIcon)  _footer->addWidget(_volIcon);
     if(_ipIcon)   _footer->addWidget(_ipIcon);
+    if(_batIcon)  _footer->addWidget(_batIcon);
     if(_rssiIcon) _footer->addWidget(_rssiIcon);
   #endif
   if(_voltxt)   _footer->addWidget( _voltxt);
@@ -782,6 +818,23 @@ void Display::loop() {
         case NEWBATTERY:
             if (_battxt)
                 _battxt->setText((int)battery_get_percent(), battxtFmt);
+            if (_batIcon) {
+                const float pct = battery_is_ready() ? battery_get_percent() : 0.0f;
+                const bool charging = battery_usb_present() && (battery_get_charge_rate() > 0.5f);
+                const uint8_t* bmp = ICON_BAT_VLOW_24;
+                if (charging) {
+                  if (pct >= 75.0f) bmp = ICON_BAT_HIGH_CHG_24;
+                  else if (pct >= 45.0f) bmp = ICON_BAT_MED_CHG_24;
+                  else if (pct >= 20.0f) bmp = ICON_BAT_LOW_CHG_24;
+                  else bmp = ICON_BAT_VLOW_CHG_24;
+                } else {
+                  if (pct >= 75.0f) bmp = ICON_BAT_HIGH_24;
+                  else if (pct >= 45.0f) bmp = ICON_BAT_MED_24;
+                  else if (pct >= 20.0f) bmp = ICON_BAT_LOW_24;
+                  else bmp = ICON_BAT_VLOW_24;
+                }
+                _batIcon->setBitmap(bmp, ICON_W, ICON_H);
+            }
             break;
         default: break;
 

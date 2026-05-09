@@ -5,6 +5,7 @@
 #include "mqtt.h"
 #include "WiFi.h"
 #include "player.h"
+#include "../battery.h"
 
 AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
@@ -34,6 +35,7 @@ void onMqttConnect(bool sessionPresent) {
   mqttPublishStatus();
   mqttPublishVolume();
   mqttPublishPlaylist();
+  mqttPublishBattery();
 }
 
 void mqttPublishStatus() {
@@ -67,6 +69,36 @@ void mqttPublishVolume(){
     sprintf(vol, "%d", config.store.volume);
     mqttClient.publish(topic, 0, true, vol);
   }
+}
+
+void mqttPublishBattery() {
+  if (!mqttClient.connected()) return;
+
+  // Publish a single retained JSON payload so automations have one place to read from.
+  // Keep it short to fit into the existing buffers.
+  zeroBuffer();
+  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "battery");
+
+  const bool ready = battery_is_ready();
+  const bool usb = battery_usb_present();
+  const float pct = ready ? battery_get_percent() : 0.0f;
+  const float v = ready ? battery_get_voltage() : 0.0f;
+  const float rate = ready ? battery_get_charge_rate() : 0.0f;
+
+  const char* state = "unknown";
+  if (!ready) state = "unavailable";
+  else if (usb && rate > 0.5f) state = "charging";
+  else if (usb && pct >= 99.0f) state = "full";
+  else if (usb) state = "usb";
+  else if (rate < -0.5f) state = "discharging";
+  else state = "battery";
+
+  // Example:
+  // {"usb":1,"state":"charging","percent":87.2,"voltage":4.041,"rate":12.3}
+  snprintf(status, sizeof(status),
+           "{\"usb\":%d,\"state\":\"%s\",\"percent\":%.1f,\"voltage\":%.3f,\"rate\":%.1f}",
+           usb ? 1 : 0, state, pct, v, rate);
+  mqttClient.publish(topic, 0, true, status);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {

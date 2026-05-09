@@ -11,14 +11,14 @@
 #define DEFAULT_DIM_INTERVAL  60
 
 #ifndef FADE_STEP
-#define FADE_STEP 12  // 12 step = ~10sec
+#define FADE_STEP 1
 #endif
 
 #ifndef FADE_PERIOD
-    #define FADE_PERIOD 1000 // A sötétedési lépcsők között eltelt idő nagyobb mint 499
+    #define FADE_PERIOD 1000
 #endif
 
-BacklightPlugin backlightPlugin; // globalis példány
+BacklightPlugin backlightPlugin; // Global Instance
 
 BacklightPlugin::BacklightPlugin() {}
 
@@ -46,7 +46,7 @@ void BacklightPlugin::activity() {
 }
 
 bool BacklightPlugin::justWoke() const {
-    return (millis() - lastUiWakeMs) < 500; // Ébresztés után ennyi ideig nem veszi figyelembe az érintéseket.
+    return (millis() - lastUiWakeMs) < 500; // After waking up, it ignores touches for this amount of time.
 }
 
 

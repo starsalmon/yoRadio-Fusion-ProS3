@@ -10,7 +10,6 @@
 #include <time.h> /* ----- Auto On-Off Timer ----- */
 #include "../displays/tools/l10n.h"
 #include "../pluginsManager/pluginsManager.h"
-#include "builtin_led.hpp"
 #ifdef USE_NEXTION
 #include "../displays/nextion.h"
 #endif
@@ -57,12 +56,14 @@ void Player::init() {
   _resumeFilePos = 0;
   _hasError=false;
   playerQueue = xQueueCreate( 8, sizeof( playerRequestParams_t ) ); //volt 5
+  // Ensure pins used in setOutputPins() are configured before first write.
+  if (REAL_LEDBUILTIN != 255) pinMode(REAL_LEDBUILTIN, OUTPUT);
+  if (MUTE_PIN != 255) pinMode(MUTE_PIN, OUTPUT);
   setOutputPins(false);
   delay(50);
 #ifdef MQTT_ROOT_TOPIC
   memset(burl, 0, MQTT_BURL_SIZE);
 #endif
-  if(MUTE_PIN!=255) pinMode(MUTE_PIN, OUTPUT);
   #if I2S_DOUT!=255
     #if !I2S_INTERNAL
       #ifndef I2S_MCLK
@@ -353,7 +354,7 @@ if (
 }
 
 void Player::setOutputPins(bool isPlaying) {
-  builtin_led_set(isPlaying);
+  if(REAL_LEDBUILTIN!=255) digitalWrite(REAL_LEDBUILTIN, LED_INVERT?!isPlaying:isPlaying);
   bool _ml = MUTE_LOCK?!MUTE_VAL:(isPlaying?!MUTE_VAL:MUTE_VAL);
   if(MUTE_PIN!=255) digitalWrite(MUTE_PIN, _ml);
 }

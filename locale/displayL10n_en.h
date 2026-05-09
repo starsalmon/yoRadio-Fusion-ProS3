@@ -111,7 +111,7 @@ const char  const_waitForSD[]    PROGMEM = "INDEX SD";
 
 const char        apNameTxt[]    PROGMEM = "AP NAME";
 const char        apPassTxt[]    PROGMEM = "PASSWORD";
-const char       bootstrFmt[]    PROGMEM = "Trying to %s";
+const char       bootstrFmt[]    PROGMEM = "Connecting to %s";
 const char        apSettFmt[]    PROGMEM = "SETTINGS PAGE ON: HTTP://%s/";
 
 #if (DSP_MODEL == DSP_ILI9341) || (DSP_MODEL == DSP_ST7735) || (DSP_MODEL == DSP_ST7789) || (DSP_MODEL == DSP_ST7789_76)

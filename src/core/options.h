@@ -222,19 +222,19 @@ The connection tables are located here https://github.com/e2002/yoradio#connecti
 #endif
 
 #ifndef TS_CS
-  #define TS_CS                 13
+  #define TS_CS                 255
 #endif
 #ifndef TS_SDA
-  #define TS_SDA                33
+  #define TS_SDA                255
 #endif
 #ifndef TS_SCL
-  #define TS_SCL                32
+  #define TS_SCL                255
 #endif
 #ifndef TS_INT
-  #define TS_INT                21
+  #define TS_INT                255
 #endif
 #ifndef TS_RST
-  #define TS_RST                25
+  #define TS_RST                255
 #endif
 
 #ifndef TS_HSPI

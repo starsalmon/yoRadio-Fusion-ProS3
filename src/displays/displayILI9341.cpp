@@ -10,11 +10,6 @@ DspCore::DspCore(): Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST) {}
 #endif
 
 void DspCore::initDisplay() {
-#if DSP_HSPI
-  // ESP32-S3: the HSPI instance does not have default pins.
-  // Bind the board's actual display SPI pins before the driver calls begin().
-  SPI2.begin(TFT_SCK, TFT_MISO, TFT_MOSI, TFT_CS);
-#endif
   begin();             /* SPI_DEFAULT_FREQ 40000000 */
   
   invert();

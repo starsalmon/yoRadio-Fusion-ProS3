@@ -12,7 +12,8 @@
 #include "mqtt.h"
 #include "timekeeper.h"
 #include "../pluginsManager/pluginsManager.h"
-#include "builtin_led.hpp"
+
+#include <WiFi.h>
 
 #ifndef WIFI_ATTEMPTS
   #define WIFI_ATTEMPTS  16
@@ -22,6 +23,28 @@
   #define SEARCH_WIFI_CORE_ID  0
 #endif
 MyNetwork network;
+
+static void printWifiDiag(const char* tag) {
+  const wl_status_t st = WiFi.status();
+  if (st != WL_CONNECTED) {
+    Serial.printf("[wifi] %s: not connected (status=%d)\n", tag, (int)st);
+    return;
+  }
+
+  const uint8_t* b = WiFi.BSSID();
+  uint8_t bssid[6] = {0, 0, 0, 0, 0, 0};
+  if (b) memcpy(bssid, b, 6);
+
+  Serial.printf(
+    "[wifi] %s: ssid=\"%s\" ip=%s rssi=%d ch=%d bssid=%02X:%02X:%02X:%02X:%02X:%02X\n",
+    tag,
+    WiFi.SSID().c_str(),
+    config.ipToStr(WiFi.localIP()),
+    WiFi.RSSI(),
+    WiFi.channel(),
+    bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]
+  );
+}
 
 void MyNetwork::WiFiReconnected(WiFiEvent_t event, WiFiEventInfo_t info){
   network.beginReconnect = false;
@@ -38,6 +61,7 @@ void MyNetwork::WiFiReconnected(WiFiEvent_t event, WiFiEventInfo_t info){
   #ifdef MQTT_ROOT_TOPIC
     connectToMqtt();
   #endif
+  printWifiDiag("reconnected");
 }
 
 void MyNetwork::WiFiLostConnection(WiFiEvent_t event, WiFiEventInfo_t info){
@@ -56,73 +80,6 @@ void MyNetwork::WiFiLostConnection(WiFiEvent_t event, WiFiEventInfo_t info){
   WiFi.reconnect();
 }
 
-bool MyNetwork::wifiBegin(bool silent){
-	
-  	// Hard WiFi reset before starting
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    delay(1000);  // Longer delay
-    WiFi.mode(WIFI_STA);
-    delay(500);
-	
-  uint8_t ls = (config.store.lastSSID == 0 || config.store.lastSSID > config.ssidsCount) ? 0 : config.store.lastSSID - 1;
-  uint8_t startedls = ls;
-  uint8_t errcnt = 0;
-  
-  while (true) {
-    if(!silent){
-      Serial.printf("##[BOOT]#\tAttempt to connect to %s\n", config.ssids[ls].ssid);
-      Serial.print("##[BOOT]#\t");
-      display.putRequest(BOOTSTRING, ls);
-    }
-    // KEY: wait until WiFi is in a ready state
-        WiFi.disconnect(true);
-        while(WiFi.status() == WL_CONNECTED) {
-		delay(100);
-		};
-        
-        // Check whether WiFi is ready
-        int waitCount = 0;
-        while(WiFi.status() == WL_DISCONNECTED && waitCount < 20) {
-            delay(100);
-            waitCount++;
-        }
-        
-        // Force IDLE state if it's still connecting
-        if(WiFi.status() != WL_IDLE_STATUS && WiFi.status() != WL_DISCONNECTED) {
-            WiFi.mode(WIFI_OFF);
-            delay(500);
-            WiFi.mode(WIFI_STA);
-            delay(500);
-        }
-    WiFi.begin(config.ssids[ls].ssid, config.ssids[ls].password);
-    while (WiFi.status() != WL_CONNECTED) {
-      if(!silent) Serial.print(".");
-      delay(500);
-      if(!silent) builtin_led_toggle();
-      errcnt++;
-      if (errcnt > WIFI_ATTEMPTS) {
-        errcnt = 0;
-        ls++;
-        if (ls > config.ssidsCount - 1) ls = 0;
-        if(!silent) Serial.println();
-        WiFi.mode(WIFI_OFF);
-        break;
-      }
-    }
-    if (WiFi.status() != WL_CONNECTED && ls == startedls) {
-      return false; break;
-    }
-    if (WiFi.status() == WL_CONNECTED) {
-      config.setLastSSID(ls + 1);
-      return true; break;
-    }
-  }
-  return false;
-}
-
-
-/*
 bool MyNetwork::wifiBegin(bool silent){
   uint8_t ls = (config.store.lastSSID == 0 || config.store.lastSSID > config.ssidsCount) ? 0 : config.store.lastSSID - 1;
   uint8_t startedls = ls;
@@ -162,7 +119,7 @@ bool MyNetwork::wifiBegin(bool silent){
   }
   return false;
 }
-*/
+
 void searchWiFi(void * pvParameters){
   if(!network.wifiBegin(true)){
     delay(10000);
@@ -173,6 +130,7 @@ void searchWiFi(void * pvParameters){
     telnet.begin(true);
     network.setWifiParams();
     display.putRequest(NEWIP, 0);
+    printWifiDiag("boot(sdready)");
     #ifdef MQTT_ROOT_TOPIC
       mqttInit();
     #endif
@@ -198,6 +156,7 @@ void MyNetwork::begin() {
     Serial.println(".");
     status = CONNECTED;
     setWifiParams();
+    printWifiDiag("boot");
     #ifdef MQTT_ROOT_TOPIC
       mqttInit();
     #endif
@@ -207,7 +166,7 @@ void MyNetwork::begin() {
   }
   
   Serial.println("##[BOOT]#\tdone");
-  builtin_led_set(false);
+  if(REAL_LEDBUILTIN!=255) digitalWrite(REAL_LEDBUILTIN, LOW);
   
 #if RTCSUPPORTED
   if(config.isRTCFound()){

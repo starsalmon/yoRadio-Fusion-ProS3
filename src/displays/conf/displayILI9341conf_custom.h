@@ -47,30 +47,61 @@ const FillConfig heapbarConf    PROGMEM = {{ 0, 239, 0, WA_LEFT }, DSP_WIDTH, 1,
 const WidgetConfig bootstrConf  PROGMEM = { 0, 190, 0, WA_CENTER };
 const WidgetConfig bitrateConf  PROGMEM = { 70, 191, 1, WA_LEFT };
 
+// Footer vertical alignment:
+// Anchor all footer icons off the volume bar so spacing stays consistent.
+#define VOLBAR_TOP         (240 - TFT_FRAMEWDT - 6) // matches volbarConf top
+#define ICON_PAD_ABOVE_BAR 1
+#define ICON_BOTTOM_Y      (VOLBAR_TOP - ICON_PAD_ABOVE_BAR)
+
+// Icon sizes (px)
+// Keep widths/heights together so layout math is consistent.
+#define VOL_ICON_W         18
+#define VOL_ICON_H         18
+#define BAT_ICON_W         22
+#define BAT_ICON_H         12
+#define BAT_BOLT_W         9
+#define BAT_BOLT_H         12
+#define CLASSIC_ICON_H     16  // classic 5x7 @2x
+#define LAN_ICON_W         18
+#define LAN_ICON_H         20
+
+#define VOL_ICON_TOP       (ICON_BOTTOM_Y - VOL_ICON_H)
+#define BAT_ICON_TOP       (ICON_BOTTOM_Y - BAT_ICON_H)
+#define BAT_BOLT_TOP       (ICON_BOTTOM_Y - BAT_BOLT_H)
+#define CLASSIC_ICON_TOP   (ICON_BOTTOM_Y - CLASSIC_ICON_H)
+#define LAN_ICON_TOP       (ICON_BOTTOM_Y - LAN_ICON_H)
+
 // Footer volume layout:
 // - Speaker icon stays fixed
 // - Volume text is left-anchored right next to it (so 9% vs 99% doesn't shift spacing)
-#define VOL_ICON_LEFT      ((DSP_WIDTH / 2) - 18)
-#define VOL_ICON_BOX_W     24  // bitmap icon width
+#define VOL_ICON_LEFT      ((DSP_WIDTH / 2) - 6)
 #define VOL_ICON_TEXT_PAD  2
-#define VOL_TEXT_LEFT      (VOL_ICON_LEFT + VOL_ICON_BOX_W + VOL_ICON_TEXT_PAD)
+#define VOL_TEXT_LEFT      (VOL_ICON_LEFT + VOL_ICON_W + VOL_ICON_TEXT_PAD)
 
 // Footer battery layout (right side):
 // - Battery icon stays fixed
 // - Battery percent is left-anchored next to it
-// We reserve a fixed group width so the whole battery cluster doesn't drift.
+// Compute battery cluster from a single right limit so it stays clear/consistent.
 #define RSSI_ICON_W        24  // classic bars "\001\002" at 2x: 2 chars * 12px
-#define FOOTER_GAP         6
-#define BAT_GROUP_W        64
-#define BAT_GROUP_LEFT     (DSP_WIDTH - TFT_FRAMEWDT - RSSI_ICON_W - FOOTER_GAP - BAT_GROUP_W - 10)
-#define BAT_ICON_LEFT      (BAT_GROUP_LEFT)
-#define BAT_ICON_BOX_W     24  // bitmap icon width
+#define FOOTER_GAP         8   // space between battery cluster and RSSI bars (move cluster left)
+#define BAT_GROUP_W        50  // reserves room for icon + "100%" (tight, to pull cluster right)
+#define BAT_RIGHT_LIMIT    (DSP_WIDTH - TFT_FRAMEWDT - RSSI_ICON_W - FOOTER_GAP)
+#define BAT_ICON_LEFT      (BAT_RIGHT_LIMIT - BAT_GROUP_W)
 #define BAT_ICON_TEXT_PAD  2
-#define BAT_TEXT_LEFT      (BAT_ICON_LEFT + BAT_ICON_BOX_W + BAT_ICON_TEXT_PAD)
+#define BAT_TEXT_LEFT      (BAT_ICON_LEFT + BAT_ICON_W + BAT_ICON_TEXT_PAD)
+
+// Optional charging indicator (bolt) shown when 5V sense is on.
+#define BAT_BOLT_PAD       2
+#define BAT_BOLT_LEFT      (BAT_ICON_LEFT - BAT_BOLT_PAD - BAT_BOLT_W)
 // Footer (bottom row): use a slightly larger DejaVu GFXfont (smooth, not blocky).
 // textsize=7 maps to DejaVuSans8_HU via yoScrollFont() default branch.
 const WidgetConfig voltxtConf   PROGMEM = { VOL_TEXT_LEFT, 210, 7, WA_LEFT };
-const WidgetConfig iptxtConf    PROGMEM = { TFT_FRAMEWDT + 14, 210, 7, WA_LEFT };
+// LAN/IP icon + text
+#define LAN_ICON_LEFT      (TFT_FRAMEWDT)
+#define LAN_ICON_TEXT_PAD  2
+#define IP_TEXT_LEFT       (LAN_ICON_LEFT + LAN_ICON_W + LAN_ICON_TEXT_PAD)
+
+const WidgetConfig iptxtConf    PROGMEM = { IP_TEXT_LEFT, 210, 7, WA_LEFT };
 const WidgetConfig rssiConf     PROGMEM = { TFT_FRAMEWDT + 26, 210, 7, WA_RIGHT };   // leave room for wifi bars icon
 const WidgetConfig battxtConf   PROGMEM = { BAT_TEXT_LEFT, 210, 7, WA_LEFT };
 
@@ -78,10 +109,12 @@ const WidgetConfig battxtConf   PROGMEM = { BAT_TEXT_LEFT, 210, 7, WA_LEFT };
 // smooth DejaVu text while still showing icon glyphs.
 // Icons at 2x (classic) to match the earlier “big icons” look.
 // 100+X forces classic font scaling (see TextWidget::init).
-const WidgetConfig ipiconConf   PROGMEM = { TFT_FRAMEWDT, 210, 102, WA_LEFT };           // "\010"
-const WidgetConfig voliconConf  PROGMEM = { VOL_ICON_LEFT, 210, 102, WA_LEFT };   // "\023"
-const WidgetConfig baticonConf  PROGMEM = { BAT_ICON_LEFT, 210, 102, WA_LEFT };    // "\027..\037"
-const WidgetConfig rssibarConf  PROGMEM = { TFT_FRAMEWDT, 210, 102, WA_RIGHT };          // "\001..\006"
+const WidgetConfig ipiconConf   PROGMEM = { LAN_ICON_LEFT, LAN_ICON_TOP, 102, WA_LEFT };
+const WidgetConfig voliconConf  PROGMEM = { VOL_ICON_LEFT, VOL_ICON_TOP, 102, WA_LEFT };
+// Battery bitmap is 22x12; top is tuned to align visually with footer text.
+const WidgetConfig baticonConf  PROGMEM = { BAT_ICON_LEFT, BAT_ICON_TOP, 102, WA_LEFT };
+const WidgetConfig batchgConf   PROGMEM = { BAT_BOLT_LEFT, BAT_BOLT_TOP, 102, WA_LEFT };
+const WidgetConfig rssibarConf  PROGMEM = { TFT_FRAMEWDT, CLASSIC_ICON_TOP, 102, WA_RIGHT };
 const WidgetConfig numConf      PROGMEM = { 0, 150, 0, WA_CENTER };
 const WidgetConfig apNameConf   PROGMEM = { TFT_FRAMEWDT, 66, 2, WA_CENTER };
 const WidgetConfig apName2Conf  PROGMEM = { TFT_FRAMEWDT, 90, 2, WA_CENTER };

@@ -77,10 +77,11 @@ class Display {
     Page *_boot;
     TextWidget *_bootstring, *_volip, *_voltxt, *_rssi, *_bitrate;
     TextWidget* _battxt = nullptr;
-    TextWidget* _ipIcon = nullptr;
+    BitmapWidget* _ipIcon = nullptr;
     BitmapWidget* _volIcon = nullptr;
     TextWidget* _rssiIcon = nullptr;
     BitmapWidget* _batIcon = nullptr;
+    BitmapWidget* _batChgIcon = nullptr;
     bool _locked = false;
     uint8_t _bootStep;
     void _time(bool redraw = false);

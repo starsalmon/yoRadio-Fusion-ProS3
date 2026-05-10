@@ -155,6 +155,8 @@ void battery_update() {
             Serial.printf("5V sense changed: %s\n", usbPresent ? "ON" : "OFF");
             // USB power-path changes can shift BAT node behavior; re-seed SOC once.
             pendingQuickStart = true;
+            // Update display immediately (charging indicator depends on 5V sense).
+            display.putRequest(NEWBATTERY);
 #ifdef MQTT_ROOT_TOPIC
             mqttPublishBattery();
 #endif

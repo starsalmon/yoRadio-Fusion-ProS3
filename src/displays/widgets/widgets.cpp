@@ -228,11 +228,12 @@ void FillWidget::setHeight(uint16_t newHeight){
 /************************
       BITMAP WIDGET
  ************************/
-void BitmapWidget::init(WidgetConfig wconf, const uint8_t* bmp, uint8_t w, uint8_t h, uint16_t fgcolor, uint16_t bgcolor){
+void BitmapWidget::init(WidgetConfig wconf, const uint8_t* bmp, uint8_t w, uint8_t h, uint16_t fgcolor, uint16_t bgcolor, BitmapFormat fmt){
   Widget::init(wconf, fgcolor, bgcolor);
   _bmp = bmp;
   _bw = w;
   _bh = h;
+  _fmt = fmt;
 }
 
 void BitmapWidget::setBitmap(const uint8_t* bmp, uint8_t w, uint8_t h){
@@ -251,7 +252,11 @@ void BitmapWidget::_clear(){
 
 void BitmapWidget::_draw(){
   if(!_active || _locked || !_bmp) return;
-  dsp.drawXBitmap(_config.left, _config.top, _bmp, _bw, _bh, _fgcolor);
+  if (_fmt == BitmapFormat::GFX_MSB) {
+    dsp.drawBitmap(_config.left, _config.top, _bmp, _bw, _bh, _fgcolor);
+  } else {
+    dsp.drawXBitmap(_config.left, _config.top, _bmp, _bw, _bh, _fgcolor);
+  }
 }
 /************************
       TEXT WIDGET

@@ -64,19 +64,27 @@ class Widget{
     virtual void _reset() {}
 };
 
+enum class BitmapFormat : uint8_t {
+  // XBM: 1-bit, LSB-first within each byte (AdafruitGFX drawXBitmap)
+  XBM_LSB = 0,
+  // GFX bitmap: 1-bit, MSB-first within each byte (AdafruitGFX drawBitmap)
+  GFX_MSB = 1,
+};
+
 class BitmapWidget: public Widget {
   public:
     BitmapWidget() {}
-    BitmapWidget(WidgetConfig wconf, const uint8_t* bmp, uint8_t w, uint8_t h, uint16_t fgcolor, uint16_t bgcolor) {
-      init(wconf, bmp, w, h, fgcolor, bgcolor);
+    BitmapWidget(WidgetConfig wconf, const uint8_t* bmp, uint8_t w, uint8_t h, uint16_t fgcolor, uint16_t bgcolor, BitmapFormat fmt = BitmapFormat::XBM_LSB) {
+      init(wconf, bmp, w, h, fgcolor, bgcolor, fmt);
     }
     using Widget::init;
-    void init(WidgetConfig wconf, const uint8_t* bmp, uint8_t w, uint8_t h, uint16_t fgcolor, uint16_t bgcolor);
+    void init(WidgetConfig wconf, const uint8_t* bmp, uint8_t w, uint8_t h, uint16_t fgcolor, uint16_t bgcolor, BitmapFormat fmt = BitmapFormat::XBM_LSB);
     void setBitmap(const uint8_t* bmp, uint8_t w, uint8_t h);
   protected:
     const uint8_t* _bmp = nullptr;
     uint8_t _bw = 0;
     uint8_t _bh = 0;
+    BitmapFormat _fmt = BitmapFormat::XBM_LSB;
     void _draw();
     void _clear();
 };

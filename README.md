@@ -13,6 +13,15 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 - **ILI9341 footer UX**: smooth DejaVu text + separate classic icon widgets; volume icon + text are positioned so 1–3 digit values don’t “drift”
 - **Cursor/clangd hygiene**: `.clangd` removes toolchain-only flags for cleaner diagnostics
 
+### TODO / Roadmap
+
+- **Battery icon color**: colorize by state (charging / low / normal)
+- **IR control UX**: set up IR receiver + add flashing “IR RX” icon on-screen
+- **MQTT sleep**: allow sending a sleep command via MQTT
+- **Home Assistant**: MQTT discovery (auto-create sensors + buttons)
+- **SD playback resume**: resume last track + position (not restart at first file)
+- **Album art + station logos**: display on screen (likely larger change)
+
 ### Automatic patching (PlatformIO pre-build)
 
 This repo includes a small PlatformIO pre-build script that applies two patches automatically:

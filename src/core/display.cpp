@@ -250,29 +250,37 @@ void Display::_buildPager(){
   // Footer icons for ILI9341: keep classic glyph icons alongside smooth text.
   #if DSP_MODEL==DSP_ILI9341
     #ifndef HIDE_IP
-      _ipIcon = new TextWidget(ipiconConf, 4, false, config.theme.ip, config.theme.background);
-      _ipIcon->setText("\010"); // IP icon glyph in glcdfont_EN.c
+      _ipIcon = new BitmapWidget(ipiconConf, ICON_LAN_18x20, ICON_LAN_W, ICON_LAN_H, config.theme.ip, config.theme.background, BitmapFormat::GFX_MSB);
     #endif
     #ifndef HIDE_VOL
-      _volIcon = new BitmapWidget(voliconConf, ICON_SPK_24, ICON_W, ICON_H, config.theme.vol, config.theme.background);
+      {
+        int vol = config.store.volume;
+        if (vol > 100) vol = 100;
+        if (vol < 0) vol = 0;
+        const uint8_t* vbmp = (vol <= 33) ? ICON_VOL_MUTE_18 : (vol <= 66) ? ICON_VOL_DOWN_18 : ICON_VOL_UP_18;
+        _volIcon = new BitmapWidget(voliconConf, vbmp, ICON_VOL_W, ICON_VOL_H, config.theme.vol, config.theme.background, BitmapFormat::GFX_MSB);
+      }
     #endif
     #ifndef HIDE_BAT
       {
         const float pct = battery_is_ready() ? battery_get_percent() : 0.0f;
-        const bool charging = battery_usb_present() && (battery_get_charge_rate() > 0.5f);
-        const uint8_t* bmp = ICON_BAT_VLOW_24;
-        if (charging) {
-          if (pct >= 75.0f) bmp = ICON_BAT_HIGH_CHG_24;
-          else if (pct >= 45.0f) bmp = ICON_BAT_MED_CHG_24;
-          else if (pct >= 20.0f) bmp = ICON_BAT_LOW_CHG_24;
-          else bmp = ICON_BAT_VLOW_CHG_24;
-        } else {
-          if (pct >= 75.0f) bmp = ICON_BAT_HIGH_24;
-          else if (pct >= 45.0f) bmp = ICON_BAT_MED_24;
-          else if (pct >= 20.0f) bmp = ICON_BAT_LOW_24;
-          else bmp = ICON_BAT_VLOW_24;
-        }
-        _batIcon = new BitmapWidget(baticonConf, bmp, ICON_W, ICON_H, config.theme.rssi, config.theme.background);
+        const auto bmpForPct = [](float p) -> const uint8_t* {
+          if (p >= 99.5f) return ICON_BAT_FULL_12;
+          if (p >= 91.0f) return ICON_BAT_90_12;
+          if (p >= 80.0f) return ICON_BAT_80_12;
+          if (p >= 60.0f) return ICON_BAT_60_12;
+          if (p >= 40.0f) return ICON_BAT_40_12;
+          if (p >= 20.0f) return ICON_BAT_20_12;
+          if (p >= 10.0f) return ICON_BAT_10_12;
+          return ICON_BAT_EMPTY_12;
+        };
+        const uint8_t* bmp = bmpForPct(pct);
+        _batIcon = new BitmapWidget(baticonConf, bmp, ICON_BAT_W, ICON_BAT_H, config.theme.rssi, config.theme.background, BitmapFormat::GFX_MSB);
+      }
+      // Charging bolt icon (visible only when 5V sense is on)
+      {
+        const uint8_t* bbmp = battery_usb_present() ? ICON_BOLT_9x12 : nullptr;
+        _batChgIcon = new BitmapWidget(batchgConf, bbmp, ICON_BOLT_W, ICON_BOLT_H, config.theme.rssi, config.theme.background, BitmapFormat::GFX_MSB);
       }
     #endif
     #ifndef HIDE_RSSI
@@ -289,10 +297,10 @@ void Display::_buildPager(){
    #endif
   #endif
   
-  if(_volbar)   _footer->addWidget( _volbar);
   #if DSP_MODEL==DSP_ILI9341
     if(_volIcon)  _footer->addWidget(_volIcon);
     if(_ipIcon)   _footer->addWidget(_ipIcon);
+    if(_batChgIcon) _footer->addWidget(_batChgIcon);
     if(_batIcon)  _footer->addWidget(_batIcon);
     if(_rssiIcon) _footer->addWidget(_rssiIcon);
   #endif
@@ -301,6 +309,8 @@ void Display::_buildPager(){
   if(_battxt)   _footer->addWidget( _battxt);
   if(_rssi)     _footer->addWidget( _rssi);
   if(_heapbar)  _footer->addWidget( _heapbar);
+  // Draw volume bar last so it stays visible even if any icon clears overlap it.
+  if(_volbar)   _footer->addWidget( _volbar);
   
   if(_metabackground) pages[PG_PLAYER]->addWidget( _metabackground);
   pages[PG_PLAYER]->addWidget(_meta);
@@ -818,22 +828,31 @@ void Display::loop() {
         case NEWBATTERY:
             if (_battxt)
                 _battxt->setText((int)battery_get_percent(), battxtFmt);
+            if (_batChgIcon) {
+                const uint8_t* bbmp = battery_usb_present() ? ICON_BOLT_9x12 : nullptr;
+                _batChgIcon->setBitmap(bbmp, ICON_BOLT_W, ICON_BOLT_H);
+            }
             if (_batIcon) {
                 const float pct = battery_is_ready() ? battery_get_percent() : 0.0f;
-                const bool charging = battery_usb_present() && (battery_get_charge_rate() > 0.5f);
-                const uint8_t* bmp = ICON_BAT_VLOW_24;
-                if (charging) {
-                  if (pct >= 75.0f) bmp = ICON_BAT_HIGH_CHG_24;
-                  else if (pct >= 45.0f) bmp = ICON_BAT_MED_CHG_24;
-                  else if (pct >= 20.0f) bmp = ICON_BAT_LOW_CHG_24;
-                  else bmp = ICON_BAT_VLOW_CHG_24;
-                } else {
-                  if (pct >= 75.0f) bmp = ICON_BAT_HIGH_24;
-                  else if (pct >= 45.0f) bmp = ICON_BAT_MED_24;
-                  else if (pct >= 20.0f) bmp = ICON_BAT_LOW_24;
-                  else bmp = ICON_BAT_VLOW_24;
-                }
-                _batIcon->setBitmap(bmp, ICON_W, ICON_H);
+                const auto bmpForPct = [](float p) -> const uint8_t* {
+                  if (p >= 99.5f) return ICON_BAT_FULL_12;
+                  if (p >= 91.0f) return ICON_BAT_90_12;
+                  if (p >= 80.0f) return ICON_BAT_80_12;
+                  if (p >= 60.0f) return ICON_BAT_60_12;
+                  if (p >= 40.0f) return ICON_BAT_40_12;
+                  if (p >= 20.0f) return ICON_BAT_20_12;
+                  if (p >= 10.0f) return ICON_BAT_10_12;
+                  return ICON_BAT_EMPTY_12;
+                };
+                const uint8_t* bmp = bmpForPct(pct);
+                _batIcon->setBitmap(bmp, ICON_BAT_W, ICON_BAT_H);
+            }
+            // Redraw the volume bar last so it always stays visible.
+            if (_volbar) {
+              int vol = config.store.volume;
+              if (vol > 100) vol = 100;
+              if (vol < 0) vol = 0;
+              _volbar->setValue(vol);
             }
             break;
         default: break;
@@ -1081,12 +1100,21 @@ void Display::_volume() {
 
 /* original function */
 void Display::_volume() {
+  int vol = (config.store.volume);
+  if (vol > 100) vol = 100;
+  if (vol < 0) vol = 0;
+
+  // Update volume icon first; it clears a 24x24 area, so we'll redraw the bar after.
+  #if DSP_MODEL==DSP_ILI9341
+    #ifndef HIDE_VOL
+      if (_volIcon) {
+        const uint8_t* vbmp = (vol <= 33) ? ICON_VOL_MUTE_18 : (vol <= 66) ? ICON_VOL_DOWN_18 : ICON_VOL_UP_18;
+        _volIcon->setBitmap(vbmp, ICON_VOL_W, ICON_VOL_H);
+      }
+    #endif
+  #endif
+
   if (_volbar) {                                // "vol_step" modification
-    int vol = (config.store.volume ); 
-    if (vol > 100)
-      vol = 100;
-    if (vol < 0)
-      vol = 0;
     _volbar->setValue(vol);
   }
   #ifndef HIDE_VOL

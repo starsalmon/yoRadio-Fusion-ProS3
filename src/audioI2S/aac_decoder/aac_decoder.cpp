@@ -62,15 +62,47 @@ int32_t AACDecoder::findSyncWord(uint8_t* buf, int32_t nBytes) {
         return true;
     };
 
-    /* find byte-aligned syncword (12 bits = 0xFFF) */
+    // ADTS: find byte-aligned syncword (12 bits = 0xFFF)
     for (int i = 0; i < nBytes - 1; i++) {
         if ((buf[i + 0] & SYNCWORDH) == SYNCWORDH && (buf[i + 1] & SYNCWORDL) == SYNCWORDL) {
+            // Need at least a full ADTS header to validate.
+            if (i + MIN_ADTS_HEADER_SIZE > nBytes) {
+                return -1;
+            }
+            if (!validate(&buf[i])) {
+                continue;
+            }
             int frame_length = ((buf[i + 3] & 0x03) << 11) | (buf[i + 4] << 3) | ((buf[i + 5] & 0xE0) >> 5);
             if (i + frame_length + MIN_ADTS_HEADER_SIZE > nBytes) {
-                return -1; // Puffergrenze überschritten, kein gültiger Header
+                // Frame continues into the next buffer. Return the position of this valid header
+                // so the caller can align without discarding data (important when the read block
+                // is smaller than an ADTS frame, common with higher bitrates).
+                return i;
             }
-            /* find a second byte-aligned syncword (12 bits = 0xFFF) */
-            if ((buf[i + frame_length + 0] & SYNCWORDH) == SYNCWORDH && (buf[i + frame_length + 1] & SYNCWORDL) == SYNCWORDL) { return validate(&buf[i]) ? i : -1; }
+            /* If the whole frame is in this buffer, optionally confirm the next syncword. */
+            if ((buf[i + frame_length + 0] & SYNCWORDH) == SYNCWORDH && (buf[i + frame_length + 1] & SYNCWORDL) == SYNCWORDL) {
+                return i;
+            }
+            // No second syncword found in this block; header was valid, so still accept it.
+            return i;
+        }
+    }
+
+    // LATM/LOAS: some HLS TS streams use AAC in LATM (no ADTS 0xFFF syncword).
+    // LOAS syncword is 11 bits: 0x2B7 (bytes often begin with 0x56, then upper bits 0xE0).
+    // We do a best-effort sync search here to avoid endless "syncword not found".
+    for (int i = 0; i < nBytes - 1; i++) {
+        if (buf[i] == 0x56 && (buf[i + 1] & 0xE0) == 0xE0) {
+            // Weak validation: look for another LOAS sync within the next window.
+            const int maxLookAhead = 512;
+            const int end = (i + maxLookAhead < nBytes - 1) ? (i + maxLookAhead) : (nBytes - 2);
+            for (int j = i + 2; j <= end; j++) {
+                if (buf[j] == 0x56 && (buf[j + 1] & 0xE0) == 0xE0) {
+                    return i;
+                }
+            }
+            // If we found a plausible start but can't validate within this buffer, still return it.
+            return i;
         }
     }
 

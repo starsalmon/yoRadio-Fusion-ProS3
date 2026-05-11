@@ -132,6 +132,7 @@ size_t AudioBuffer::bufferFilled() {
     if (!m_init) return 0;
     xSemaphoreTake(m_mutex, portMAX_DELAY);
     size_t bufferFilled = 0;
+    uint8_t* tailEnd = m_endPtr;
     if (m_readPtr == m_writePtr) {
         if (m_isEmpty) {
             bufferFilled = 0;
@@ -147,7 +148,11 @@ size_t AudioBuffer::bufferFilled() {
         bufferFilled = (size_t)(m_writePtr - m_readPtr);
         goto end;
     }
-    bufferFilled = (m_endPtr - m_readPtr) + (m_writePtr - m_startPtr);
+    // When using the "resBuff" region, readPtr can be >= m_endPtr. In that case,
+    // (m_endPtr - m_readPtr) would underflow and report a bogus huge fill level,
+    // which can make the stream look "ready" while readSpace() is 0.
+    tailEnd = (m_readPtr >= m_endPtr) ? m_buffEnd : m_endPtr;
+    bufferFilled = (size_t)(tailEnd - m_readPtr) + (size_t)(m_writePtr - m_startPtr);
 end:
     xSemaphoreGive(m_mutex);
     return bufferFilled;
@@ -235,9 +240,16 @@ size_t AudioBuffer::readSpace() {
 
     if (m_readPtr >= m_endPtr && m_writePtr <= m_endPtr) {
         size_t len = m_readPtr - m_endPtr;
-        if (m_writePtr > m_startPtr + len) {
+        // Remap the read pointer from the resBuff area back into the main buffer.
+        // Use >= (not >) so the equality case doesn't strand readPtr in resBuff,
+        // which can cause readSpace() to become 0 while bufferFilled() still appears large.
+        if (m_writePtr >= m_startPtr + len) {
             log_d("set new readptr to %i", len);
             m_readPtr = m_startPtr + len;
+            if (m_readPtr == m_writePtr) {
+                m_isEmpty = true;
+                m_isFull = false;
+            }
         }
     }
 
@@ -3238,11 +3250,15 @@ size_t Audio::process_m3u8_ID3_Header(uint8_t* packet) {
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 uint32_t Audio::stopSong() {
-    m_f_lockInBuffer = true; // wait for the decoding to finish
     uint8_t  maxWait = 0;
     uint32_t currTime = getAudioCurrentTime();
 
-    xSemaphoreTake(mutex_audioTaskIsDecoding, 0.3 * configTICK_RATE_HZ); // wait for audioTask is ready
+    // mutex_audioTaskIsDecoding is a mutex; only give it if we successfully took it.
+    if (xSemaphoreTake(mutex_audioTaskIsDecoding, 1.0 * configTICK_RATE_HZ) != pdTRUE) {
+        AUDIO_LOG_WARN("stopSong: decoder busy");
+        return currTime;
+    }
+    m_f_lockInBuffer = true; // wait for the decoding to finish
     {
         if (m_f_running) {
             m_f_running = false;
@@ -3264,8 +3280,8 @@ uint32_t Audio::stopSong() {
         m_dataMode = AUDIO_NONE;
         m_streamType = ST_NONE;
         m_playlistFormat = FORMAT_NONE;
-        m_f_lockInBuffer = false;
     }
+    m_f_lockInBuffer = false;
     xSemaphoreGive(mutex_audioTaskIsDecoding);
     return currTime;
 }
@@ -3968,8 +3984,25 @@ ps_ptr<char> Audio::parsePlaylist_M3U8() {
             m_linesWithURL.shrink_to_fit();
         }
         AUDIO_LOG_DEBUG("now playing %s", playlistBuff.get());
-        if (endsWith(playlistBuff.get(), "ts")) m_f_ts = true;
-        if (playlistBuff.contains(".ts?") > 0) m_f_ts = true;
+        const bool isTsSegment = endsWith(playlistBuff.get(), "ts") || (playlistBuff.contains(".ts?") > 0);
+        if (isTsSegment) {
+            m_f_ts = true;
+
+            // HLS TS segments are separate files. If the previous segment ended mid-PES,
+            // we must NOT carry PES continuation state into the next segment, otherwise
+            // we can start extracting payload from the wrong offset and never find ADTS
+            // syncwords again (observed on some ABC streams).
+            m_tspp.PES_DataLength = 0;
+            m_tspp.fillData = 0;
+
+            // Re-run ID3 header sniffing on the first TS packet of each segment.
+            m_pwsst.f_firstPacket = true;
+
+            // Force sync re-acquire on segment boundary.
+            m_f_playing = false;
+            m_f_decode_ready = false;
+            m_fnsy.swnf = 0;
+        }
         m_playlistBuff.clone_from(playlistBuff);
         return playlistBuff;
     }
@@ -4648,7 +4681,10 @@ void Audio::playAudioData() {
     if (m_streamType == ST_WEBSTREAM || m_playlistFormat == FORMAT_M3U8) isStream = true;
     if (!isFile && !isStream) return;
 
-    xSemaphoreTake(mutex_audioTaskIsDecoding, 0.3 * configTICK_RATE_HZ);
+    // mutex_audioTaskIsDecoding is a mutex; if we can't take it, skip this round.
+    if (xSemaphoreTake(mutex_audioTaskIsDecoding, 0.3 * configTICK_RATE_HZ) != pdTRUE) {
+        return;
+    }
     {
         m_pad.bytesDecoded = 0;
         if (isFile) {
@@ -4671,7 +4707,11 @@ void Audio::playAudioData() {
                 m_pad.bytesDecoded = sendBytes(InBuff.getReadPtr(), m_pad.bytesToDecode);
             } else {
                 m_pad.bytesToDecode = InBuff.readSpace();
-                if (m_pad.bytesToDecode >= InBuff.getMaxBlockSize()) { m_pad.bytesDecoded = sendBytes(InBuff.getReadPtr(), m_pad.bytesToDecode); }
+                // If the buffer wraps, readSpace() can be small even when plenty of data is buffered.
+                // Gate on total bufferFilled() instead of contiguous readSpace().
+                if (m_pad.bytesToDecode > 0 && InBuff.bufferFilled() >= InBuff.getMaxBlockSize()) {
+                    m_pad.bytesDecoded = sendBytes(InBuff.getReadPtr(), m_pad.bytesToDecode);
+                }
             }
         }
 
@@ -4688,7 +4728,10 @@ void Audio::playAudioData() {
                 m_pad.bytesDecoded = sendBytes(InBuff.getReadPtr(), m_pad.bytesToDecode);
             } else {
                 m_pad.bytesToDecode = InBuff.readSpace();
-                if (m_pad.bytesToDecode >= InBuff.getMaxBlockSize()) { m_pad.bytesDecoded = sendBytes(InBuff.getReadPtr(), m_pad.bytesToDecode); }
+                // Same wrap consideration as local files: contiguous readSpace() may be smaller than maxBlockSize.
+                if (m_pad.bytesToDecode > 0 && InBuff.bufferFilled() >= InBuff.getMaxBlockSize()) {
+                    m_pad.bytesDecoded = sendBytes(InBuff.getReadPtr(), m_pad.bytesToDecode);
+                }
             }
         }
 
@@ -5460,10 +5503,36 @@ int Audio::findNextSync(uint8_t* data, size_t len) {
         if (m_fnsy.nextSync == -1) return len; // OggS not found, search next block
     }
     if (m_fnsy.nextSync == -1) {
-        if (m_fnsy.swnf == 0)
-            info(*this, evt_info, "syncword not found");
-        else {
-            m_fnsy.swnf++; // syncword not found counter, can be multimediadata
+        // NOTE: This can happen if the stream isn't actually raw audio frames yet
+        // (e.g. HTML error page, playlist/redirect body, ICY metadata, etc).
+        m_fnsy.swnf++; // syncword not found counter, can be multimediadata
+        if (m_fnsy.swnf == 1) {
+            // Print only once per run to avoid log spam.
+            // IMPORTANT: don't use %s with binary payloads; print raw bytes as hex.
+            const uint8_t b0 = (len > 0) ? data[0] : 0;
+            const uint8_t b1 = (len > 1) ? data[1] : 0;
+            const uint8_t b2 = (len > 2) ? data[2] : 0;
+
+            info(*this, evt_info, "syncword not found (len=%u, b0=%02X b1=%02X b2=%02X)", (unsigned)len, b0, b1, b2);
+
+            uint8_t b[16];
+            memset(b, 0, sizeof(b));
+            const size_t n = (len < sizeof(b)) ? len : sizeof(b);
+            for (size_t i = 0; i < n; i++) {
+                b[i] = data[i];
+            }
+            info(*this, evt_info,
+                 "syncword first16: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+                 b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
+
+            // Quick classification hints (helps spot TS/PES/ID3 immediately).
+            if (len >= 1 && data[0] == 0x47) {
+                info(*this, evt_info, "syncword hint: payload begins with TS sync byte 0x47 (TS demux may be bypassed)");
+            } else if (len >= 3 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x01) {
+                info(*this, evt_info, "syncword hint: payload begins with PES startcode 00 00 01 (PES header not skipped)");
+            } else if (len >= 3 && data[0] == 'I' && data[1] == 'D' && data[2] == '3') {
+                info(*this, evt_info, "syncword hint: payload begins with ID3 (timed metadata?)");
+            }
         }
     }
     if (m_fnsy.nextSync == 0) {
@@ -5472,8 +5541,9 @@ int Audio::findNextSync(uint8_t* data, size_t len) {
             m_fnsy.swnf = 0;
         } else {
             info(*this, evt_info, "syncword found at pos 0");
-            m_f_decode_ready = true;
         }
+        // We are aligned and safe to start decoding, even if we previously had "syncword not found" attempts.
+        m_f_decode_ready = true;
     }
     if (m_fnsy.nextSync > 0) { info(*this, evt_info, "syncword found at pos %i", m_fnsy.nextSync); }
     return m_fnsy.nextSync;
@@ -5577,6 +5647,7 @@ uint32_t Audio::decodeContinue(int8_t res, uint8_t* data, int32_t bytesDecoded, 
 int Audio::sendBytes(uint8_t* data, size_t len) {
     if (!m_f_running) return 0; // guard
     if (!m_decoder) return 0;   // guard
+    if (len == 0) return 0;     // guard (prevents sync search on empty blocks)
 
     int                   res = 0;
     int                   bytesDecoded = 0;
@@ -5593,7 +5664,19 @@ int Audio::sendBytes(uint8_t* data, size_t len) {
         m_sbyt.isPS = 0;
         m_sbyt.f_setDecodeParamsOnce = true;
         m_sbyt.nextSync = findNextSync(data, len);
-        if (m_sbyt.nextSync < 0) return len; // no syncword found
+        if (m_sbyt.nextSync < 0) {
+            // IMPORTANT: Don't discard the entire block when searching for syncwords.
+            // Especially for ADTS AAC, the 7-byte header can straddle block boundaries
+            // (e.g. PES header ends near TS packet end). If we consume everything,
+            // we can permanently miss the sync.
+            //
+            // Keep a small tail overlap so the next block can complete a partial header.
+            if (m_codec == CODEC_AAC) {
+                constexpr size_t KEEP_TAIL = 6; // ADTS header is 7 bytes; keep last 6 so next block can form a full header.
+                if (len > KEEP_TAIL) return (int)(len - KEEP_TAIL);
+            }
+            return (int)len; // no syncword found
+        }
         if (m_sbyt.nextSync == 0) { m_f_playing = true; }
         if (m_sbyt.nextSync > 0) return m_sbyt.nextSync;
     }
@@ -6705,12 +6788,20 @@ bool Audio::ts_parsePacket(uint8_t* packet, uint8_t* packetStart, uint8_t* packe
         }
         // Packetized Elementary Stream (PES) - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
         if (log) AUDIO_LOG_DEBUG("PES_DataLength %i", m_tspp.PES_DataLength);
-        if (m_tspp.PES_DataLength > 0) {
+        // If PUSI is set and we see a PES startcode prefix, treat it as a new PES start
+        // even if we still had an "open" PES continuation from the previous packet.
+        if (PUSI && (packet[posOfPacketStart] == 0x00) && (packet[posOfPacketStart + 1] == 0x00) && (packet[posOfPacketStart + 2] == 0x01)) {
+            m_tspp.PES_DataLength = 0;
+            m_tspp.fillData = 0;
+        }
+        if (m_tspp.PES_DataLength != 0) {
             *packetStart = posOfPacketStart + m_tspp.fillData;
             *packetLength = TS_PACKET_SIZE - posOfPacketStart - m_tspp.fillData;
             if (log) AUDIO_LOG_DEBUG("packetlength %i", *packetLength);
             m_tspp.fillData = 0;
-            m_tspp.PES_DataLength -= (*packetLength);
+            if (m_tspp.PES_DataLength > 0) {
+                m_tspp.PES_DataLength -= (*packetLength);
+            }
             return true;
         } else {
             int firstByte = packet[posOfPacketStart] & 0xFF;
@@ -6750,13 +6841,17 @@ bool Audio::ts_parsePacket(uint8_t* packet, uint8_t* packetStart, uint8_t* packe
                 uint8_t PES_HeaderDataLength = packet[posOfPacketStart + 8] & 0xFF;
                 if (log) AUDIO_LOG_DEBUG("PES_headerDataLength %d", PES_HeaderDataLength);
 
-                m_tspp.PES_DataLength = PES_PacketLength;
+                // PES_PacketLength == 0 -> length is unspecified (common in transport streams).
+                // Use -1 sentinel meaning "continue until next PES start".
+                m_tspp.PES_DataLength = (PES_PacketLength == 0) ? -1 : PES_PacketLength;
                 int startOfData = PES_HeaderDataLength + 9;
                 if (posOfPacketStart + startOfData >= 188) { // only fillers in packet
                     if (log) AUDIO_LOG_DEBUG("posOfPacketStart + startOfData %i", posOfPacketStart + startOfData);
                     *packetStart = 0;
                     *packetLength = 0;
-                    m_tspp.PES_DataLength -= (PES_HeaderDataLength + 3);
+                    if (m_tspp.PES_DataLength > 0) {
+                        m_tspp.PES_DataLength -= (PES_HeaderDataLength + 3);
+                    }
                     m_tspp.fillData = (posOfPacketStart + startOfData) - 188;
                     if (log) AUDIO_LOG_DEBUG("fillData %i", m_tspp.fillData);
                     return true;
@@ -6765,8 +6860,10 @@ bool Audio::ts_parsePacket(uint8_t* packet, uint8_t* packetStart, uint8_t* packe
                 if (log) AUDIO_LOG_DEBUG("Second AAC data byte: %02X", packet[posOfPacketStart + startOfData + 1]);
                 *packetStart = posOfPacketStart + startOfData;
                 *packetLength = TS_PACKET_SIZE - posOfPacketStart - startOfData;
-                m_tspp.PES_DataLength -= (*packetLength);
-                m_tspp.PES_DataLength -= (PES_HeaderDataLength + 3);
+                if (m_tspp.PES_DataLength > 0) {
+                    m_tspp.PES_DataLength -= (*packetLength);
+                    m_tspp.PES_DataLength -= (PES_HeaderDataLength + 3);
+                }
                 return true;
             }
             if (firstByte == 0 && secondByte == 0 && thirdByte == 0) {
@@ -6798,6 +6895,14 @@ bool Audio::ts_parsePacket(uint8_t* packet, uint8_t* packetStart, uint8_t* packe
                     if (streamType == 0x0F || streamType == 0x11 || streamType == 0x04) {
                         if (log) AUDIO_LOG_DEBUG("AAC PID discover");
                         m_tspp.pidOfAAC = elementaryPID;
+                        m_tspp.aacStreamType = (uint8_t)streamType;
+                        if (!m_tspp.loggedAacInfo) {
+                            m_tspp.loggedAacInfo = true;
+                            info(*this, evt_info, "[TS] AAC streamType=0x%02X pid=0x%04X", streamType, elementaryPID);
+                            if (streamType == 0x11) {
+                                info(*this, evt_info, "[TS] streamType 0x11 indicates AAC LATM/LOAS (ADTS syncword 0xFFF may not be present)");
+                            }
+                        }
                     }
                     int esInfoLength = ((packet[PLS + cursor + 3] & 0x0F) << 8) | (packet[PLS + cursor + 4] & 0xFF);
                     if (log) AUDIO_LOG_DEBUG("ES Info Length: 0x%04X", esInfoLength);
@@ -7056,7 +7161,10 @@ int32_t Audio::newInBuffStart(int32_t resumeFilePos) {
     AUDIO_LOG_DEBUG("new InBuff start at m_resumeFilePos %i, m_audioDataStart %i", m_resumeFilePos, m_audioDataStart);
 
     // --- enter critical area ------------------------------------------
-    xSemaphoreTake(mutex_audioTaskIsDecoding, 1 * configTICK_RATE_HZ);
+    if (xSemaphoreTake(mutex_audioTaskIsDecoding, 1 * configTICK_RATE_HZ) != pdTRUE) {
+        AUDIO_LOG_WARN("newInBuffStart: decoder busy");
+        return 0;
+    }
     m_f_lockInBuffer = true;
 
     // ------- prepare InBuff ------

@@ -198,7 +198,9 @@ typedef struct _tspp { // used in ts_parsePacket
     int     pids[4]{}; // PID_ARRAY_LEN
     int     PES_DataLength{};
     int     pidOfAAC{};
+    uint8_t aacStreamType{}; // PMT stream type (e.g. 0x0F ADTS, 0x11 LATM)
     uint8_t fillData{};
+    bool    loggedAacInfo{}; // one-shot log helper
 
     void reset() {
         // Default-initialize alles neu (inklusive Array)

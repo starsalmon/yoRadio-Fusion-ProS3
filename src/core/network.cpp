@@ -131,7 +131,7 @@ void searchWiFi(void * pvParameters){
     network.setWifiParams();
     display.putRequest(NEWIP, 0);
     printWifiDiag("boot(sdready)");
-    #ifdef MQTT_ROOT_TOPIC
+    #if defined(MQTT_ROOT_TOPIC) && !(defined(MQTT_DISABLE) && MQTT_DISABLE)
       mqttInit();
     #endif
   }
@@ -157,7 +157,7 @@ void MyNetwork::begin() {
     status = CONNECTED;
     setWifiParams();
     printWifiDiag("boot");
-    #ifdef MQTT_ROOT_TOPIC
+    #if defined(MQTT_ROOT_TOPIC) && !(defined(MQTT_DISABLE) && MQTT_DISABLE)
       mqttInit();
     #endif
   }else{

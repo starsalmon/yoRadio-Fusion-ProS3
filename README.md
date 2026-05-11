@@ -17,6 +17,7 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 
 - **Battery icon color**: colorize by state (charging / low / normal)
 - **IR control UX**: set up IR receiver + add flashing “IR RX” icon on-screen
+- **SD and Web Icons**: Use icons for mode indication instead of text
 - **MQTT sleep**: allow sending a sleep command via MQTT
 - **Home Assistant**: MQTT discovery (auto-create sensors + buttons)
 - **SD playback resume**: resume last track + position (not restart at first file)
@@ -70,7 +71,7 @@ From the project root:
 platformio run -e yoradio-esp32s3n16r8-ili9431
 ```
 
-### Upload (when you have the board)
+### Upload
 
 ```bash
 platformio run -e yoradio-esp32s3n16r8-ili9431 -t upload

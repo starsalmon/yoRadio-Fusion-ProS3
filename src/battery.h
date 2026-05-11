@@ -21,3 +21,7 @@ float battery_get_charge_rate();
 // True if 5V sense indicates external power present.
 // Returns false if CHARGE_SENSE_PIN isn't configured.
 bool battery_usb_present();
+
+// Put the MAX17048 into ultra-low-power sleep mode right before ESP deep sleep.
+// Safe to call even if the gauge is unavailable.
+void battery_prepare_for_deepsleep();

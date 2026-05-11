@@ -9,6 +9,7 @@
 #include "../fonts/clockfont_api.h"
 #include "../fonts/iconsweather.h"
 #include "../fonts/iconsweather_mono.h"
+#include "../bitmaps/header_mode_icons.h"
 #include "Arduino.h"
 #include "widgets.h"
 #include "../../core/player.h"    //  for VU widget
@@ -242,6 +243,16 @@ void BitmapWidget::setBitmap(const uint8_t* bmp, uint8_t w, uint8_t h){
   _bmp = bmp;
   _bw = w;
   _bh = h;
+  if (_active && !_locked) _draw();
+}
+
+void BitmapWidget::setBitmapAndColor(const uint8_t* bmp, uint8_t w, uint8_t h, uint16_t fgcolor){
+  if (_bmp == bmp && _bw == w && _bh == h && _fgcolor == fgcolor) return;
+  if (_active && !_locked) _clear();
+  _bmp = bmp;
+  _bw = w;
+  _bh = h;
+  _fgcolor = fgcolor;
   if (_active && !_locked) _draw();
 }
 
@@ -2546,16 +2557,40 @@ void PlayModeWidget::_draw() {
     // Teli háttér (filled), mint a BitrateWidget jobb (codec) fele
     dsp.fillRect(_config.left, _config.top, boxW, boxH, _fgcolor);
 
+    // Inverted icon/text: draw in background colour on filled foreground box.
+    const uint8_t* icon = nullptr;
+    uint8_t iconW = 0;
+    uint8_t iconH = 0;
+
+    if (_mode == 1) {  // SD
+      icon = ICON_MODE_SD_13x17;
+      iconW = ICON_MODE_SD_W;
+      iconH = ICON_MODE_SD_H;
+    } else if (_mode == 2) {  // DLNA
+      icon = ICON_MODE_DLNA_24x17;
+      iconW = ICON_MODE_DLNA_W;
+      iconH = ICON_MODE_DLNA_H;
+    } else {  // WEB (and unknown)
+      icon = ICON_MODE_WEB_17x17;
+      iconW = ICON_MODE_WEB_W;
+      iconH = ICON_MODE_WEB_H;
+    }
+
+    if (icon) {
+      const int16_t x = (int16_t)_config.left + (int16_t)(boxW - iconW) / 2;
+      const int16_t y = (int16_t)_config.top  + (int16_t)(boxH - iconH) / 2;
+      dsp.drawBitmap(x, y, icon, iconW, iconH, _bgcolor);
+      return;
+    }
+
+    // Fallback for modes without an icon
     const GFXfont* _fnt = yoScrollFont(_config.textsize);
     uint8_t  _fntH    = yoFontHeight(_fnt);
     int16_t  _baseOff = yoBaselineOffset(_fnt);
     dsp.setFont(_fnt);
     dsp.setTextSize(1);
 
-    const char* label = "WEB";
-    if (_mode == 1)      label = "SD";
-    else if (_mode == 2) label = "DLNA";
-
+    const char* label = "DLNA";
     uint16_t textW = yoStringWidth(_fnt, label);
     uint16_t cx    = _config.left + boxW / 2;
 

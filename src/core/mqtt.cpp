@@ -5,11 +5,43 @@
 #include "mqtt.h"
 #include "WiFi.h"
 #include "player.h"
+#include "display.h"
 #include "../battery.h"
+#include <strings.h>
 
 AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
 char topic[100], status[BUFLEN+50];
+
+namespace {
+static bool isTruthyPayload(const char* s) {
+  if (!s) return false;
+  while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+  if (*s == '\0') return false;
+  if (strcmp(s, "1") == 0) return true;
+  if (strcasecmp(s, "on") == 0) return true;
+  if (strcasecmp(s, "true") == 0) return true;
+  if (strcasecmp(s, "sleep") == 0) return true;
+  if (strcasecmp(s, "deepsleep") == 0) return true;
+  return false;
+}
+
+static void mqttEnterSleep() {
+  // Go to deep sleep without issuing PR_STOP.
+  // PR_STOP disables SmartStart (see Player::stopInfo -> config.setSmartStart(0)),
+  // which breaks "auto start after waking back up".
+  display.putRequest(NEWMODE, SLEEPING);
+  delay(50);
+
+  // Best-effort: publish final retained state before power-down.
+  mqttPublishStatus();
+  mqttPublishBattery();
+  delay(50);
+  Serial.flush();
+
+  config.doSleepW();
+}
+} // namespace
 
 void connectToMqtt() {
   //config.waitConnection();
@@ -31,6 +63,9 @@ void zeroBuffer(){ memset(topic, 0, sizeof(topic)); memset(status, 0, sizeof(sta
 void onMqttConnect(bool sessionPresent) {
   zeroBuffer();
   sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "command");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/sleep");
   mqttClient.subscribe(topic, 2);
   mqttPublishStatus();
   mqttPublishVolume();
@@ -109,10 +144,26 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
   if (len == 0) return;
+
+  // Dedicated command topic: <root>cmd/sleep
+  {
+    char sleepTopic[100];
+    snprintf(sleepTopic, sizeof(sleepTopic), "%s%s", MQTT_ROOT_TOPIC, "cmd/sleep");
+    if (strcmp(topic, sleepTopic) == 0) {
+      const size_t n = (len < 31) ? len : 31;
+      char buf[32];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      if (isTruthyPayload(buf)) mqttEnterSleep();
+      return;
+    }
+  }
+
   if(len<20){
     char buf[len+1];
     strncpy(buf, payload, len);
     buf[len]='\0';
+    if (strcmp(buf, "sleep") == 0 || strcmp(buf, "deepsleep") == 0) { mqttEnterSleep(); return; }
     if (strcmp(buf, "prev") == 0) { player.sendCommand({PR_PREV, 0}); return; }
     if (strcmp(buf, "next") == 0) { player.sendCommand({PR_NEXT, 0}); return; }
     if (strcmp(buf, "toggle") == 0) { player.sendCommand({PR_TOGGLE, 0}); return; }

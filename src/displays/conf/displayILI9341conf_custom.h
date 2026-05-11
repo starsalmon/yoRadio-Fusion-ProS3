@@ -62,11 +62,12 @@ const WidgetConfig bitrateConf  PROGMEM = { 70, 191, 1, WA_LEFT };
 #define BAT_BOLT_W         9
 #define BAT_BOLT_H         12
 #define CLASSIC_ICON_H     16  // classic 5x7 @2x
+#define RSSI_ICON_W        24  // classic bars "\001\002" at 2x: 2 chars * 12px
 #define LAN_ICON_W         18
 #define LAN_ICON_H         20
 
 #define VOL_ICON_TOP       (ICON_BOTTOM_Y - VOL_ICON_H)
-#define BAT_ICON_TOP       (ICON_BOTTOM_Y - BAT_ICON_H)
+#define BAT_ICON_TOP       (ICON_BOTTOM_Y - BAT_ICON_H - 1)
 #define BAT_BOLT_TOP       (ICON_BOTTOM_Y - BAT_BOLT_H)
 #define CLASSIC_ICON_TOP   (ICON_BOTTOM_Y - CLASSIC_ICON_H)
 #define LAN_ICON_TOP       (ICON_BOTTOM_Y - LAN_ICON_H)
@@ -82,8 +83,7 @@ const WidgetConfig bitrateConf  PROGMEM = { 70, 191, 1, WA_LEFT };
 // - Battery icon stays fixed
 // - Battery percent is left-anchored next to it
 // Compute battery cluster from a single right limit so it stays clear/consistent.
-#define RSSI_ICON_W        24  // classic bars "\001\002" at 2x: 2 chars * 12px
-#define FOOTER_GAP         8   // space between battery cluster and RSSI bars (move cluster left)
+#define FOOTER_GAP         12   // space between battery cluster and RSSI bars (move cluster left)
 #define BAT_GROUP_W        50  // reserves room for icon + "100%" (tight, to pull cluster right)
 #define BAT_RIGHT_LIMIT    (DSP_WIDTH - TFT_FRAMEWDT - RSSI_ICON_W - FOOTER_GAP)
 #define BAT_ICON_LEFT      (BAT_RIGHT_LIMIT - BAT_GROUP_W)

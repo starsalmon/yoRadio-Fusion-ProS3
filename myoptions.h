@@ -32,6 +32,9 @@
 #define BATTERY_SDA   8
 #define BATTERY_SCL   9
 #define BATTERY_INT   10
+
+// Footer battery icon: colorize by % (comment out to use theme color)
+#define FOOTER_BATTERY_COLORIZE 1
 /******************************************/
 
 /******************************************/

@@ -228,3 +228,12 @@ bool battery_usb_present() {
     return false;
 #endif
 }
+
+void battery_prepare_for_deepsleep() {
+    if (!batteryReady) return;
+    // MAX17048 "sleep" stops updating readings and drops current draw.
+    // This is only safe to use immediately before ESP deep sleep.
+    maxlipo.enableSleep(true);
+    maxlipo.sleep(true);
+    delay(5);
+}

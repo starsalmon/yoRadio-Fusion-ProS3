@@ -16,6 +16,7 @@
 #include "../displays/tools/l10n.h"
 #include "../battery.h"
 #include "../displays/bitmaps/footer_icons_16.h"
+#include "../myoptions.h"
 
 Display display;
 #ifdef USE_NEXTION
@@ -70,6 +71,24 @@ static char batteryIconGlyph(float pct, bool charging) {
   if (pct >= 45.0f) return '\030';
   if (pct >= 20.0f) return '\031';
   return '\032';
+}
+
+static uint16_t batteryPctColor565(float pct) {
+  // Match the user's LVGL palette using RGB565 output.
+  int level = (int)(pct + 0.5f);
+  if (level < 0) level = 0;
+  if (level > 100) level = 100;
+
+  const auto rgb565 = [](uint8_t r, uint8_t g, uint8_t b) -> uint16_t {
+    return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+  };
+
+  // tomato / orange / yellow / lightgreen / greenyellow
+  if (level <= 20)      return rgb565(0xFF, 0x63, 0x47);
+  else if (level <= 40) return rgb565(0xFF, 0x8C, 0x00);
+  else if (level <= 60) return rgb565(0xFF, 0xD7, 0x00);
+  else if (level <= 80) return rgb565(0x90, 0xEE, 0x90);
+  else                  return rgb565(0xAD, 0xFF, 0x2F);
 }
 
 static void loopDspTask(void * pvParameters){
@@ -275,7 +294,11 @@ void Display::_buildPager(){
           return ICON_BAT_EMPTY_12;
         };
         const uint8_t* bmp = bmpForPct(pct);
-        _batIcon = new BitmapWidget(baticonConf, bmp, ICON_BAT_W, ICON_BAT_H, config.theme.rssi, config.theme.background, BitmapFormat::GFX_MSB);
+        uint16_t fg = config.theme.rssi;
+        #if defined(FOOTER_BATTERY_COLORIZE) && (FOOTER_BATTERY_COLORIZE != 0)
+          fg = batteryPctColor565(pct);
+        #endif
+        _batIcon = new BitmapWidget(baticonConf, bmp, ICON_BAT_W, ICON_BAT_H, fg, config.theme.background, BitmapFormat::GFX_MSB);
       }
       // Charging bolt icon (visible only when 5V sense is on)
       {
@@ -449,7 +472,15 @@ void Display::_start() {
   if(_vuwidget) _vuwidget->lock();
   if(_rssi || _rssiIcon) _setRSSI(WiFi.RSSI());
   #ifndef HIDE_BAT
-    if (_battxt) _battxt->setText((int)battery_get_percent(), battxtFmt);
+    if (_battxt) {
+      const float pct = battery_is_ready() ? battery_get_percent() : 0.0f;
+      #if defined(FOOTER_BATTERY_COLORIZE) && (FOOTER_BATTERY_COLORIZE != 0)
+        _battxt->setFgColor(batteryPctColor565(pct));
+      #else
+        _battxt->setFgColor(config.theme.rssi);
+      #endif
+      _battxt->setText((int)pct, battxtFmt);
+    }
   #endif
   /*#ifndef HIDE_IP
     if(_volip) _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
@@ -826,8 +857,15 @@ void Display::loop() {
         case STATUS_BLFADE: if(_blfadeWidget) _blfadeWidget->setStat(request.payload != 0); break;
         case STATUS_LSTRIP: if(_lstripWidget) _lstripWidget->setStat(request.payload != 0); break;
         case NEWBATTERY:
-            if (_battxt)
-                _battxt->setText((int)battery_get_percent(), battxtFmt);
+            if (_battxt) {
+                const float pct = battery_is_ready() ? battery_get_percent() : 0.0f;
+                #if defined(FOOTER_BATTERY_COLORIZE) && (FOOTER_BATTERY_COLORIZE != 0)
+                  _battxt->setFgColor(batteryPctColor565(pct));
+                #else
+                  _battxt->setFgColor(config.theme.rssi);
+                #endif
+                _battxt->setText((int)pct, battxtFmt);
+            }
             if (_batChgIcon) {
                 const uint8_t* bbmp = battery_usb_present() ? ICON_BOLT_9x12 : nullptr;
                 _batChgIcon->setBitmap(bbmp, ICON_BOLT_W, ICON_BOLT_H);
@@ -845,7 +883,11 @@ void Display::loop() {
                   return ICON_BAT_EMPTY_12;
                 };
                 const uint8_t* bmp = bmpForPct(pct);
-                _batIcon->setBitmap(bmp, ICON_BAT_W, ICON_BAT_H);
+                uint16_t fg = config.theme.rssi;
+                #if defined(FOOTER_BATTERY_COLORIZE) && (FOOTER_BATTERY_COLORIZE != 0)
+                  fg = batteryPctColor565(pct);
+                #endif
+                _batIcon->setBitmapAndColor(bmp, ICON_BAT_W, ICON_BAT_H, fg);
             }
             // Redraw the volume bar last so it always stays visible.
             if (_volbar) {

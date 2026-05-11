@@ -9,6 +9,7 @@
 #include "timekeeper.h"
 #include "telnet.h"
 #include "rtcsupport.h"
+#include "../battery.h"
 #include "../displays/defaults.h" 
 #include "../displays/tools/l10n.h"
 #ifdef USE_SD
@@ -1541,6 +1542,7 @@ void Config::setDspOn(bool dspon, bool saveval){
 }
 
 void Config::doSleep() {
+    battery_prepare_for_deepsleep();
     if (BRIGHTNESS_PIN != 255) { analogWrite(BRIGHTNESS_PIN, 0); }
     display.deepsleep();
 #ifdef USE_NEXTION
@@ -1574,6 +1576,7 @@ void Config::doSleep() {
 }
 
 void Config::doSleepW() {
+    battery_prepare_for_deepsleep();
     if (BRIGHTNESS_PIN != 255) { analogWrite(BRIGHTNESS_PIN, 0); }
     display.deepsleep();
 #ifdef USE_NEXTION

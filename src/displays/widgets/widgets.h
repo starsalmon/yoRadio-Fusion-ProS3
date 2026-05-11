@@ -31,6 +31,12 @@ class Widget{
       _config.align = align;
     }
     void setActive(bool act, bool clr=false) { _active = act; if(_active && !_locked) _draw(); if(clr && !_locked) _clear(); }
+    void setFgColor(uint16_t fg) {
+      if (_fgcolor == fg) return;
+      if (_active && !_locked) _clear();
+      _fgcolor = fg;
+      if (_active && !_locked) _draw();
+    }
     void lock(bool lck=true) { _locked = lck; if(_locked) _reset(); if(_locked && _active) _clear();  }
     void unlock() { _locked = false; }
     bool locked() { return _locked; }
@@ -80,6 +86,7 @@ class BitmapWidget: public Widget {
     using Widget::init;
     void init(WidgetConfig wconf, const uint8_t* bmp, uint8_t w, uint8_t h, uint16_t fgcolor, uint16_t bgcolor, BitmapFormat fmt = BitmapFormat::XBM_LSB);
     void setBitmap(const uint8_t* bmp, uint8_t w, uint8_t h);
+    void setBitmapAndColor(const uint8_t* bmp, uint8_t w, uint8_t h, uint16_t fgcolor);
   protected:
     const uint8_t* _bmp = nullptr;
     uint8_t _bw = 0;

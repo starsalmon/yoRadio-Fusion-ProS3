@@ -24,7 +24,6 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 ### TODO / Roadmap
 
 - **IR control UX**: set up IR receiver + add flashing “IR RX” icon on-screen
-- **Date (SD mode)**: date doesn’t show in SD playback mode (format selector is fixed, but SD screen still needs date)
 - **SD playback resume**: resume last track + position (not restart at first file)
 - **Album art + station logos**: display on screen (likely larger change)
 
@@ -34,7 +33,7 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 - **Header mode icons**: WEB / SD / DLNA icons replace the old text badge
 - **MQTT sleep trigger**: deep sleep can be triggered via MQTT without breaking SmartStart
 - **Home Assistant MQTT discovery**: auto-created entities in Home Assistant (sensors, buttons, sliders)
-- **Date format selector**: web UI dropdown + TFT output now match exactly with a unified 6‑format mapping
+- **Date formats fixed**: web UI dropdown examples + TFT output now match exactly (see `dateFormat` mapping below)
 
 ### Automatic patching (PlatformIO pre-build)
 

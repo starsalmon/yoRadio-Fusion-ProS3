@@ -24,8 +24,7 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 ### TODO / Roadmap
 
 - **IR control UX**: set up IR receiver + add flashing “IR RX” icon on-screen
-- **Home Assistant**: MQTT discovery (auto-create sensors + buttons)
-- **Date Fix**: Date doesn't show in SD playback mode and format is weird, should swap . for /
+- **Date (SD mode)**: date doesn’t show in SD playback mode (format selector is fixed, but SD screen still needs date)
 - **SD playback resume**: resume last track + position (not restart at first file)
 - **Album art + station logos**: display on screen (likely larger change)
 
@@ -35,6 +34,7 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 - **Header mode icons**: WEB / SD / DLNA icons replace the old text badge
 - **MQTT sleep trigger**: deep sleep can be triggered via MQTT without breaking SmartStart
 - **Home Assistant MQTT discovery**: auto-created entities in Home Assistant (sensors, buttons, sliders)
+- **Date format selector**: web UI dropdown + TFT output now match exactly with a unified 6‑format mapping
 
 ### Automatic patching (PlatformIO pre-build)
 
@@ -64,6 +64,13 @@ Optional override (if you don’t want to keep the archives in-repo):
 - **MAX17048 I2C init**: the battery gauge init pre-sets I2C pins before the Adafruit library begins the bus (avoids “bus already started” / invalid-state noise).
 - **MAX17048 deep sleep**: the gauge is put into low-power sleep mode immediately before ESP deep sleep (and re-initialized on wake).
 - **RSSI footer**: RSSI is shown as **bars only** (no numeric RSSI) on ILI9341 builds.
+- **Date formats (web UI + TFT)**: `dateFormat` uses the same meaning everywhere:
+  - `0`: `DD/MM/YYYY`
+  - `1`: `DOW - DD MONTH`
+  - `2`: `DOW - DD/MM/YYYY`
+  - `3`: `DOW - MONTH DD`
+  - `4`: `DOW - MM/DD/YYYY`
+  - `5`: `MONTH DD, YYYY`
 
 ### MQTT topics (this build)
 

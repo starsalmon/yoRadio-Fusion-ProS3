@@ -93,82 +93,36 @@ static void formatDateCustom(char* out, size_t outlen, const tm& t, uint8_t fmt)
   _pad2(m2, t.tm_mon + 1);
   int y = t.tm_year + 1900;
 
-#if L10N_LANGUAGE == HU
-  // Hungarian
+  // Unified date formats (0..5). Keep meanings consistent across all display types/locales:
+  // 0: DD/MM/YYYY
+  // 1: DOW - DD MONTH
+  // 2: DOW - DD/MM/YYYY
+  // 3: DOW - MONTH DD
+  // 4: DOW - MM/DD/YYYY
+  // 5: MONTH DD, YYYY
   switch (fmt) {
-    case 1: // 2025. szeptember 16.  
-      snprintf(out, outlen, "%d. %s %d.", y, month, t.tm_mday);
+    case 0:
+      snprintf(out, outlen, "%s/%s/%d", d2, m2, y);
       break;
-
-    case 2: // 2025. 09. 16. - kedd 
-      snprintf(out, outlen, "%d. %s. %s. - %s", y, m2, d2, dow);
+    case 1:
+      snprintf(out, outlen, "%s - %s %s", dow, d2, month);
       break;
-
-    case 3: // 2025 szeptember 16. kedd  
-      snprintf(out, outlen, "%d %s %d. %s", y, month, t.tm_mday, dow);
+    case 2:
+      snprintf(out, outlen, "%s - %s/%s/%d", dow, d2, m2, y);
       break;
-
-    case 4: // 09. 16. - kedd 
-      snprintf(out, outlen, "%s. %s. - %s", m2, d2, dow);
+    case 3:
+      snprintf(out, outlen, "%s - %s %s", dow, month, d2);
       break;
-
-    default: // 2025. 09. 16. 
-      snprintf(out, outlen, "%d. %s. %s.", y, m2, d2);
+    case 4:
+      snprintf(out, outlen, "%s - %s/%s/%d", dow, m2, d2, y);
+      break;
+    case 5:
+      snprintf(out, outlen, "%s %s, %d", month, d2, y);
+      break;
+    default:
+      snprintf(out, outlen, "%s/%s/%d", d2, m2, y);
       break;
   }
-
-#else 
-
-  #ifdef USDATE
-    // US format MM/DD/YYYY)
-    switch (fmt) {
-      case 1: // September 16, 2025
-        snprintf(out, outlen, "%s %d, %d", month, t.tm_mday, y);
-        break;
-
-      case 2: // Tue - 09.16.2025
-        snprintf(out, outlen, "%s - %s.%s.%d", dow, m2, d2, y);
-        break;
-
-      case 3: // Tue, September 16, 2025
-        snprintf(out, outlen, "%s, %s %d, %d", dow, month, t.tm_mday, y);
-        break;
-
-      case 4: // Tue - 09.16.
-        snprintf(out, outlen, "%s - %s.%s.", dow, m2, d2);
-        break;
-
-      default: // 09.16.2025
-        snprintf(out, outlen, "%s.%s.%d", m2, d2, y);
-        break;
-    }
-
-  #else
-    // National format (DD/MM/YYYY)
-    switch (fmt) {
-      case 1: // 16 September 2025   
-        snprintf(out, outlen, "%d. %s %d", t.tm_mday, month, y);
-        break;
-
-      case 2: // Tue - 16.09.2025 
-        snprintf(out, outlen, "%s - %s. %s. %d", dow, d2, m2, y);
-        break;
-
-      case 3: // Tue, 16 September 2025  
-        snprintf(out, outlen, "%s, %d. %s %d", dow, t.tm_mday, month, y);
-        break;
-
-      case 4: // Tue - 16.09. 
-        snprintf(out, outlen, "%s - %s. %s.", dow, d2, m2);
-        break;
-
-      default: // 16.09.2025 
-        snprintf(out, outlen, "%s. %s. %d", d2, m2, y);
-        break;
-    }
-  #endif
-
-#endif
 
 }
 
@@ -2333,11 +2287,6 @@ void DateWidget::update() {
 
   char dateBuf[64];
   uint8_t fmt = config.store.dateFormat;
-  #if (DSP_MODEL==DSP_ST7789 || DSP_MODEL==DSP_ILI9341)
-    if (fmt > 1) {
-      fmt = 0; 
-    }
-  #endif
 
   formatDateCustom(dateBuf, sizeof(dateBuf), ti, fmt);
 

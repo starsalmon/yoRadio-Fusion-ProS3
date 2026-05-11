@@ -268,6 +268,7 @@ void Config::changeMode(int newmode) { // DLNA mod
         return;
     }
 
+    const uint8_t oldMode = getMode();
     bool pir = player.isRunning();
 
     if (SDC_CS == 255 && newmode == PM_SDCARD) { return; }
@@ -276,6 +277,17 @@ void Config::changeMode(int newmode) { // DLNA mod
         saveValue(&store.play_mode, (uint8_t)PM_SDCARD);
         delay(50);
         ESP.restart();
+    }
+
+    // IMPORTANT: if we're leaving SD while SD playback is active, stop first *before*
+    // unmounting the card. Without this, WEB playback (especially high bitrate AAC)
+    // can fail on the first attempt right after the mode switch.
+    if (oldMode == PM_SDCARD && newmode == PM_WEB) {
+        player.lockOutput = true; // don't call stopInfo() (keeps SmartStart intact)
+        player.sendCommand({PR_STOP, 0});
+        player.loop();            // process immediately in this context
+        player.lockOutput = false;
+        delay(30);
     }
 
     /* === SD only when explicitly requested === */
@@ -293,6 +305,8 @@ void Config::changeMode(int newmode) { // DLNA mod
     store.play_mode = (playMode_e)newmode;
     saveValue(&store.play_mode, (uint8_t)store.play_mode, true, true);
 
+    const bool enteringSD = (getMode() == PM_SDCARD);
+
     /* === filesystem binding === */
     if (getMode() == PM_SDCARD) {
         _SDplaylistFS = &sdman;
@@ -301,7 +315,7 @@ void Config::changeMode(int newmode) { // DLNA mod
     }
 
     /* === SD specific actions === */
-    if (getMode() == PM_SDCARD) {
+    if (enteringSD) {
         if (pir) { player.sendCommand({PR_STOP, 0}); }
         display.putRequest(NEWMODE, SDCHANGE);
         delay(50);
@@ -313,6 +327,16 @@ void Config::changeMode(int newmode) { // DLNA mod
 
     initPlaylistMode();
 
+    // SD: optionally resume last SD track on entering SD mode (even if we weren't playing).
+    #if defined(SD_AUTORESUME_ON_MODE_SWITCH) && SD_AUTORESUME_ON_MODE_SWITCH
+    if (enteringSD) {
+        uint16_t st = store.lastSdStation;
+        if (st > 0) {
+          // Negative payload => play station without overwriting WEB lastStation.
+          player.sendCommand({PR_PLAY, -(int)st});
+        }
+    } else
+    #endif
     if (pir) {
     #ifdef USE_DLNA
         uint16_t st = (getMode() == PM_SDCARD) ? store.lastSdStation : (store.playlistSource == PL_SRC_DLNA ? store.lastDlnaStation : store.lastStation);
@@ -342,7 +366,11 @@ void Config::initSDPlaylist() {
     File index = SDPLFS()->open(INDEX_SD_PATH, "r");
     //store.countStation = index.size() / 4;
     //if(doIndex){
-      lastStation(_randomStation());
+      // Don't overwrite the user's last SD track during (re)indexing.
+      // If we don't have a last SD station yet, pick a random one.
+      if (store.lastSdStation == 0 && index.size() >= 4) {
+        lastStation(_randomStation());
+      }
       sdResumePos = 0;
     //}
     index.close();

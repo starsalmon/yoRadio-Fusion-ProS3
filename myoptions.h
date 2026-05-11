@@ -90,6 +90,10 @@
 /*****************************************/
 /* SD CARD */
 #define SDC_CS    1
+
+// SD resume: when switching into SD mode, auto-play the last SD track.
+// Set to 0 to disable.
+#define SD_AUTORESUME_ON_MODE_SWITCH 1
 /****************************************/
 /*  I2S DAC  */
 
@@ -152,6 +156,16 @@
 //#define LIGHT_SENSOR      40               /*  Light sensor  */
 //#define AUTOBACKLIGHT(x)  *function*        /*  Autobacklight function. See options.h for example  */
 //#define NAME_STRIM              /* Show station name from the stream. (MOD Maleksm) */
+
+// MQTT options
+// - Set MQTT_DISABLE=1 to fully disable MQTT features (including HA discovery).
+// - Set MQTT_QUIET_LOGS=1 to suppress noisy AsyncMqttClient INFO logs on Serial.
+#ifndef MQTT_DISABLE
+  #define MQTT_DISABLE 0
+#endif
+#ifndef MQTT_QUIET_LOGS
+  #define MQTT_QUIET_LOGS 1
+#endif
 
 //#define DOWN_LEVEL           2      /* lowest level brightness (from 0 to 255) */
 //#define DOWN_INTERVAL        60     /* interval for BacklightDown in sec (60 sec = 1 min) */

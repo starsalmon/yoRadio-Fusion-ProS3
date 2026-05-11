@@ -10,6 +10,7 @@
 #include "../plugins/backlight/backlight.h"
 #endif
 #include "../battery.h"
+#include <esp_log.h>
 #include <strings.h>
 
 AsyncMqttClient mqttClient;
@@ -61,6 +62,17 @@ static void mqttPublishHADiscovery() {
   #define MQTT_HA_PREFIX "homeassistant"
 #endif
 
+  // Home Assistant "device" metadata (can be injected at build-time).
+#ifndef HA_DEVICE_MANUFACTURER
+  #define HA_DEVICE_MANUFACTURER "yoRadio"
+#endif
+#ifndef HA_DEVICE_MODEL
+  #define HA_DEVICE_MODEL "ESP32"
+#endif
+#ifndef HA_DEVICE_HW_VERSION
+  #define HA_DEVICE_HW_VERSION ""
+#endif
+
   // Node/device id used in discovery topics and unique_ids.
   char nodeId[48] = {0};
   const char* mdns = config.store.mdnsname;
@@ -73,9 +85,15 @@ static void mqttPublishHADiscovery() {
   }
 
   char dev[256];
-  snprintf(dev, sizeof(dev),
-           "{\"identifiers\":[\"%s\"],\"name\":\"yoRadio %s\",\"manufacturer\":\"Unexpected Maker\",\"model\":\"PROS3\",\"sw_version\":\"%s\"}",
-           nodeId, nodeId, YOVERSION);
+  if (HA_DEVICE_HW_VERSION[0] != '\0') {
+    snprintf(dev, sizeof(dev),
+             "{\"identifiers\":[\"%s\"],\"name\":\"yoRadio %s\",\"manufacturer\":\"%s\",\"model\":\"%s\",\"hw_version\":\"%s\",\"sw_version\":\"%s\"}",
+             nodeId, nodeId, HA_DEVICE_MANUFACTURER, HA_DEVICE_MODEL, HA_DEVICE_HW_VERSION, YOVERSION);
+  } else {
+    snprintf(dev, sizeof(dev),
+             "{\"identifiers\":[\"%s\"],\"name\":\"yoRadio %s\",\"manufacturer\":\"%s\",\"model\":\"%s\",\"sw_version\":\"%s\"}",
+             nodeId, nodeId, HA_DEVICE_MANUFACTURER, HA_DEVICE_MODEL, YOVERSION);
+  }
 
   auto pubCfg = [&](const char* component, const char* objectId, const char* json) {
     char t[200];
@@ -280,11 +298,27 @@ static void mqttHADiscoveryTask(void*) {
 } // namespace
 
 void connectToMqtt() {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    return;
+  #endif
   //config.waitConnection();
   mqttClient.connect();
 }
 
 void mqttInit() {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    return;
+  #endif
+
+  #if defined(MQTT_QUIET_LOGS) && MQTT_QUIET_LOGS
+    // The AsyncMqttClient library uses the Arduino log macros with __FILE__ as tag on ESP32,
+    // which results in very chatty lines like: [I][AsyncMqttClient.cpp:740] publish(): PUBLISH
+    // Quiet them down to reduce Serial spam and avoid affecting timing-sensitive audio.
+    esp_log_level_set("AsyncMqttClient.cpp", ESP_LOG_WARN);
+    esp_log_level_set("AsyncMqttClient.c", ESP_LOG_WARN);
+    esp_log_level_set("AsyncMqttClient", ESP_LOG_WARN);
+  #endif
+
   mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
   mqttClient.onConnect(onMqttConnect);
   mqttClient.onDisconnect(onMqttDisconnect);

@@ -6,22 +6,35 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 
 - **Board/PlatformIO target**: `um_pros3` (`platformio.ini` env: `yoradio-esp32s3n16r8-ili9431`)
 - **PROS3 hardware init**: enable LDO2 (3V3_AUX) and force external antenna in `src/yoradio_user.cpp`
-- **Battery gauge + footer widget**: MAX17048 via I2C + a battery percentage widget in the bottom bar
-- **5V present sense**: `CHARGE_SENSE_PIN` logs ON/OFF transitions (for future charging state UX)
+- **Battery gauge**: MAX17048 via I2C (robust init + clamped sampling)
+- **MAX17048 low-power**: put the gauge into sleep mode right before ESP deep sleep (reduces gauge current during sleep)
+- **5V present sense**: `CHARGE_SENSE_PIN` + charging bolt icon in footer when 5V is present
 - **Audio high-bitrate stability (auto-patched)**: patched `liblwip.a` + `libesp_netif.a` are applied before builds (see below)
 - **GFX icon glyphs (auto-patched)**: Adafruit GFX `glcdfont.c` is replaced with `fonts/glcdfont_EN.c` so custom glyphs render (IP, speaker, RSSI bars)
-- **ILI9341 footer UX**: smooth DejaVu text + separate classic icon widgets; volume icon + text are positioned so 1–3 digit values don’t “drift”
+- **ILI9341 footer UX**:
+  - 1‑bit bitmap icons (speaker, LAN, battery levels, charging bolt) with true transparency
+  - battery icon + battery % can be **colorized by %** (toggle in `myoptions.h` via `FOOTER_BATTERY_COLORIZE`)
+  - speaker icon + volume % are anchored so 1–3 digit values don’t “drift”
+- **Header mode icons**: WEB / SD / DLNA are shown as icons (instead of text) in the top-right header badge
+- **MQTT battery state**: retained JSON payload with `usb/state/percent/voltage/rate`
+- **MQTT sleep trigger**: `cmd/sleep` topic (and `command` payload) enters deep sleep without disabling SmartStart
+- **Home Assistant MQTT discovery**: automatically creates sensors + buttons + sliders with `mdi:` icons
 - **Cursor/clangd hygiene**: `.clangd` removes toolchain-only flags for cleaner diagnostics
 
 ### TODO / Roadmap
 
-- **Battery icon color**: colorize by state (charging / low / normal)
 - **IR control UX**: set up IR receiver + add flashing “IR RX” icon on-screen
-- **SD and Web Icons**: Use icons for mode indication instead of text
-- **MQTT sleep**: allow sending a sleep command via MQTT
 - **Home Assistant**: MQTT discovery (auto-create sensors + buttons)
+- **Date Fix**: Date doesn't show in SD playback mode and format is weird, should swap . for /
 - **SD playback resume**: resume last track + position (not restart at first file)
 - **Album art + station logos**: display on screen (likely larger change)
+
+### Recently completed
+
+- **Battery icon + % color**: optional colorization palette for the footer battery icon and percentage text
+- **Header mode icons**: WEB / SD / DLNA icons replace the old text badge
+- **MQTT sleep trigger**: deep sleep can be triggered via MQTT without breaking SmartStart
+- **Home Assistant MQTT discovery**: auto-created entities in Home Assistant (sensors, buttons, sliders)
 
 ### Automatic patching (PlatformIO pre-build)
 
@@ -49,7 +62,26 @@ Optional override (if you don’t want to keep the archives in-repo):
 ### Notes on recent fixes
 
 - **MAX17048 I2C init**: the battery gauge init pre-sets I2C pins before the Adafruit library begins the bus (avoids “bus already started” / invalid-state noise).
+- **MAX17048 deep sleep**: the gauge is put into low-power sleep mode immediately before ESP deep sleep (and re-initialized on wake).
 - **RSSI footer**: RSSI is shown as **bars only** (no numeric RSSI) on ILI9341 builds.
+
+### MQTT topics (this build)
+
+Assuming `MQTT_ROOT_TOPIC` already ends with `/`:
+
+- **State (retained)**:
+  - `status`: `{"status":0|1,"station":n,"name":"...","title":"...","on":0|1,"mode":"Web Streaming|SD Card|DLNA","brightness":0..100}`
+  - `mode`: `Web Streaming|SD Card|DLNA`
+  - `brightness`: `0..100`
+  - `volume`: `0..100`
+  - `playlist`: `http://<ip>/playlist`
+  - `battery`: `{"usb":0|1,"state":"...","percent":..,"voltage":..,"rate":..}`
+  - `battery/voltage`: `X.XX` (e.g. `4.04`)
+- **Commands**:
+  - `command`: existing text commands (plus `sleep` / `deepsleep`)
+  - `cmd/sleep`: send `1`, `ON`, `true`, `sleep`, or `deepsleep` to enter deep sleep
+  - `cmd/volume`: send `0..100` (used by the HA Volume slider)
+  - `cmd/brightness`: send `0..100` (used by the HA Brightness slider)
 
 ### Secrets / local-only files
 

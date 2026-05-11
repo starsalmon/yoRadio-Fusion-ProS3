@@ -20,6 +20,7 @@ class BacklightPlugin : public Plugin {
     void wake();
     void notifyActivity(); // <<< ÚJ
     void activity();
+    void setUserBrightness(uint8_t pct, bool save = true);
     void restoreNow();
     bool justWoke() const;
 

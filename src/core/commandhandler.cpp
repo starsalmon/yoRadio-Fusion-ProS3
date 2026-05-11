@@ -7,6 +7,9 @@
 #include "config.h"
 #include "controls.h"
 #include "telnet.h"
+#ifdef MQTT_ROOT_TOPIC
+#include "mqtt.h"
+#endif
 #include "../clock/clock_tts.h"
 #include "../displays/fonts/clockfont_api.h"
 #include "../displays/widgets/widgetsconfig.h"
@@ -118,12 +121,15 @@ if (strEquals(command, "brightness")) {
   uint8_t v = static_cast<uint8_t>(atoi(value));
   if (v > 100) v = 100;
 
+#if (BRIGHTNESS_PIN != 255)
+  backlightPlugin.setUserBrightness(v, true);
+#else
   config.store.brightness = v;
   config.setBrightness(true);
+#endif
 
-#if (BRIGHTNESS_PIN != 255)
-  // user activity → timer reset
-  backlightPlugin.activity();
+#ifdef MQTT_ROOT_TOPIC
+  mqttPublishStatus();
 #endif
 
   return true;

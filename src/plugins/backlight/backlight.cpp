@@ -4,6 +4,9 @@
 #include "../../core/display.h"
 #include "../../core/network.h"
 #include "../../core/options.h"
+#ifdef MQTT_ROOT_TOPIC
+#include "../../core/mqtt.h"
+#endif
 
 #if (BRIGHTNESS_PIN != 255)
 
@@ -45,6 +48,28 @@ void BacklightPlugin::activity() {
     lastActivity = millis();
 }
 
+void BacklightPlugin::setUserBrightness(uint8_t pct, bool save) {
+    if (pct > 100) pct = 100;
+
+    // Update baseline so future wake() doesn't revert to an old value.
+    normalBrightness = pct;
+    currentBrightness = pct;
+    targetBrightness = pct;
+    brightnessCaptured = true;
+
+    config.store.brightness = pct;
+    config.setBrightness(save);
+
+    lastUiWakeMs = millis();
+    lastActivity = millis();
+    lastFadeStep = millis();
+    state = WAIT;
+
+#ifdef MQTT_ROOT_TOPIC
+    mqttPublishStatus(); // also updates retained brightness topic
+#endif
+}
+
 bool BacklightPlugin::justWoke() const {
     return (millis() - lastUiWakeMs) < 500; // After waking up, it ignores touches for this amount of time.
 }
@@ -68,6 +93,10 @@ void BacklightPlugin::wake() {
     // USER értékre áll vissza (ez oké)
     config.store.brightness = normalBrightness;
     config.setBrightness(false);
+
+#ifdef MQTT_ROOT_TOPIC
+    mqttPublishStatus(); // brightness topic/state update for HA
+#endif
 
     lastUiWakeMs = millis();
     lastActivity = millis();
@@ -131,6 +160,10 @@ void BacklightPlugin::tick() {
 
                 config.store.brightness = currentBrightness;
                 config.setBrightness(false);
+
+#ifdef MQTT_ROOT_TOPIC
+                mqttPublishStatus(); // brightness topic/state update for HA
+#endif
 
             } else {
                 Serial.println("[BL] FADING->DIMMED");

@@ -70,7 +70,7 @@ const WidgetConfig bitrateConf  PROGMEM = { 70, 191, 1, WA_LEFT };
 #define BAT_ICON_TOP       (ICON_BOTTOM_Y - BAT_ICON_H - 1)
 #define BAT_BOLT_TOP       (ICON_BOTTOM_Y - BAT_BOLT_H)
 #define CLASSIC_ICON_TOP   (ICON_BOTTOM_Y - CLASSIC_ICON_H)
-#define LAN_ICON_TOP       (ICON_BOTTOM_Y - LAN_ICON_H)
+#define LAN_ICON_TOP       (ICON_BOTTOM_Y - LAN_ICON_H - 1)
 
 // Footer volume layout:
 // - Speaker icon stays fixed

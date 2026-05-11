@@ -13,26 +13,26 @@ const char fri[] PROGMEM = "fr";
 const char sat[] PROGMEM = "sa";
 const char sun[] PROGMEM = "su";
 
-const char monf[] PROGMEM = "monday";
-const char tuef[] PROGMEM = "tuesday";
-const char wedf[] PROGMEM = "wednesday";
-const char thuf[] PROGMEM = "thursday";
-const char frif[] PROGMEM = "friday";
-const char satf[] PROGMEM = "saturday";
-const char sunf[] PROGMEM = "sunday";
+const char monf[] PROGMEM = "Monday";
+const char tuef[] PROGMEM = "Tuesday";
+const char wedf[] PROGMEM = "Wednesday";
+const char thuf[] PROGMEM = "Thursday";
+const char frif[] PROGMEM = "Friday";
+const char satf[] PROGMEM = "Saturday";
+const char sunf[] PROGMEM = "Sunday";
 
-const char jan[] PROGMEM = "january";
-const char feb[] PROGMEM = "february";
-const char mar[] PROGMEM = "march";
-const char apr[] PROGMEM = "april";
-const char may[] PROGMEM = "may";
-const char jun[] PROGMEM = "june";
-const char jul[] PROGMEM = "july";
-const char aug[] PROGMEM = "august";
-const char sep[] PROGMEM = "september";
-const char octt[] PROGMEM = "october";
-const char nov[] PROGMEM = "november";
-const char decc[] PROGMEM = "december";
+const char jan[] PROGMEM = "January";
+const char feb[] PROGMEM = "February";
+const char mar[] PROGMEM = "March";
+const char apr[] PROGMEM = "April";
+const char may[] PROGMEM = "May";
+const char jun[] PROGMEM = "June";
+const char jul[] PROGMEM = "July";
+const char aug[] PROGMEM = "August";
+const char sep[] PROGMEM = "September";
+const char octt[] PROGMEM = "October";
+const char nov[] PROGMEM = "November";
+const char decc[] PROGMEM = "December";
 
 // ============================================================
 // WIND DIRECTIONS – SHORT

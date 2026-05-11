@@ -269,7 +269,7 @@ void Display::_buildPager(){
   // Footer icons for ILI9341: keep classic glyph icons alongside smooth text.
   #if DSP_MODEL==DSP_ILI9341
     #ifndef HIDE_IP
-      _ipIcon = new BitmapWidget(ipiconConf, ICON_LAN_18x20, ICON_LAN_W, ICON_LAN_H, config.theme.ip, config.theme.background, BitmapFormat::GFX_MSB);
+      _ipIcon = new BitmapWidget(ipiconConf, ICON_LAN_16x18, ICON_LAN_W, ICON_LAN_H, config.theme.ip, config.theme.background, BitmapFormat::GFX_MSB);
     #endif
     #ifndef HIDE_VOL
       {

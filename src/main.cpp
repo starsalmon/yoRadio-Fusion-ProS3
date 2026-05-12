@@ -182,6 +182,25 @@ void loop() {
     battery_update();
   #endif
 
+#ifdef USE_SD
+  // SD resume checkpoint: periodically persist a "good enough" resume time while
+  // the track is playing. This avoids relying on stop-time file-position math
+  // which can be skewed by large buffers.
+  if (config.getMode() == PM_SDCARD && player.isRunning()) {
+    static uint32_t s_lastSdResumeSaveMs = 0;
+    const uint32_t now2 = millis();
+    if (s_lastSdResumeSaveMs == 0 || (uint32_t)(now2 - s_lastSdResumeSaveMs) >= 10000) {
+      s_lastSdResumeSaveMs = now2;
+      const uint32_t curSec = player.getAudioCurrentTime();
+      const uint32_t durSec = player.getAudioFileDuration();
+      if (durSec > 0 && curSec > 0 && curSec + 2 < durSec) {
+        const uint32_t encoded = 0x80000000u | (curSec & 0x7FFFFFFFu);
+        config.saveValue(&config.store.lastSdResumePos, (uint32_t)encoded);
+      }
+    }
+  }
+#endif
+
 #if (WAKE_PIN1 != 255) || (WAKE_PIN2 != 255)
   #ifndef AUTO_DEEPSLEEP_BATT_PCT
     #define AUTO_DEEPSLEEP_BATT_PCT 5

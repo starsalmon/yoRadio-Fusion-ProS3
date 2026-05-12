@@ -177,6 +177,19 @@ static void mqttPublishHADiscovery() {
              nodeId, MQTT_ROOT_TOPIC, availabilityTopic, dev);
     pubCfg("binary_sensor", "playing", cfg);
   }
+
+  // Track time (seconds) from the status JSON.
+  {
+    char cfg[560];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Track Time\",\"unique_id\":\"%s_track_time\",\"state_topic\":\"%sstatus\","
+             "\"value_template\":\"{{ value_json.track_time }}\",\"unit_of_measurement\":\"s\","
+             "\"state_class\":\"measurement\",\"icon\":\"mdi:clock-outline\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("sensor", "track_time", cfg);
+  }
   // NOTE: no separate brightness sensor – the number (slider) is the single "Brightness" entity.
   {
     char cfg[520];
@@ -231,6 +244,7 @@ static void mqttPublishHADiscovery() {
     {"stop", "Stop", "stop", "mdi:stop"},
     {"start", "Play", "start", "mdi:play"},
     {"reboot", "Reboot", "reboot", "mdi:restart"},
+    {"toggle_mode", "Toggle Mode", "mode -1", "mdi:swap-horizontal"},
   };
   for (const auto& b : buttons) {
     char cfg[520];
@@ -381,15 +395,22 @@ void mqttPublishStatus() {
     int brightness = (int)config.store.brightness;
     if (brightness < 0) brightness = 0;
     if (brightness > 100) brightness = 100;
+    // Track time fields: meaningful for SD tracks (and web files if ever used).
+    const uint32_t tpos = player.getAudioCurrentTime();
+    const uint32_t tend = player.getAudioFileDuration();
+
     snprintf(status, sizeof(status),
-             "{\"status\":%d,\"station\":%d,\"name\":\"%s\",\"title\":\"%s\",\"on\":%d,\"mode\":\"%s\",\"brightness\":%d}",
+             "{\"status\":%d,\"station\":%d,\"name\":\"%s\",\"title\":\"%s\",\"on\":%d,\"mode\":\"%s\",\"brightness\":%d,"
+             "\"track_time\":%lu,\"track_duration\":%lu}",
              player.status()==PLAYING ? 1 : 0,
              config.lastStation(),
              name,
              title,
              config.store.dspon ? 1 : 0,
              mode,
-             brightness);
+             brightness,
+             (unsigned long)tpos,
+             (unsigned long)tend);
     mqttClient.publish(topic, 0, true, status);
 
     // Simple retained topics for HA sliders (avoid JSON templates).
@@ -580,6 +601,16 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       player.sendCommand({PR_PLAY, (uint16_t)sb});
       return;
     }
+
+#ifdef USE_SD
+    // Mode switch: "mode -1" toggles WEB<->SD (matches encoder double-click behavior),
+    // "mode 0" forces WEB, "mode 1" forces SD.
+    int newMode;
+    if (sscanf(buf, "mode %d", &newMode) == 1) {
+      config.changeMode(newMode);
+      return;
+    }
+#endif
   }else{
     if(len>MQTT_BURL_SIZE) return;
     strncpy(player.burl, payload, len);

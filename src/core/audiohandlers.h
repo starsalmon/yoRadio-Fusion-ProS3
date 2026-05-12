@@ -279,10 +279,18 @@ void seekSD() {
     const uint32_t raw = config.sdResumePos;
 
     // If the high bit is set, resume by time (seconds) instead of bytes.
+    // Compute a byte position using Audio-Data-Start + bitrate*sec/8 (more reliable than
+    // relying on setAudioPlayTime timing/bitrate readiness).
     if (raw & 0x80000000u) {
       const uint32_t sec = (raw & 0x7FFFFFFFu);
-      if (sec > 0) {
-        player.setAudioPlayTime((uint16_t)std::min<uint32_t>(sec, 0xFFFFu));
+      const uint32_t br = (uint32_t)config.station.bitrate; // kbps or bps depending on source
+      uint32_t bps = br;
+      if (bps > 0 && bps < 3000) bps *= 1000; // stored as kbps in config.station.bitrate for most cases
+      if (sec > 0 && bps > 0 && player.sd_min > 0) {
+        const uint64_t delta = ((uint64_t)bps * (uint64_t)sec) / 8ULL;
+        uint32_t pos = player.sd_min + (uint32_t)std::min<uint64_t>(delta, 0xFFFFFFFFULL - player.sd_min);
+        if (player.sd_max && player.sd_max > player.sd_min && pos > player.sd_max) pos = player.sd_min;
+        player.setAudioFilePosition(pos);
       }
       return;
     }

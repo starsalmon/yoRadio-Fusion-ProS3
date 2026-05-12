@@ -10,7 +10,7 @@
 #define myoptions_h
 
 #define L10N_LANGUAGE EN // HU NL PL RU EN EL Enter your own language here!!
-#define NAMEDAYS_FILE HU // HU, PL, NL
+//#define NAMEDAYS_FILE HU // Optional name-day calendar (HU, PL, CZ, GR, NL, UA, DE)
 #define CLOCK_TTS_LANGUAGE "en" //Default language TTS e.g. pl,en,de,ru,fr,hu
 //#define USDATE   //US Date format
 //#define IMPERIALUNIT
@@ -28,7 +28,7 @@
 
 // PROS3 option: force external antenna at boot (via RF_SWITCH).
 // Set to 0 if you want to use the internal antenna.
-#define PROS3_FORCE_EXTERNAL_ANTENNA 1
+#define PROS3_FORCE_EXTERNAL_ANTENNA 0
 /******************************************/
 
 /******************************************/
@@ -49,6 +49,8 @@
 // We'll initialize it in `src/yoradio_user.cpp` and set it to black at boot to
 // prevent it latching random colors from boot-time pin noise.
 #define BUILTIN_NEOPIXEL_PIN 18
+// Brightness used only while clearing the onboard NeoPixel at boot.
+#define BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS 100
 
 // Optional cap for the ledstrip plugin (separate from LEDSTRIP_BRIGHTNESS).
 // Uncomment if you ever enable `USE_LEDSTRIP_PLUGIN`.
@@ -74,7 +76,6 @@
 /*****************************************/
 
 //#define DSP_HSPI 1
-
 #define TFT_DC 5
 #define TFT_CS 4
 #define TFT_RST 2
@@ -83,6 +84,7 @@
 //#define TFT_MISO  37
 
 #define BRIGHTNESS_PIN 14
+
 /*****************************************/
 // #define NEXTION_RX      15
 // #define NEXTION_TX     16
@@ -94,10 +96,6 @@
 /*****************************************/
 /* SD CARD */
 #define SDC_CS    1
-
-// SD resume: when switching into SD mode, auto-play the last SD track.
-// Set to 0 to disable.
-#define SD_AUTORESUME_ON_MODE_SWITCH 1
 /****************************************/
 /*  I2S DAC  */
 
@@ -117,6 +115,13 @@
 //#define ENC2_BTNL 21 // S1
 //#define ENC2_BTNB 3 // KEY
 //#define ENC2_INTERNALPULLUP		true
+
+// Buttons
+#define BTN_MODE     12
+/********************************************/
+// Mute
+#define MUTE_PIN     39            /*  MUTE Pin */
+#define MUTE_VAL    LOW          /*  Write this to MUTE_PIN when player is stop */
 /********************************************/
 
 /* RTC module (DS3231) */
@@ -127,14 +132,11 @@
 
 /* REMOTE CONTROL INFRARED RECEIVER */
 #define IR_PIN 21
-
-/********************************************/
-
 /********************************************/
 /* Other settings */
-#define BTN_MODE     12
-#define MUTE_PIN     39            /*  MUTE Pin */
-#define MUTE_VAL    LOW          /*  Write this to MUTE_PIN when player is stop */
+// SD resume: when switching into SD mode, auto-play the last SD track.
+// Set to 0 to disable.
+#define SD_AUTORESUME_ON_MODE_SWITCH 1
 //#define PLAYER_FORCE_MONO false  /*  mono option on boot - false stereo, true mono. "false" */
 #define I2S_INTERNAL    false    /*  If true - use esp32 internal DAC. "false" */
 //#define ROTATE_90   false        /*  Optional 90 degree rotation for square displays."false"*/

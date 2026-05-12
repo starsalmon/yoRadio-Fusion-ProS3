@@ -5969,7 +5969,11 @@ uint32_t Audio::getAudioFilePosition() {
         AUDIO_LOG_WARN("audio is not a file");
         return 0;
     }
-    return m_audioFilePosition - inBufferFilled();
+    // Guard against unsigned underflow: if buffer accounting is temporarily ahead of the
+    // file position, clamp to 0 instead of wrapping to ~4GB.
+    const uint32_t filled = inBufferFilled();
+    if (m_audioFilePosition <= filled) return 0;
+    return m_audioFilePosition - filled;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 bool Audio::setAudioFilePosition(uint32_t pos) {

@@ -84,7 +84,9 @@ static void mqttPublishHADiscovery() {
     snprintf(nodeId, sizeof(nodeId), "yoradio_%08lx", (unsigned long)(mac & 0xFFFFFFFFULL));
   }
 
-  char dev[256];
+  // Keep buffers generous: HA discovery payloads are easy to truncate otherwise,
+  // and truncated JSON configs are silently ignored by Home Assistant.
+  char dev[512];
   if (HA_DEVICE_HW_VERSION[0] != '\0') {
     snprintf(dev, sizeof(dev),
              "{\"identifiers\":[\"%s\"],\"name\":\"yoRadio %s\",\"manufacturer\":\"%s\",\"model\":\"%s\",\"hw_version\":\"%s\",\"sw_version\":\"%s\"}",
@@ -109,7 +111,7 @@ static void mqttPublishHADiscovery() {
 
   // --- Sensors (battery) ---
   {
-    char cfg[520];
+    char cfg[900];
     snprintf(cfg, sizeof(cfg),
              "{\"name\":\"Battery\",\"unique_id\":\"%s_battery_percent\",\"state_topic\":\"%sbattery\","
              "\"value_template\":\"{{ value_json.percent }}\",\"unit_of_measurement\":\"%%\","
@@ -120,7 +122,7 @@ static void mqttPublishHADiscovery() {
     pubCfg("sensor", "battery_percent", cfg);
   }
   {
-    char cfg[520];
+    char cfg[900];
     snprintf(cfg, sizeof(cfg),
              "{\"name\":\"Battery Voltage\",\"unique_id\":\"%s_battery_voltage\",\"state_topic\":\"%sbattery/voltage\","
              "\"unit_of_measurement\":\"V\","
@@ -131,7 +133,7 @@ static void mqttPublishHADiscovery() {
     pubCfg("sensor", "battery_voltage", cfg);
   }
   {
-    char cfg[520];
+    char cfg[900];
     snprintf(cfg, sizeof(cfg),
              "{\"name\":\"Battery Rate\",\"unique_id\":\"%s_battery_rate\",\"state_topic\":\"%sbattery\","
              "\"value_template\":\"{{ value_json.rate }}\",\"unit_of_measurement\":\"%%/h\","
@@ -142,7 +144,7 @@ static void mqttPublishHADiscovery() {
     pubCfg("sensor", "battery_rate", cfg);
   }
   {
-    char cfg[520];
+    char cfg[900];
     snprintf(cfg, sizeof(cfg),
              "{\"name\":\"Battery State\",\"unique_id\":\"%s_battery_state\",\"state_topic\":\"%sbattery\","
              "\"value_template\":\"{{ value_json.state }}\",\"icon\":\"mdi:battery-heart\","
@@ -152,7 +154,7 @@ static void mqttPublishHADiscovery() {
     pubCfg("sensor", "battery_state", cfg);
   }
   {
-    char cfg[560];
+    char cfg[900];
     snprintf(cfg, sizeof(cfg),
              "{\"name\":\"USB Power\",\"unique_id\":\"%s_usb_present\",\"state_topic\":\"%sbattery\","
              "\"value_template\":\"{{ 'ON' if value_json.usb == 1 else 'OFF' }}\","

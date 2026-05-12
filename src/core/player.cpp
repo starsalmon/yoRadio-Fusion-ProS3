@@ -155,16 +155,30 @@ void Player::_stop(bool alreadyStopped){
   //if(config.getMode()==PM_SDCARD && !alreadyStopped) config.sdResumePos = player.getAudioFilePosition();
   if (config.getMode() == PM_SDCARD && !alreadyStopped) {
     const uint32_t pos = player.getAudioFilePosition();
+    const uint32_t curSec = player.getAudioCurrentTime();
+    const uint32_t durSec = player.getAudioFileDuration();
     config.sdResumePos = pos;
     config.stopedSdStationId = config.lastStation();
 
     // Persist SD resume position (absolute file position).
     // If we're effectively at EOF, clear resume so the next start begins at 0.
-    uint32_t persisted = pos;
-    if (persisted == 0) {
-      persisted = 0;
-    } else if (player.sd_max > player.sd_min + 4096 && persisted >= (player.sd_max - 4096)) {
-      persisted = 0;
+    //
+    // NOTE: SD byte offsets can be unreliable with large input buffers (file pos vs buffered bytes),
+    // so prefer persisting time when available. We encode "time resume" by setting the high bit.
+    uint32_t persisted = 0;
+    if (durSec > 0 && curSec > 0) {
+      // Near-EOF: don't resume into the last couple seconds.
+      if (curSec >= (durSec > 2 ? (durSec - 2) : durSec)) {
+        persisted = 0;
+      } else {
+        persisted = 0x80000000u | (curSec & 0x7FFFFFFFu);
+      }
+    } else {
+      // Fallback to byte position.
+      persisted = pos;
+      if (player.sd_max > player.sd_min + 4096 && persisted >= (player.sd_max - 4096)) {
+        persisted = 0;
+      }
     }
     config.saveValue(&config.store.lastSdResumePos, (uint32_t)persisted);
   }

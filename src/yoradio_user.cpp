@@ -5,6 +5,10 @@
 #include "battery.h"
 #include <Adafruit_NeoPixel.h>
 
+#ifndef BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS
+  #define BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS 10
+#endif
+
 void yoradio_on_setup() {
 
     Serial.println(">>> yoradio_on_setup() CALLED <<<");
@@ -31,7 +35,7 @@ void yoradio_on_setup() {
     {
         static Adafruit_NeoPixel s_px(1, BUILTIN_NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
         s_px.begin();
-        s_px.setBrightness(10); // low brightness even if something sets a color later
+        s_px.setBrightness(BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS); // low brightness even if something sets a color later
         s_px.clear();
         s_px.show();
         delay(1);

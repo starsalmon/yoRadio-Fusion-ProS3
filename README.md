@@ -43,14 +43,11 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 
 - **SD → WEB → ABC HLS AAC sometimes stalls**: after switching from SD playback to WEB streaming, certain ABC HLS AAC stations may fail to start (hangs after “stream ready / buffer filled”).
   - **Workarounds**: play any “known good” MP3 station once, or switch modes and try again.
-- **Occasional AAC stutter**: you may hear brief stutters on some AAC/HLS stations.
-  - This can be worsened by **very chatty logging** (Serial monitor + lots of `info` prints) competing with network/decoder timing.
 - **SD mount errors during mode switching**: you may see `sd_diskio` warnings like “token error” / “The physical drive cannot work”.
   - If SD playback still works afterwards, these are usually transient; SD bus/power timing is still being tuned.
 
 ### TODO / Roadmap
 
-- **Create EN NAMEDAYS_FILE**: Currently only valid options are HU, PL, NL
 - **Test/refine low battery cutoff**: Not propperly tested, have seent this not work once
 - **Theme switching**: add a way to select/switch themes (e.g. from web UI / config, and persist the chosen theme)
 - **IR control UX**: set up IR receiver + add flashing “IR RX” icon on-screen

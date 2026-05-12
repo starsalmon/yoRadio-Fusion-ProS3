@@ -154,8 +154,19 @@ void Player::_stop(bool alreadyStopped){
   log_i("%s called", __func__);
   //if(config.getMode()==PM_SDCARD && !alreadyStopped) config.sdResumePos = player.getAudioFilePosition();
   if (config.getMode() == PM_SDCARD && !alreadyStopped) {
-    config.sdResumePos = player.getAudioFilePosition();
+    const uint32_t pos = player.getAudioFilePosition();
+    config.sdResumePos = pos;
     config.stopedSdStationId = config.lastStation();
+
+    // Persist SD resume position (absolute file position).
+    // If we're effectively at EOF, clear resume so the next start begins at 0.
+    uint32_t persisted = pos;
+    if (persisted == 0) {
+      persisted = 0;
+    } else if (player.sd_max > player.sd_min + 4096 && persisted >= (player.sd_max - 4096)) {
+      persisted = 0;
+    }
+    config.saveValue(&config.store.lastSdResumePos, (uint32_t)persisted);
   }
   _status = STOPPED;
   setOutputPins(false);

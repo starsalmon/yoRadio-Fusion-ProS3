@@ -270,13 +270,17 @@ void my_audio_info(Audio::msg_t m) {
  */
 void seekSD() {
   if (config.getMode() == PM_SDCARD && config.sdResumePos > 0) {
-    if (currentStationId == config.stopedSdStationId) {
-      uint32_t offset = 0;
-      if (config.sdResumePos > player.sd_min) {
-        offset = config.sdResumePos - player.sd_min;
-      }
-      player.setAudioFilePosition(offset);
-    }
+    // Don't depend on ID3 "Track:" tags (many files don't have them).
+    // Instead, ensure we only seek when we're playing the same SD station that was stopped.
+    if ((uint16_t)config.stopedSdStationId == (uint16_t)-1) return;
+    if (config.lastStation() != (uint16_t)config.stopedSdStationId) return;
+
+    uint32_t pos = config.sdResumePos;
+    // Clamp to known SD audio range if available.
+    if (player.sd_min && pos < player.sd_min) pos = player.sd_min;
+    if (player.sd_max && player.sd_max > player.sd_min && pos > player.sd_max) pos = player.sd_min;
+
+    player.setAudioFilePosition(pos);
   }
 }
 

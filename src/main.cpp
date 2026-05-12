@@ -178,7 +178,9 @@ void loop() {
 #endif
   }
 
-  battery_update();
+  #if !defined(BATTERY_ENABLED) || (BATTERY_ENABLED != 0)
+    battery_update();
+  #endif
 
 #if (WAKE_PIN1 != 255) || (WAKE_PIN2 != 255)
   #ifndef AUTO_DEEPSLEEP_BATT_PCT

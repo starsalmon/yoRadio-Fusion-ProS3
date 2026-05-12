@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace AsyncMqttClientInternals {
 class Helpers {
  public:
@@ -41,6 +43,16 @@ class Helpers {
   #define SEMAPHORE_GIVE() xSemaphoreGive(_xSemaphore)
   #define GET_FREE_MEMORY() ESP.getMaxAllocHeap()
   #include <esp32-hal-log.h>
+
+  // This repo uses AsyncMqttClient as in-tree source. When MQTT_QUIET_LOGS is enabled
+  // in `myoptions.h`, silence the library's INFO spam (log_i), but keep warnings/errors.
+  #if __has_include("../../../myoptions.h")
+    #include "../../../myoptions.h"
+  #endif
+  #if defined(MQTT_QUIET_LOGS) && MQTT_QUIET_LOGS
+    #undef log_i
+    #define log_i(...)
+  #endif
 #elif defined(ARDUINO_ARCH_ESP8266)
   #define SEMAPHORE_TAKE(X) while (_xSemaphore) { /*ESP.wdtFeed();*/ } _xSemaphore = true
   #define SEMAPHORE_GIVE() _xSemaphore = false

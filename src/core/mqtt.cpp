@@ -98,7 +98,13 @@ static void mqttPublishHADiscovery() {
   auto pubCfg = [&](const char* component, const char* objectId, const char* json) {
     char t[200];
     snprintf(t, sizeof(t), "%s/%s/%s/%s/config", MQTT_HA_PREFIX, component, nodeId, objectId);
-    mqttClient.publish(t, 0, true, json);
+    // AsyncMqttClient can drop publishes if we enqueue too many at once.
+    // Retry a few times to make HA discovery reliable (especially right after boot).
+    for (int attempt = 0; attempt < 5; attempt++) {
+      const uint16_t pid = mqttClient.publish(t, 0, true, json);
+      if (pid != 0) break;
+      delay(30);
+    }
   };
 
   // --- Sensors (battery) ---

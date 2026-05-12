@@ -129,6 +129,30 @@ if (store.lastPlayedSource > PL_SRC_DLNA)
   }
   BOOTLOG("CONFIG_VERSION\t%d", store.version);
 
+  // Restore SD resume position (absolute file position). This is only applied
+  // when playing the same SD track that was last stopped.
+  sdResumePos = store.lastSdResumePos;
+  stopedSdStationId = store.lastSdStation;
+
+  // Extra safety: clamp a couple of control settings that can cause "crazy" encoder behaviour if corrupted.
+  if (store.volsteps == 0 || store.volsteps > 20) {
+    saveValue(&store.volsteps, (uint8_t)1, false);
+  }
+  if (store.encacc < 10 || store.encacc > 5000) {
+    saveValue(&store.encacc, (uint16_t)200, false);
+  }
+
+  // SD playback order: if the raw EEPROM byte for sdsnuffle is not 0/1,
+  // force it OFF so "next/prev" stays sequential.
+  {
+    const size_t addr = getAddr(&store.sdsnuffle);
+    const uint8_t raw = EEPROM.read(addr);
+    if (raw != 0 && raw != 1) {
+      saveValue(&store.sdsnuffle, false, false, true);
+    }
+  }
+  EEPROM.commit();
+
   store.play_mode = store.play_mode & 0b11;
 //DLNA modplus
 #ifdef USE_DLNA 
@@ -200,6 +224,28 @@ void Config::_setupVersion(){
       saveValue(&store.lsSsEnabled,  (uint8_t)1);
       saveValue(&store.lsModel,      (uint8_t)0);
       saveValue(&store.lsBrightness, (uint8_t)30);
+      break;
+    case 13:
+      // Add SD resume position storage (absolute file position).
+      saveValue(&store.lastSdResumePos, (uint32_t)0);
+      break;
+    case 14:
+      // Repair settings that could be corrupted by the (brief) CONFIG_VERSION=14 layout bug.
+      // Keep this conservative: only fix clearly-invalid values.
+      if (store.volsteps == 0 || store.volsteps > 20) {
+        saveValue(&store.volsteps, (uint8_t)1, false);
+      }
+      if (store.encacc < 10 || store.encacc > 5000) {
+        saveValue(&store.encacc, (uint16_t)200, false);
+      }
+      // If mdnsname was shifted, it may appear as "dio-xxxxxx". Fix it to "yoradio-xxxxxx".
+      if (strncmp(store.mdnsname, "dio-", 4) == 0) {
+        char fixed[MDNS_LENGTH] = {0};
+        snprintf(fixed, sizeof(fixed), "yoradio-%s", store.mdnsname + 4);
+        saveValue(store.mdnsname, fixed, MDNS_LENGTH);
+      } else {
+        EEPROM.commit();
+      }
       break;
   }
   currentVersion++;
@@ -285,7 +331,15 @@ void Config::changeMode(int newmode) { // DLNA mod
     if (oldMode == PM_SDCARD && newmode == PM_WEB) {
         player.lockOutput = true; // don't call stopInfo() (keeps SmartStart intact)
         player.sendCommand({PR_STOP, 0});
-        player.loop();            // process immediately in this context
+        uint32_t stopStart = millis();
+        while (player.isRunning() && (millis() - stopStart) < 2500) {
+            player.loop();        // process immediately in this context
+            delay(10);
+        }
+        if (player.isRunning()) {
+            Serial.println("##[WARN]# SD->WEB: forcing audio stop before SD unmount");
+            player.stopSong();
+        }
         player.lockOutput = false;
         delay(30);
     }
@@ -332,6 +386,9 @@ void Config::changeMode(int newmode) { // DLNA mod
     if (enteringSD) {
         uint16_t st = store.lastSdStation;
         if (st > 0) {
+          // Prepare SD resume state (position + station match) before playback starts.
+          sdResumePos = store.lastSdResumePos;
+          stopedSdStationId = st;
           // Negative payload => play station without overwriting WEB lastStation.
           player.sendCommand({PR_PLAY, -(int)st});
         }
@@ -371,7 +428,6 @@ void Config::initSDPlaylist() {
       if (store.lastSdStation == 0 && index.size() >= 4) {
         lastStation(_randomStation());
       }
-      sdResumePos = 0;
     //}
     index.close();
     //saveValue(&store.countStation, store.countStation, true, true);
@@ -426,6 +482,12 @@ bool Config::prepareForPlaying(uint16_t stationId){
 }
 void Config::configPostPlaying(uint16_t stationId){ //DLNA mod
   if (getMode() == PM_SDCARD) {
+    // If the SD track changed, clear any saved resume position so we don't
+    // accidentally apply the old position to a different file after reboot.
+    if (store.lastSdStation != stationId) {
+      saveValue(&store.lastSdResumePos, (uint32_t)0);
+      sdResumePos = 0;
+    }
     saveValue(&store.lastSdStation, stationId);
   }
 #ifdef USE_DLNA
@@ -446,9 +508,13 @@ void Config::setSDpos(uint32_t val){
   if (getMode()==PM_SDCARD){
     sdResumePos = 0;                 // ha kézzel állítasz pozíciót, ne legyen régi resume
     if(!player.isRunning()){
-      config.sdResumePos = val-player.sd_min;
+      config.sdResumePos = val;
+      saveValue(&store.lastSdResumePos, (uint32_t)val);
+      stopedSdStationId = store.lastSdStation;
     }else{
-      player.setAudioFilePosition(val-player.sd_min); // futó lejátszásnál seek webről
+      player.setAudioFilePosition(val); // futó lejátszásnál seek webről
+      saveValue(&store.lastSdResumePos, (uint32_t)val);
+      stopedSdStationId = store.lastSdStation;
     }
   }
 }
@@ -999,6 +1065,7 @@ void Config::setDefaults() {
   store.pressureSlope_x1000 = 120;
   store._reserved = 0;
   store.lastSdStation = 0;
+  store.lastSdResumePos = 0;
   store.lastDlnaStation = 0; //DLNA mod
   store.sdsnuffle = false;
   store.volsteps = 1;
@@ -1041,6 +1108,7 @@ void Config::setDefaults() {
   store.lsSsEnabled   = 1;
   store.lsModel       = 0;
   store.lsBrightness  = 30;
+  store.lastSdResumePos = 0;
   eepromWrite(EEPROM_START, store);
 }
 

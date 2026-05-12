@@ -9,15 +9,20 @@ void yoradio_on_setup() {
 
     Serial.println(">>> yoradio_on_setup() CALLED <<<");
 
-    pinMode(LDO2_ENABLE, OUTPUT);
-    pinMode(RF_SWITCH, OUTPUT);
+    // PROS3-only hardware init. Guarded so this repo can be built on other boards.
+    #if defined(ARDUINO_UM_PROS3)
+      #if defined(LDO2_ENABLE) && (LDO2_ENABLE != 255)
+        pinMode(LDO2_ENABLE, OUTPUT);
+        digitalWrite(LDO2_ENABLE, HIGH);   // enable LDO2 (3V3_AUX)
+        Serial.println(">>> LDO2 (3V3_AUX) enabled! <<<");
+      #endif
 
-    digitalWrite(LDO2_ENABLE, HIGH);   // enable LDO2 (3V3_AUX)
-    Serial.println(">>> LDO2 (3V3_AUX) enabled! <<<");
-
-    // Force external antenna on ProS3 Series-D    
-    digitalWrite(RF_SWITCH, HIGH);
-    Serial.println(">>> Forced external antenna! <<<");
+      #if defined(RF_SWITCH) && (RF_SWITCH != 255) && defined(PROS3_FORCE_EXTERNAL_ANTENNA) && (PROS3_FORCE_EXTERNAL_ANTENNA)
+        pinMode(RF_SWITCH, OUTPUT);
+        digitalWrite(RF_SWITCH, HIGH); // external antenna
+        Serial.println(">>> Forced external antenna! <<<");
+      #endif
+    #endif
 
 #if defined(BUILTIN_NEOPIXEL_PIN) && (BUILTIN_NEOPIXEL_PIN != 255)
     // Ensure the onboard NeoPixel is off (WS2812 can latch random colors if its

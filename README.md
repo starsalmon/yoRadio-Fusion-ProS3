@@ -8,6 +8,7 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 - **PROS3 hardware init**: enable LDO2 (3V3_AUX) and force external antenna in `src/yoradio_user.cpp`
 - **Battery gauge**: MAX17048 via I2C (robust init + clamped sampling)
 - **MAX17048 low-power**: put the gauge into sleep mode right before ESP deep sleep (reduces gauge current during sleep)
+- **Theme files cleanup**: custom theme headers live under `themes/` (instead of cluttering the repo root)
 - **Deep sleep power management**:
   - **Wake pins**: uses `WAKE_PIN1` + optional `WAKE_PIN2` (RTC GPIO only: GPIO0–GPIO21) via ESP32 `ext1` wake (`ANY_LOW`) with pullups enabled
   - **Auto deep sleep** (only when at least one wake pin is configured):
@@ -51,6 +52,7 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 
 - **Create EN NAMEDAYS_FILE**: Currently only valid options are HU, PL, NL
 - **Test/refine low battery cutoff**: Not propperly tested, have seent this not work once
+- **Theme switching**: add a way to select/switch themes (e.g. from web UI / config, and persist the chosen theme)
 - **IR control UX**: set up IR receiver + add flashing “IR RX” icon on-screen
 - **SD playback resume**: **track resume is implemented**; resume **position** still to be implemented
 - **Album art + station logos**: display on screen (likely larger change)

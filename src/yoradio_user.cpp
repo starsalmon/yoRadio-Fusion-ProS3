@@ -10,7 +10,7 @@ void yoradio_on_setup() {
     Serial.println(">>> yoradio_on_setup() CALLED <<<");
 
     // PROS3-only hardware init. Guarded so this repo can be built on other boards.
-    #if defined(ARDUINO_UM_PROS3)
+    #if defined(ARDUINO_PROS3)
       #if defined(LDO2_ENABLE) && (LDO2_ENABLE != 255)
         pinMode(LDO2_ENABLE, OUTPUT);
         digitalWrite(LDO2_ENABLE, HIGH);   // enable LDO2 (3V3_AUX)

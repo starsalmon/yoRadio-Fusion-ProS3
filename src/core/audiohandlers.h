@@ -4,6 +4,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <algorithm>
 #include "../audioI2S/Audio.h"
 #include "../displays/tools/l10n.h"
 #include "audiohelpers.h"
@@ -275,7 +276,18 @@ void seekSD() {
     if ((uint16_t)config.stopedSdStationId == (uint16_t)-1) return;
     if (config.lastStation() != (uint16_t)config.stopedSdStationId) return;
 
-    uint32_t pos = config.sdResumePos;
+    const uint32_t raw = config.sdResumePos;
+
+    // If the high bit is set, resume by time (seconds) instead of bytes.
+    if (raw & 0x80000000u) {
+      const uint32_t sec = (raw & 0x7FFFFFFFu);
+      if (sec > 0) {
+        player.setAudioPlayTime((uint16_t)std::min<uint32_t>(sec, 0xFFFFu));
+      }
+      return;
+    }
+
+    uint32_t pos = raw;
     // Clamp to known SD audio range if available.
     if (player.sd_min && pos < player.sd_min) pos = player.sd_min;
     if (player.sd_max && player.sd_max > player.sd_min && pos > player.sd_max) pos = player.sd_min;

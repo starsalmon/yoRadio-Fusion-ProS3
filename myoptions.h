@@ -25,6 +25,10 @@
 #define LDO2_ENABLE   17 // LDO2 (3V3_AUX) - HIGH to enable
 #define RF_SWITCH     11 // Switches between internal and external Antenna - HIGH to use external
 #define CHARGE_SENSE_PIN 33   // ProS3 GPIO33 = 5V sense
+
+// PROS3 option: force external antenna at boot (via RF_SWITCH).
+// Set to 0 if you want to use the internal antenna.
+#define PROS3_FORCE_EXTERNAL_ANTENNA 1
 /******************************************/
 
 /******************************************/

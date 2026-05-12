@@ -3997,11 +3997,6 @@ ps_ptr<char> Audio::parsePlaylist_M3U8() {
 
             // Re-run ID3 header sniffing on the first TS packet of each segment.
             m_pwsst.f_firstPacket = true;
-
-            // Force sync re-acquire on segment boundary.
-            m_f_playing = false;
-            m_f_decode_ready = false;
-            m_fnsy.swnf = 0;
         }
         m_playlistBuff.clone_from(playlistBuff);
         return playlistBuff;

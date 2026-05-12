@@ -4,9 +4,9 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 
 ### What’s custom in this repo
 
-- **Board/PlatformIO target**: `um_pros3` (`platformio.ini` env: `yoradio-esp32s3n16r8-ili9431`)
-- **PROS3 hardware init**: enable LDO2 (3V3_AUX) and force external antenna in `src/yoradio_user.cpp`
-- **Battery gauge**: MAX17048 via I2C (robust init + clamped sampling)
+- **Board/PlatformIO target**: `um_pros3` (`platformio.ini` env: `yoradio-um_pros3-ili9341`)
+- **PROS3 hardware init**: enable LDO2 (3V3_AUX) and use external antenna (optional) in `src/yoradio_user.cpp`
+- **Battery gauge**: MAX17048 via I2C (robust init + clamped sampling). Can be disabled in `myoptions.h` with `BATTERY_ENABLED 0` (useful if no battery is connected).
 - **MAX17048 low-power**: put the gauge into sleep mode right before ESP deep sleep (reduces gauge current during sleep)
 - **Theme files cleanup**: custom theme headers live under `themes/` (instead of cluttering the repo root)
 - **Deep sleep power management**:
@@ -51,7 +51,7 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 - **Test/refine low battery cutoff**: Not propperly tested, have seent this not work once
 - **Theme switching**: add a way to select/switch themes (e.g. from web UI / config, and persist the chosen theme)
 - **IR control UX**: set up IR receiver + add flashing “IR RX” icon on-screen
-- **SD playback resume**: **track resume is implemented**; resume **position** still to be implemented
+- **SD playback resume**: **track resume is implemented**; resume **position** is still a work in progress
 - **Album art + station logos**: display on screen (likely larger change)
 
 ### Automatic patching (PlatformIO pre-build)
@@ -132,19 +132,19 @@ Assuming `MQTT_ROOT_TOPIC` already ends with `/`:
 From the project root:
 
 ```bash
-platformio run -e yoradio-esp32s3n16r8-ili9431
+platformio run -e yoradio-um_pros3-ili9341
 ```
 
 ### Upload
 
 ```bash
-platformio run -e yoradio-esp32s3n16r8-ili9431 -t upload
+platformio run -e yoradio-um_pros3-ili9341 -t upload
 ```
 
 ### Upload filesystem (SPIFFS)
 
 ```bash
-platformio run -e yoradio-esp32s3n16r8-ili9431 -t uploadfs
+platformio run -e yoradio-um_pros3-ili9341 -t uploadfs
 ```
 
 ### Serial monitor

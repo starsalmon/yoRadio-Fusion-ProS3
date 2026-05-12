@@ -12,6 +12,40 @@
 void yoradio_on_setup() {
 
     Serial.println(">>> yoradio_on_setup() CALLED <<<");
+    Serial.println(">>> Custom options (myoptions.h) <<<");
+#if defined(ARDUINO_PROS3)
+    Serial.println("board: PROS3");
+#endif
+#if defined(PROS3_USE_EXTERNAL_ANTENNA)
+    Serial.printf("PROS3_USE_EXTERNAL_ANTENNA=%d\n", (int)PROS3_USE_EXTERNAL_ANTENNA);
+#endif
+#if defined(BUILTIN_NEOPIXEL_PIN)
+    Serial.printf("BUILTIN_NEOPIXEL_PIN=%d\n", (int)BUILTIN_NEOPIXEL_PIN);
+#endif
+#if defined(BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS)
+    Serial.printf("BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS=%d\n", (int)BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS);
+#endif
+#if defined(SD_AUTORESUME_ON_MODE_SWITCH)
+    Serial.printf("SD_AUTORESUME_ON_MODE_SWITCH=%d\n", (int)SD_AUTORESUME_ON_MODE_SWITCH);
+#endif
+#if defined(WAKE_PIN1)
+    Serial.printf("WAKE_PIN1=%d\n", (int)WAKE_PIN1);
+#endif
+#if defined(WAKE_PIN2)
+    Serial.printf("WAKE_PIN2=%d\n", (int)WAKE_PIN2);
+#endif
+#if defined(AUTO_DEEPSLEEP_IDLE_MINUTES)
+    Serial.printf("AUTO_DEEPSLEEP_IDLE_MINUTES=%d\n", (int)AUTO_DEEPSLEEP_IDLE_MINUTES);
+#endif
+#if defined(AUTO_DEEPSLEEP_BATT_PCT)
+    Serial.printf("AUTO_DEEPSLEEP_BATT_PCT=%d\n", (int)AUTO_DEEPSLEEP_BATT_PCT);
+#endif
+#if defined(MQTT_DISABLE)
+    Serial.printf("MQTT_DISABLE=%d\n", (int)MQTT_DISABLE);
+#endif
+#if defined(MQTT_QUIET_LOGS)
+    Serial.printf("MQTT_QUIET_LOGS=%d\n", (int)MQTT_QUIET_LOGS);
+#endif
 
     // PROS3-only hardware init. Guarded so this repo can be built on other boards.
     #if defined(ARDUINO_PROS3)
@@ -21,10 +55,10 @@ void yoradio_on_setup() {
         Serial.println(">>> LDO2 (3V3_AUX) enabled! <<<");
       #endif
 
-      #if defined(RF_SWITCH) && (RF_SWITCH != 255) && defined(PROS3_FORCE_EXTERNAL_ANTENNA) && (PROS3_FORCE_EXTERNAL_ANTENNA)
+      #if defined(RF_SWITCH) && (RF_SWITCH != 255) && defined(PROS3_USE_EXTERNAL_ANTENNA) && (PROS3_USE_EXTERNAL_ANTENNA)
         pinMode(RF_SWITCH, OUTPUT);
         digitalWrite(RF_SWITCH, HIGH); // external antenna
-        Serial.println(">>> Forced external antenna! <<<");
+        Serial.println(">>> External antenna enabled! <<<");
       #endif
     #endif
 
@@ -43,6 +77,8 @@ void yoradio_on_setup() {
     }
 #endif
 
-    battery_init();
+    #if !defined(BATTERY_ENABLED) || (BATTERY_ENABLED != 0)
+      battery_init();
+    #endif
 
 }

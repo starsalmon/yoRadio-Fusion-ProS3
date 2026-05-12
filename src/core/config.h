@@ -48,7 +48,7 @@
   #define ESP_ARDUINO_3 1
 #endif
 
-#define CONFIG_VERSION  13
+#define CONFIG_VERSION  15
 
 enum playMode_e : uint8_t {  //DLNA mod
   PM_WEB    = 0,
@@ -238,6 +238,10 @@ struct config_t
   uint8_t   lsSsEnabled;     // screensaver alatt is fusson: 0=off, 1=on
   uint8_t   lsModel;         // 0=VU (default), további modellek később
   uint8_t   lsBrightness;    // 0..100 (%)
+
+  // Added at the end on purpose so older EEPROM layouts stay compatible.
+  // Absolute file position for SD resume (0 = disabled).
+  uint32_t  lastSdResumePos;
 };
 
 #if IR_PIN != 255

@@ -254,7 +254,7 @@ void Display::_buildPager(){
   #ifndef HIDE_VOL
     _voltxt = new TextWidget(voltxtConf, 10, false, config.theme.vol, config.theme.background);
   #endif
-  #ifndef HIDE_BAT
+  #if !defined(HIDE_BAT) && (!defined(BATTERY_ENABLED) || (BATTERY_ENABLED != 0))
     _battxt = new TextWidget(battxtConf, 20, false, config.theme.rssi, config.theme.background);
   #endif
   #ifndef HIDE_IP
@@ -280,7 +280,7 @@ void Display::_buildPager(){
         _volIcon = new BitmapWidget(voliconConf, vbmp, ICON_VOL_W, ICON_VOL_H, config.theme.vol, config.theme.background, BitmapFormat::GFX_MSB);
       }
     #endif
-    #ifndef HIDE_BAT
+    #if !defined(HIDE_BAT) && (!defined(BATTERY_ENABLED) || (BATTERY_ENABLED != 0))
       {
         const float pct = battery_is_ready() ? battery_get_percent() : 0.0f;
         const auto bmpForPct = [](float p) -> const uint8_t* {

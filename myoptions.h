@@ -26,13 +26,14 @@
 #define RF_SWITCH     11 // Switches between internal and external Antenna - HIGH to use external
 #define CHARGE_SENSE_PIN 33   // ProS3 GPIO33 = 5V sense
 
-// PROS3 option: force external antenna at boot (via RF_SWITCH).
+// PROS3 option: use external antenna at boot (via RF_SWITCH).
 // Set to 0 if you want to use the internal antenna.
-#define PROS3_FORCE_EXTERNAL_ANTENNA 0
+#define PROS3_USE_EXTERNAL_ANTENNA 1
 /******************************************/
 
 /******************************************/
 // --- Max MAX17048 LiPo fuel guage on ProS3 ---
+#define BATTERY_ENABLED 1  // Set to 0 to disable ALL battery gauge/UI logic (useful if no battery is connected)
 #define BATTERY_SDA   8
 #define BATTERY_SCL   9
 #define BATTERY_INT   10

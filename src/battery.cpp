@@ -32,6 +32,31 @@ static bool voltageDefinitelyNoBattery(float v) {
     return isfinite(v) && v > 0.0f && v < 0.50f;
 }
 
+#if defined(BATTERY_ENABLED) && (BATTERY_ENABLED == 0)
+
+// Battery feature hard-disabled via `myoptions.h`.
+// Keep the API surface available so the rest of the codebase doesn't need #ifdefs.
+void battery_init() {
+    batteryReady = false;
+    usbSenseReady = false;
+    lastUsbPresent = false;
+    lastSample = 0;
+    lastPercent = 0.0f;
+    lastVoltage = 0.0f;
+    lastChargeRate = 0.0f;
+}
+
+void battery_update() {}
+float battery_get_percent() { return 0.0f; }
+bool battery_is_ready() { return false; }
+bool battery_is_present() { return false; }
+float battery_get_voltage() { return 0.0f; }
+float battery_get_charge_rate() { return 0.0f; }
+bool battery_usb_present() { return false; }
+void battery_prepare_for_deepsleep() {}
+
+#else
+
 struct BatterySample {
     float pct;
     float v;
@@ -237,3 +262,5 @@ void battery_prepare_for_deepsleep() {
     maxlipo.sleep(true);
     delay(5);
 }
+
+#endif

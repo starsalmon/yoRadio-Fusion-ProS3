@@ -3253,12 +3253,18 @@ uint32_t Audio::stopSong() {
     uint8_t  maxWait = 0;
     uint32_t currTime = getAudioCurrentTime();
 
+    // Block new decode passes before waiting for the decoder mutex. This is
+    // important when switching away from SD: the old decoder/file must be fully
+    // torn down before the SD card is unmounted and a web stream is started.
+    m_f_lockInBuffer = true;
+
     // mutex_audioTaskIsDecoding is a mutex; only give it if we successfully took it.
-    if (xSemaphoreTake(mutex_audioTaskIsDecoding, 1.0 * configTICK_RATE_HZ) != pdTRUE) {
-        AUDIO_LOG_WARN("stopSong: decoder busy");
-        return currTime;
+    if (xSemaphoreTake(mutex_audioTaskIsDecoding, 3.0 * configTICK_RATE_HZ) != pdTRUE) {
+        // If we can't synchronize quickly, don't proceed with tearing down buffers/state
+        // while the decoder may still be using them. Wait until the decoder yields.
+        AUDIO_LOG_WARN("stopSong: decoder busy, waiting");
+        xSemaphoreTake(mutex_audioTaskIsDecoding, portMAX_DELAY);
     }
-    m_f_lockInBuffer = true; // wait for the decoding to finish
     {
         if (m_f_running) {
             m_f_running = false;

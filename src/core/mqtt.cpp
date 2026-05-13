@@ -178,17 +178,28 @@ static void mqttPublishHADiscovery() {
     pubCfg("binary_sensor", "playing", cfg);
   }
 
-  // Track time (seconds) from the status JSON.
+  // Track time/duration (seconds) as simple numeric topics (updated periodically).
   {
     char cfg[560];
     snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"Track Time\",\"unique_id\":\"%s_track_time\",\"state_topic\":\"%sstatus\","
-             "\"value_template\":\"{{ value_json.track_time }}\",\"unit_of_measurement\":\"s\","
+             "{\"name\":\"Track Time\",\"unique_id\":\"%s_track_time\",\"state_topic\":\"%strack_time\","
+             "\"value_template\":\"{{ value|int }}\",\"unit_of_measurement\":\"s\","
              "\"state_class\":\"measurement\",\"icon\":\"mdi:clock-outline\","
              "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
              "\"device\":%s}",
              nodeId, MQTT_ROOT_TOPIC, availabilityTopic, dev);
     pubCfg("sensor", "track_time", cfg);
+  }
+  {
+    char cfg[560];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Track Duration\",\"unique_id\":\"%s_track_duration\",\"state_topic\":\"%strack_duration\","
+             "\"value_template\":\"{{ value|int }}\",\"unit_of_measurement\":\"s\","
+             "\"state_class\":\"measurement\",\"icon\":\"mdi:timer-outline\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("sensor", "track_duration", cfg);
   }
   // NOTE: no separate brightness sensor – the number (slider) is the single "Brightness" entity.
   {
@@ -319,6 +330,8 @@ static void mqttHADiscoveryTask(void*) {
 }
 } // namespace
 
+static void mqttPublishTrackTime(bool force = false);
+
 void connectToMqtt() {
   #if defined(MQTT_DISABLE) && MQTT_DISABLE
     return;
@@ -375,6 +388,8 @@ void onMqttConnect(bool sessionPresent) {
   mqttPublishVolume();
   mqttPublishPlaylist();
   mqttPublishBattery();
+  // Ensure HA gets an initial value immediately on connect.
+  mqttPublishTrackTime(true);
 }
 
 void mqttPublishStatus() {
@@ -427,6 +442,43 @@ void mqttPublishStatus() {
       mqttClient.publish(t2, 0, true, mode);
     }
   }
+}
+
+static void mqttPublishTrackTime(bool force) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+  static uint32_t s_lastMs = 0;
+  static uint32_t s_lastT = 0;
+  static uint32_t s_lastD = 0;
+
+  const uint32_t now = millis();
+  if (!force && s_lastMs != 0 && (uint32_t)(now - s_lastMs) < 1000) return;
+  s_lastMs = now;
+
+  const uint32_t t = player.getAudioCurrentTime();
+  const uint32_t d = player.getAudioFileDuration();
+  if (!force && t == s_lastT && d == s_lastD) return;
+  s_lastT = t;
+  s_lastD = d;
+
+  char t2[160];
+  char buf[16];
+
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "track_time");
+  snprintf(buf, sizeof(buf), "%lu", (unsigned long)t);
+  mqttClient.publish(t2, 0, true, buf);
+
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "track_duration");
+  snprintf(buf, sizeof(buf), "%lu", (unsigned long)d);
+  mqttClient.publish(t2, 0, true, buf);
+}
+
+void mqttLoop() {
+  mqttPublishTrackTime(false);
 }
 
 void mqttPublishPlaylist() {

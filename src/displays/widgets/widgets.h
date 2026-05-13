@@ -447,6 +447,20 @@ class WeatherIconWidget : public Widget {
     void _clear() override;
 };
 
+// Simple RGB565 image widget (for station logos, etc.)
+class RgbImageWidget : public Widget {
+  public:
+    using Widget::init;
+    void init(WidgetConfig wconf, uint16_t bgcolor);
+    void setImage(const uint16_t* img, uint16_t w, uint16_t h);
+  protected:
+    const uint16_t* _img = nullptr;
+    uint16_t _iw = 0, _ih = 0;
+    bool _hasDrawn = false;
+    void _draw() override;
+    void _clear() override;
+};
+
 #endif
 #endif
 

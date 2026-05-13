@@ -24,6 +24,7 @@ class DateWidget;
 class TextWidget;
 class WeatherIconWidget;
 class BitmapWidget;
+class RgbImageWidget;
     
 class Display {
   public:
@@ -74,6 +75,16 @@ class Display {
     ClockWidget *_clock;
     DateWidget *_date;
     WeatherIconWidget *_weatherIcon = nullptr;
+    RgbImageWidget *_stationLogo = nullptr;
+    uint16_t _stationLogoW = 0;
+    uint16_t _stationLogoH = 0;
+    int16_t _stationLogoX = -1;
+    int16_t _stationLogoY = -1;
+    int16_t _stationLogoMoveW = -1;
+    const uint16_t* _stationLogoLastPixels = nullptr;
+    uint16_t* _stationLogoScaled = nullptr;
+    uint32_t _sdStationChangedAt = 0;
+    uint32_t _sdPstartAt = 0;
     Page *_boot;
     TextWidget *_bootstring, *_volip, *_voltxt, *_rssi, *_bitrate;
     TextWidget* _battxt = nullptr;
@@ -106,6 +117,9 @@ class Display {
     void _endRebuild();
     void _refreshWeatherUI();
     void _kickWeatherRefresh();
+    void _updateStationLogo();
+    void _layoutStationLogo();
+    // SD album art removed (JPEG decode was unstable on this target).
 };
 
 #else

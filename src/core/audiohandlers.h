@@ -8,6 +8,10 @@
 #include "../audioI2S/Audio.h"
 #include "../displays/tools/l10n.h"
 #include "audiohelpers.h"
+#include "config.h"
+#include "player.h"
+#include "display.h"
+#include "netserver.h"
 
 #ifdef USE_NEXTION
 extern decltype(nextion) nextion;  // Nextion kijelző objektum (extern)
@@ -52,12 +56,22 @@ static void safeStrCopy(char *dst, const char *src, size_t dstSize) {
  * m.s csak debugra / kompatra használjuk.
  */
 void my_audio_info(Audio::msg_t m) {
+  // SD resume: "stream ready" can arrive before Audio-Data-Start/Audio-Length.
+  // Defer the seek until we have bounds to avoid invalid seeks causing reboots.
+  static bool sdSeekPending = false;
+
   // Biztonságos stringek a kiíráshoz
   const char *s = (m.s != nullptr) ? m.s : "";
   const char *msg = (m.msg != nullptr) ? m.msg : "";
 
-  // Debug: mindent kiírunk
-  Serial.printf("##AUDIO -> e:%d  m.s:'%s'  m.msg:'%s'\n", static_cast<int>(m.e), s, msg);
+  // Debug logging here can be extremely chatty and may destabilize SD playback (timing/WDT).
+  // Keep it opt-in.
+  #ifndef AUDIOHANDLERS_VERBOSE
+    #define AUDIOHANDLERS_VERBOSE 0
+  #endif
+  #if AUDIOHANDLERS_VERBOSE
+    Serial.printf("##AUDIO -> e:%d  m.s:'%s'  m.msg:'%s'\n", static_cast<int>(m.e), s, msg);
+  #endif
 
   // Ha a kimenet zárolva, semmit nem frissítünk
   if (player.lockOutput) {
@@ -119,17 +133,24 @@ void my_audio_info(Audio::msg_t m) {
 
       // SD mód: "stream ready" → seek a mentett pozícióra
       if (strstr(msg, "stream ready") != nullptr) {
+        sdSeekPending = true;
+        // Try immediately only if we already have bounds.
         seekSD();
       }
       // SD mód: Audio-Data-Start
       else if (strstr(msg, "Audio-Data-Start:") != nullptr) {
         player.sd_min = atoi(msg + strlen("Audio-Data-Start:"));
+        if (sdSeekPending) seekSD();
       }
       // SD mód: teljes hossz (Audio-Length:)
       else if (strstr(msg, "Audio-Length:") != nullptr) {
         uint32_t audioLength = static_cast<uint32_t>(atoi(msg + strlen("Audio-Length:")));
         player.sd_max = player.sd_min + audioLength;
         netserver.requestOnChange(SDLEN, 0);  // slider tartomány a web felé
+        if (sdSeekPending) {
+          seekSD();
+          if (player.getAudioFilePosition() != 0) sdSeekPending = false;
+        }
       }
 
       // Ha a stream „skip metadata” módot jelez, akkor állomásnév kerül a title-be
@@ -270,13 +291,24 @@ void my_audio_info(Audio::msg_t m) {
  * a mentett stop pozícióra.
  */
 void seekSD() {
-  if (config.getMode() == PM_SDCARD && config.sdResumePos > 0) {
-    // Don't depend on ID3 "Track:" tags (many files don't have them).
-    // Instead, ensure we only seek when we're playing the same SD station that was stopped.
-    if ((uint16_t)config.stopedSdStationId == (uint16_t)-1) return;
-    if (config.lastStation() != (uint16_t)config.stopedSdStationId) return;
+  // TEMP: hard-disable SD resume seeking while we stabilize SD playback.
+  // Resume seeking happens very early (around "stream ready") and has proven to be a common
+  // source of reboot loops when any of the SD bounds/bitrate assumptions are wrong.
+  return;
 
-    const uint32_t raw = config.sdResumePos;
+  if (config.getMode() == PM_SDCARD) {
+    // Use the most reliable resume value we have: runtime first, then persisted.
+    uint32_t raw = config.sdResumePos;
+    if (raw == 0) raw = config.store.lastSdResumePos;
+    if (raw == 0) return;
+
+    // Ensure we only seek when we're playing the same SD track we last stopped.
+    uint16_t stoppedId = (uint16_t)config.stopedSdStationId;
+    if (stoppedId == (uint16_t)-1) stoppedId = config.store.lastSdStation;
+    if (stoppedId == 0) return;
+    if (config.lastStation() != stoppedId) return;
+
+    // `raw` is either encoded time (high bit) or byte position.
 
     // If the high bit is set, resume by time (seconds) instead of bytes.
     // Compute a byte position using Audio-Data-Start + bitrate*sec/8 (more reliable than
@@ -286,6 +318,7 @@ void seekSD() {
       const uint32_t br = (uint32_t)config.station.bitrate; // kbps or bps depending on source
       uint32_t bps = br;
       if (bps > 0 && bps < 3000) bps *= 1000; // stored as kbps in config.station.bitrate for most cases
+      // Only attempt time-based resume once we know where audio data starts.
       if (sec > 0 && bps > 0 && player.sd_min > 0) {
         const uint64_t delta = ((uint64_t)bps * (uint64_t)sec) / 8ULL;
         uint32_t pos = player.sd_min + (uint32_t)std::min<uint64_t>(delta, 0xFFFFFFFFULL - player.sd_min);
@@ -296,9 +329,13 @@ void seekSD() {
     }
 
     uint32_t pos = raw;
-    // Clamp to known SD audio range if available.
-    if (player.sd_min && pos < player.sd_min) pos = player.sd_min;
-    if (player.sd_max && player.sd_max > player.sd_min && pos > player.sd_max) pos = player.sd_min;
+    // Byte-offset resume is risky until we know the SD audio bounds; wait for Audio-Data-Start + Audio-Length.
+    if (player.sd_min == 0 || player.sd_max == 0 || player.sd_max <= player.sd_min) {
+      return;
+    }
+    // Clamp to known SD audio range.
+    if (pos < player.sd_min) pos = player.sd_min;
+    if (pos > player.sd_max) pos = player.sd_min;
 
     player.setAudioFilePosition(pos);
   }

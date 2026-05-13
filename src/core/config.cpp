@@ -141,6 +141,8 @@ if (store.lastPlayedSource > PL_SRC_DLNA)
   if (store.encacc < 10 || store.encacc > 5000) {
     saveValue(&store.encacc, (uint16_t)200, false);
   }
+  BOOTLOG("ENCACC\t%u", (unsigned)store.encacc);
+  BOOTLOG("VOLSTEPS\t%u", (unsigned)store.volsteps);
 
   // SD playback order: if the raw EEPROM byte for sdsnuffle is not 0/1,
   // force it OFF so "next/prev" stays sequential.
@@ -247,6 +249,24 @@ void Config::_setupVersion(){
         EEPROM.commit();
       }
       break;
+    case 15: {
+      // v17 stores "show logos" in an existing reserved bitfield (no EEPROM layout shift).
+      uint16_t r = store._reserved;
+      if (SHOW_LOGOS_DEFAULT) r |= 0x0001;
+      else                   r &= (uint16_t)~0x0001;
+      saveValue(&store._reserved, r);
+      break;
+    }
+    case 16: {
+      // Repair from the v16 EEPROM layout bug (a field was inserted mid-struct).
+      // Symptom: monoTheme can flip to 1, resulting in a mostly black UI.
+      saveValue(&store.monoTheme, (uint8_t)0, false);
+      uint16_t r = store._reserved;
+      if (SHOW_LOGOS_DEFAULT) r |= 0x0001;
+      else                   r &= (uint16_t)~0x0001;
+      saveValue(&store._reserved, r);
+      break;
+    }
   }
   currentVersion++;
   saveValue(&store.version, currentVersion);
@@ -829,6 +849,19 @@ void Config::setShowweather(bool val){
   timekeeper.forceWeather = true;
   display.putRequest(SHOWWEATHER);
 }
+
+void Config::setShowlogos(bool val){
+  uint16_t r = store._reserved;
+  if (val) r |= 0x0001;
+  else     r &= (uint16_t)~0x0001;
+  config.saveValue(&config.store._reserved, r);
+  // Force a station refresh so the logo widget is shown/hidden immediately.
+  display.putRequest(NEWSTATION);
+}
+
+bool Config::getShowlogos() const {
+  return (store._reserved & 0x0001) != 0;
+}
 void Config::setWeatherKey(const char *val){
   saveValue(store.weatherkey, val, WEATHERKEY_LENGTH);
   display.putRequest(NEWMODE, CLEAR);
@@ -1058,6 +1091,8 @@ void Config::setDefaults() {
   strlcpy(store.sntp1,"pool.ntp.org", 35);
   strlcpy(store.sntp2,"au.pool.ntp.org", 35);
   store.showweather=false;
+  if (SHOW_LOGOS_DEFAULT) store._reserved |= 0x0001;
+  else                    store._reserved &= (uint16_t)~0x0001;
   strlcpy(store.weatherlat,"47.1109", 10);
   strlcpy(store.weatherlon,"18.5773", 10);
   strlcpy(store.weatherkey,"", WEATHERKEY_LENGTH);

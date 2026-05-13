@@ -10,7 +10,9 @@
 #include "core/network.h"
 #include "core/netserver.h"
 #include "core/controls.h"
-//#include "core/mqtt.h"
+#ifdef MQTT_ROOT_TOPIC
+  #include "core/mqtt.h"
+#endif
 #include "core/optionschecker.h"
 #include "core/timekeeper.h"
 #include "clock/clock_tts.h"
@@ -111,6 +113,9 @@ void setup() {
   player.init();
   network.begin();
   if (network.status != CONNECTED && network.status!=SDREADY) {
+    // Still initialize playlist/station so the player UI can show the last station number
+    // even when we boot into "not connected yet" state (no autoplay).
+    config.initPlaylistMode();
     netserver.begin();
     initControls();
     display.putRequest(DSP_START);
@@ -173,6 +178,9 @@ void loop() {
 #endif
   if (network.status == CONNECTED || network.status==SDREADY) {
     player.loop();
+#ifdef MQTT_ROOT_TOPIC
+    mqttLoop();
+#endif
 #if USE_OTA
     ArduinoOTA.handle();
 #endif
@@ -196,6 +204,7 @@ void loop() {
       if (durSec > 0 && curSec > 0 && curSec + 2 < durSec) {
         const uint32_t encoded = 0x80000000u | (curSec & 0x7FFFFFFFu);
         config.saveValue(&config.store.lastSdResumePos, (uint32_t)encoded);
+        config.sdResumePos = encoded;
       }
     }
   }

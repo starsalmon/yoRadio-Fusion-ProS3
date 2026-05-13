@@ -7,3 +7,7 @@ compile_commands.json
 .DS_Store
 .cache/
 mqttoptions.h
+
+# Local test assets (not for git)
+data/test.jpg
+

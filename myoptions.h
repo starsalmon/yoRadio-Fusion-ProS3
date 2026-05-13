@@ -138,6 +138,10 @@
 // SD resume: when switching into SD mode, auto-play the last SD track.
 // Set to 0 to disable.
 #define SD_AUTORESUME_ON_MODE_SWITCH 1
+
+// Station logos + album art (runtime toggle default).
+// Set to 0 if you want them hidden by default after flashing.
+#define SHOW_LOGOS_DEFAULT 1
 //#define PLAYER_FORCE_MONO false  /*  mono option on boot - false stereo, true mono. "false" */
 #define I2S_INTERNAL    false    /*  If true - use esp32 internal DAC. "false" */
 //#define ROTATE_90   false        /*  Optional 90 degree rotation for square displays."false"*/

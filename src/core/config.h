@@ -48,7 +48,7 @@
   #define ESP_ARDUINO_3 1
 #endif
 
-#define CONFIG_VERSION  15
+#define CONFIG_VERSION  17
 
 enum playMode_e : uint8_t {  //DLNA mod
   PM_WEB    = 0,
@@ -409,6 +409,8 @@ class Config {
     void setScreensaverPlayingBlank(bool val);
     void setSntpOne(const char *val);
     void setShowweather(bool val);
+    void setShowlogos(bool val);
+    bool getShowlogos() const;
     void setWeatherKey(const char *val);
     void setSDpos(uint32_t val);
 #if IR_PIN!=255

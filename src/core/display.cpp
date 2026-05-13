@@ -16,7 +16,9 @@
 #include "../displays/tools/l10n.h"
 #include "../battery.h"
 #include "../displays/bitmaps/footer_icons_16.h"
+#include "../displays/bitmaps/station_logos.hpp"
 #include "../myoptions.h"
+#include "sdmanager.h"
 
 Display display;
 #ifdef USE_NEXTION
@@ -25,7 +27,9 @@ Nextion nextion;
 #endif
 
 #ifndef CORE_STACK_SIZE
-  #define CORE_STACK_SIZE  1024*8
+  // Display task does layout, string splitting, JPEG decode callbacks, etc.
+  // 8k was too tight and can trip the stack canary (see DspTask crashes).
+  #define CORE_STACK_SIZE  1024*16
 #endif
 #ifndef DSP_TASK_PRIORITY
   #define DSP_TASK_PRIORITY  2
@@ -144,6 +148,10 @@ Display::~Display() {
   delete _title1;
   delete _title2;
   delete _plcurrent;
+  if (_stationLogoScaled) {
+    free(_stationLogoScaled);
+    _stationLogoScaled = nullptr;
+  }
 }
 
 void Display::init() {
@@ -208,7 +216,9 @@ void Display::_bootScreen(){
 }
 
 void Display::_buildPager(){
-  _meta->init("*", metaConf, config.theme.meta, config.theme.metabg);
+  // Header bar uses the theme "fill" color. Many themes set STATION_BG dark
+  // and STATION_FILL as the intended header color.
+  _meta->init("*", metaConf, config.theme.meta, config.theme.metafill);
   _title1->init("*", title1Conf, config.theme.title1, config.theme.background);
   _clock->init(getclockConf(), 0, 0);
   _date->init(getDateConf(), config.theme.date, config.theme.background);
@@ -227,16 +237,22 @@ void Display::_buildPager(){
   #endif
   #if !defined(DSP_LCD) && DSP_MODEL!=DSP_NOKIA5110
     _plbackground = new FillWidget(playlBGConf, config.theme.plcurrentfill);
-      FillWidget* _metabackground = nullptr;
-    #if DSP_INVERT_TITLE || defined(DSP_OLED)
-      if (config.store.stationLine) {
-       _metabackground = new FillWidget(metaBGConfLine, config.theme.metafill);
-      } else {
-       _metabackground = new FillWidget(metaBGConf, config.theme.metafill);
-      }
-    #else
-      _metabackground = new FillWidget(metaBGConfInv, config.theme.metafill);
-    #endif
+    // Ensure the whole player page background is painted every time the page redraws.
+    // Without a full-page fill, stale pixels (often black from the boot page) can remain
+    // visible in areas not covered by other widgets until the first full page transition.
+    FillWidget* _playerBackground = new FillWidget(
+      FillConfig{ { 0, 0, 0, WA_LEFT }, (uint16_t)dsp.width(), (uint16_t)dsp.height(), false },
+      config.theme.background
+    );
+    FillWidget* _metabackground = nullptr;
+    FillWidget* _metaline = nullptr;
+    // Always paint the full header background.
+    // (Previously, when stationLine was enabled, only the 1px line widget was created,
+    // leaving most of the header bar unpainted.)
+    _metabackground = new FillWidget(metaBGConf, config.theme.metafill);
+    if (config.store.stationLine) {
+      _metaline = new FillWidget(metaBGConfLine, config.theme.div);
+    }
   #endif
   #if DSP_MODEL==DSP_NOKIA5110
     _plbackground = new FillWidget(playlBGConf, 1);
@@ -319,6 +335,11 @@ void Display::_buildPager(){
     _weatherIcon->init(getWeatherIconConf(), config.theme.background);
    #endif
   #endif
+
+  // Station logo (RGB565). Shown only for known stations.
+  _stationLogo = new RgbImageWidget();
+  _stationLogo->init({0, 0, 0, WA_LEFT}, config.theme.background);
+  _stationLogo->lock(true);
   
   #if DSP_MODEL==DSP_ILI9341
     if(_volIcon)  _footer->addWidget(_volIcon);
@@ -335,7 +356,10 @@ void Display::_buildPager(){
   // Draw volume bar last so it stays visible even if any icon clears overlap it.
   if(_volbar)   _footer->addWidget( _volbar);
   
-  if(_metabackground) pages[PG_PLAYER]->addWidget( _metabackground);
+  if(_playerBackground) pages[PG_PLAYER]->addWidget(_playerBackground);
+  if(_metabackground) pages[PG_PLAYER]->addWidget(_metabackground);
+  if(_metaline) pages[PG_PLAYER]->addWidget(_metaline);
+  if(_stationLogo) pages[PG_PLAYER]->addWidget(_stationLogo);
   pages[PG_PLAYER]->addWidget(_meta);
   pages[PG_PLAYER]->addWidget(_title1);
   if(_title2) pages[PG_PLAYER]->addWidget(_title2);
@@ -359,9 +383,11 @@ void Display::_buildPager(){
   // Station number and play-mode widgets (left/right side of meta row)
   #if STATION_WIDGETS
    #if DSP_MODEL!=DSP_ST7735 && DSP_MODEL!=DSP_ST7789_240 && DSP_MODEL!=DSP_GC9A01 && DSP_MODEL!=DSP_GC9A01A && DSP_MODEL!=DSP_GC9A01_I80
-    _stationNum = new StationNumWidget(getstationNumConf(), config.theme.div, config.theme.background);
+    // Use the header/meta fill colour as background so these widgets never
+    // "punch holes" into the top bar during early boot/layout changes.
+    _stationNum = new StationNumWidget(getstationNumConf(), config.theme.div, config.theme.metafill);
     pages[PG_PLAYER]->addWidget(_stationNum);
-    _playMode   = new PlayModeWidget(getplayModeConf(), config.theme.div, config.theme.background);
+    _playMode   = new PlayModeWidget(getplayModeConf(), config.theme.div, config.theme.metafill);
     pages[PG_PLAYER]->addWidget(_playMode);
    #endif 
   #endif
@@ -384,7 +410,8 @@ void Display::_buildPager(){
   #endif
   pages[PG_PLAYER]->addPage(_footer);
 
-  if(_metabackground) pages[PG_DIALOG]->addWidget( _metabackground);
+  if(_metabackground) pages[PG_DIALOG]->addWidget(_metabackground);
+  if(_metaline) pages[PG_DIALOG]->addWidget(_metaline);
   pages[PG_DIALOG]->addWidget(_meta);
   pages[PG_DIALOG]->addWidget(_nums);
   
@@ -415,7 +442,7 @@ void Display::_apScreen() {
       #endif
     #endif
 
-    ScrollWidget *bootTitle = (ScrollWidget*) &_boot->addWidget(new ScrollWidget("*", apTitleConf, config.theme.meta, config.theme.metabg));
+    ScrollWidget *bootTitle = (ScrollWidget*) &_boot->addWidget(new ScrollWidget("*", apTitleConf, config.theme.meta, config.theme.metafill));
     bootTitle->setText("yoRadio AP Mode");
 #if DSP_MODEL == DSP_ST7789_76    
     { char _buf[50]; snprintf(_buf, sizeof(_buf), "%s : %s", LANG::apNameTxt, apSsid);
@@ -448,7 +475,10 @@ void Display::_start() {
   #ifdef USE_NEXTION
     nextion.wake();
   #endif
-  if (network.status != CONNECTED && network.status != SDREADY) {
+  // Only switch to the AP-mode screen when we are actually running SoftAP.
+  // During boot/transitions the status can briefly be non-CONNECTED; we still
+  // want to build the normal player UI so the header/station number is visible.
+  if (network.status == SOFT_AP) {
     _apScreen();
     #ifdef USE_NEXTION
       nextion.apScreen();
@@ -463,11 +493,17 @@ void Display::_start() {
   _buildPager();
   _mode = PLAYER;
   config.setTitle(LANG::const_PlReady);
+  // NOTE: JPEG decoding inside DspTask can trip the stack canary (bootloop).
+  // We'll reintroduce a JPEG demo later using a dedicated worker task with a larger stack.
   
   if(_heapbar)  _heapbar->lock(!config.store.audioinfo);
   
   if(_weather)  _weather->lock(!config.store.showweather);
   if(_weather && config.store.showweather)  _weather->setText(LANG::const_getWeather);
+  if(_weatherIcon) {
+    if (config.store.showweather) _weatherIcon->unlock();
+    else                          _weatherIcon->lock();
+  }
 
   if(_vuwidget) _vuwidget->lock();
   if(_rssi || _rssiIcon) _setRSSI(WiFi.RSSI());
@@ -490,7 +526,12 @@ void Display::_start() {
       if(_volip) _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
     #endif
   #endif
-  _pager->setPage( pages[PG_PLAYER]);
+  // Force a full redraw when entering the player page at boot,
+  // otherwise some widgets (top meta bar) can remain blank until the first playback event.
+  // Also hard-clear the full screen to the theme background; otherwise remnants of the boot
+  // page (often black) can remain visible until the first full page transition.
+  dsp.fillScreen(config.theme.background);
+  _pager->setPage(pages[PG_PLAYER], true);
   _volume();
   _station();
 //  _refreshWeatherUI();
@@ -561,6 +602,7 @@ if (newmode == _mode ||
     if (_lstripWidget) _lstripWidget->setStat(config.store.lsEnabled   != 0);
     config.setDspOn(config.store.dspon, false);
     pm.on_display_player();
+    _updateStationLogo();
 //    _kickWeatherRefresh();
   }
   if (newmode == SCREENSAVER || newmode == SCREENBLANK) {
@@ -663,7 +705,8 @@ void Display::_layoutChange(bool played){
       }
 
     } else {
-      if (_vuwidget && !_vuwidget->locked()) _vuwidget->lock();
+      // Keep VU visible even when not playing (it will naturally settle to idle).
+      if (_vuwidget) _vuwidget->unlock();
       _clock->moveBack();
       if (_weather) _weather->moveBack();
       if (_date) {
@@ -695,6 +738,9 @@ void Display::_layoutChange(bool played){
       }
     }
   }
+
+  // VU/weather layout changes can affect where there's free space for the logo.
+  _layoutStationLogo();
 }
 
 
@@ -719,7 +765,7 @@ void Display::loop() {
         case NEWMODE: _swichMode((displayMode_e)request.payload); break;
         case CLOSEPLAYLIST: player.sendCommand({PR_PLAY, request.payload}); break;
         case CLOCK: 
-          if(_mode==PLAYER || _mode==SCREENSAVER) _time(request.payload==1); 
+          if(_mode==PLAYER || _mode==SCREENSAVER) _time(request.payload==1);
           /*#ifdef USE_NEXTION
             if(_mode==TIMEZONE) nextion.localTime(network.timeinfo);
             if(_mode==INFO)     nextion.rssi();
@@ -754,6 +800,10 @@ void Display::loop() {
         }
         case SHOWWEATHER: {
           if(_weather) _weather->lock(!config.store.showweather);
+          if (_weatherIcon) {
+            if (config.store.showweather) _weatherIcon->unlock();
+            else                          _weatherIcon->lock();
+          }
           if(!config.store.showweather){
             /*#ifndef HIDE_IP
             if(_volip) _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
@@ -767,12 +817,13 @@ void Display::loop() {
             if(_weather) _weather->setText(LANG::const_getWeather);
 //            _kickWeatherRefresh();
           }
+          _updateStationLogo();
           break;
         }
         case NEWWEATHER: {
           if(_weather && timekeeper.weatherBuf) _weather->setText(timekeeper.weatherBuf);
           //strcpy(timekeeper.weatherIcon, "50d"); // teszt 
-          if(_weatherIcon) {
+          if(_weatherIcon && config.store.showweather && !_weatherIcon->locked()) {
              _weatherIcon->setIcon(timekeeper.weatherIcon);
              _weatherIcon->setTemp(timekeeper.tempC);
           }
@@ -799,8 +850,14 @@ void Display::loop() {
           if (_rssi || _rssiIcon) _setRSSI(request.payload);
           if (_heapbar && config.store.audioinfo) _heapbar->setValue(player.isRunning()?player.inBufferFilled():0);
           break;
-        case PSTART: _layoutChange(true);   break;
-        case PSTOP:  _layoutChange(false);  break;
+        case PSTART:
+          if (config.getMode() == PM_SDCARD) _sdPstartAt = millis();
+          _layoutChange(true);
+          break;
+        case PSTOP:
+          if (config.getMode() == PM_SDCARD) _sdPstartAt = 0;
+          _layoutChange(false);
+          break;
         case DSP_START: _start();  break;
         case NEWIP: {
           /*#ifndef HIDE_IP
@@ -966,6 +1023,370 @@ void Display::_station() {
   nextion.bitrate(config.station.bitrate);
   nextion.bitratePic(ICON_NA);
 #endif*/
+
+  if (config.getMode() == PM_SDCARD) {
+    _sdStationChangedAt = millis();
+  }
+
+  _updateStationLogo();
+}
+
+namespace {
+struct RectI16 {
+  int16_t x;
+  int16_t y;
+  int16_t w;
+  int16_t h;
+};
+
+static inline bool isNameChar(char c) {
+  return isalnum((unsigned char)c) != 0;
+}
+
+static bool normEqualsNoCase(const char* a, const char* b) {
+  if (!a || !b) return false;
+  // Compare after lowercasing and skipping non-alnum characters.
+  const unsigned char* pa = (const unsigned char*)a;
+  const unsigned char* pb = (const unsigned char*)b;
+  while (true) {
+    while (*pa && !isNameChar((char)*pa)) pa++;
+    while (*pb && !isNameChar((char)*pb)) pb++;
+    if (!*pa || !*pb) break;
+    char ca = (char)tolower(*pa);
+    char cb = (char)tolower(*pb);
+    if (ca != cb) return false;
+    pa++; pb++;
+  }
+  while (*pa && !isNameChar((char)*pa)) pa++;
+  while (*pb && !isNameChar((char)*pb)) pb++;
+  return (*pa == '\0' && *pb == '\0');
+}
+
+static bool containsNoCase(const char* haystack, const char* needle) {
+  if (!haystack || !needle || !*needle) return false;
+  const size_t nlen = strlen(needle);
+  if (nlen == 0) return false;
+
+  for (const char* p = haystack; *p; p++) {
+    size_t i = 0;
+    while (needle[i] &&
+           p[i] &&
+           (char)tolower((unsigned char)p[i]) == (char)tolower((unsigned char)needle[i])) {
+      i++;
+    }
+    if (i == nlen) return true;
+  }
+  return false;
+}
+
+static inline bool rectIntersects(const RectI16& a, const RectI16& b) {
+  if (a.w <= 0 || a.h <= 0 || b.w <= 0 || b.h <= 0) return false;
+  return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+}
+
+static inline bool rectInside(const RectI16& r, int16_t w, int16_t h) {
+  return r.x >= 0 && r.y >= 0 && (r.x + r.w) <= w && (r.y + r.h) <= h;
+}
+} // namespace
+
+void Display::_layoutStationLogo() {
+  if (!_stationLogo) return;
+  const int16_t logoW = (int16_t)_stationLogoW;
+  const int16_t logoH = (int16_t)_stationLogoH;
+  if (logoW <= 0 || logoH <= 0) return;
+
+  const int16_t sw = (int16_t)dsp.width();
+  const int16_t sh = (int16_t)dsp.height();
+
+  // Avoid drawing into the footer/volume bar.
+  const int16_t footerTop = (int16_t)volbarConf.widget.top;
+  const int16_t maxY = footerTop - logoH - 2;
+
+  // Clock positioning (used to avoid overlapping the seconds on the default layout).
+  const auto cc = getclockConf();
+  const bool clockRightAligned = (cc.align == WA_RIGHT);
+  const int16_t clockTop = (int16_t)cc.top;
+
+  RectI16 reserved[6];
+  int reservedN = 0;
+
+  // Reserve weather icon area (and its temperature text).
+  if (_weatherIcon && config.store.showweather) {
+    const auto wc = getWeatherIconConf();
+    const bool verticalTemp = (config.store.vuLayout == 0);
+    const int16_t tempH = verticalTemp ? 14 : 0;
+    const int16_t extraW = verticalTemp ? 0 : 44; // temp printed to the right
+    reserved[reservedN++] = { (int16_t)wc.left, (int16_t)(wc.top - tempH), (int16_t)(64 + extraW), (int16_t)(64 + tempH) };
+  }
+
+  // Reserve bitrate widget area (prevents logo clears from corrupting it on station changes).
+  if (_fullbitrate) {
+    const auto bc = getfullbitrateConf();
+    reserved[reservedN++] = { (int16_t)bc.widget.left, (int16_t)bc.widget.top,
+                              (int16_t)(bc.dimension * 2), (int16_t)(bc.dimension / 2) };
+  }
+
+  // Reserve VU area when enabled, even if audio hasn't started yet.
+  // Otherwise the logo can be placed "under" the VU widget and appear invisible.
+  if (_vuwidget && config.store.vumeter) {
+    const auto vc = getvuConf();
+    const auto bands = getbandsConf();
+    const bool alignTruthy = (vc.align != WA_LEFT);
+    const int16_t maxDim = (int16_t)(alignTruthy ? bands.width : bands.height);
+    int16_t vuW = 0;
+    int16_t vuH = 0;
+    switch (config.store.vuLayout) {
+      case 3:
+        vuW = maxDim;
+        vuH = (int16_t)(bands.height * 2 + bands.space);
+        break;
+      case 2:
+      case 1:
+        vuW = (int16_t)(maxDim * 2 + bands.space);
+        vuH = (int16_t)bands.height;
+        break;
+      case 0:
+      default:
+        vuW = (int16_t)(bands.width * 2 + bands.space);
+        vuH = maxDim;
+        break;
+    }
+    reserved[reservedN++] = { (int16_t)vc.left, (int16_t)vc.top, vuW, vuH };
+  }
+
+  // Prefer the weather-icon slot when weather is disabled.
+  // VU layouts already move the weather icon; we follow that positioning.
+  if (_weatherIcon && !config.store.showweather) {
+    const auto wc = getWeatherIconConf();
+    int16_t px = (int16_t)wc.left;
+    int16_t py = (int16_t)wc.top;
+    // Clamp so we never run off-screen.
+    if (px + logoW > sw - 1) px = (int16_t)(sw - TFT_FRAMEWDT - logoW);
+    if (px < 0) px = 0;
+
+    RectI16 pref = { px, py, logoW, logoH };
+
+    // Non-default VU layouts: nudge the slot slightly upward for better alignment.
+    if (config.store.vuLayout != 0) {
+      pref.y = (pref.y >= 4) ? (int16_t)(pref.y - 4) : 0;
+    }
+
+    // Default VU layout: only force "above clock" when the logo is wider than the
+    // right margin reserved for the clock (prevents overlap with seconds).
+    if (config.store.vuLayout == 0 && clockRightAligned && pref.w > (int16_t)cc.left) {
+      const int16_t yAboveClock = (int16_t)(clockTop - pref.h - 2);
+      if (yAboveClock >= 0 && pref.y > yAboveClock) pref.y = yAboveClock;
+    }
+
+    if (pref.y <= maxY && rectInside(pref, sw, sh)) {
+      bool ok = true;
+      for (int i = 0; i < reservedN; i++) {
+        if (rectIntersects(pref, reserved[i])) { ok = false; break; }
+      }
+      if (ok) {
+        _stationLogo->moveTo({ (uint16_t)pref.x, (uint16_t)pref.y, logoW });
+        return;
+      }
+    }
+  }
+
+  // Candidate slots (try to keep it in the "content" area).
+  RectI16 candidates[6];
+  int candN = 0;
+
+  // Extra "above clock" slot for default layout (keeps seconds safe).
+  // Only needed when the logo is wider than the clock's right margin.
+  if (config.store.vuLayout == 0 && clockRightAligned && logoW > (int16_t)cc.left) {
+    int16_t yAboveClock = (int16_t)(clockTop - logoH - 2);
+    if (yAboveClock < 0) yAboveClock = 0;
+    candidates[candN++] = { (int16_t)(sw - TFT_FRAMEWDT - logoW), yAboveClock, logoW, logoH };
+  }
+
+  candidates[candN++] = { (int16_t)(sw - TFT_FRAMEWDT - logoW), 100, logoW, logoH };           // top-right
+  candidates[candN++] = { (int16_t)TFT_FRAMEWDT,               100, logoW, logoH };            // top-left
+  candidates[candN++] = { (int16_t)((sw - logoW) / 2),         96,  logoW, logoH };            // top-center
+  candidates[candN++] = { (int16_t)(sw - TFT_FRAMEWDT - logoW), 120, logoW, logoH };           // right, a bit lower
+
+  RectI16 chosen = candidates[0];
+  bool found = false;
+
+  for (int ci = 0; ci < candN; ci++) {
+    auto& c = candidates[ci];
+    if (c.y > maxY) continue;
+    if (!rectInside(c, sw, sh)) continue;
+    bool ok = true;
+    for (int i = 0; i < reservedN; i++) {
+      if (rectIntersects(c, reserved[i])) { ok = false; break; }
+    }
+    if (ok) { chosen = c; found = true; break; }
+  }
+
+  if (!found) {
+    // Last resort: clamp within the allowed area.
+    chosen.x = (chosen.x < 0) ? 0 : chosen.x;
+    chosen.y = (chosen.y < 0) ? 0 : chosen.y;
+    if (chosen.y > maxY) chosen.y = maxY;
+  }
+
+  // Avoid unnecessary clears/redraws (prevents flicker).
+  if (_stationLogoX == chosen.x && _stationLogoY == chosen.y && _stationLogoMoveW == logoW) {
+    return;
+  }
+  _stationLogo->moveTo({ (uint16_t)chosen.x, (uint16_t)chosen.y, logoW });
+  _stationLogoX = chosen.x;
+  _stationLogoY = chosen.y;
+  _stationLogoMoveW = logoW;
+}
+
+void Display::_updateStationLogo() {
+  if (!_stationLogo) return;
+
+  // Global toggle: hide both station logos and SD album art.
+  if (!config.getShowlogos()) {
+    if (_stationLogo->locked()) return;
+    if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
+    _stationLogo->unlock();
+    _stationLogo->setImage(nullptr, 0, 0);
+    _stationLogo->lock(true);
+    _stationLogoW = 0;
+    _stationLogoH = 0;
+    _stationLogoX = -1;
+    _stationLogoY = -1;
+    _stationLogoMoveW = -1;
+    _stationLogoLastPixels = nullptr;
+    return;
+  }
+
+  if (config.getMode() == PM_SDCARD) {
+    // SD album art removed (JPEG decoding was unstable on this target).
+    // Keep the image widget hidden in SD mode for now.
+    if (_stationLogo->locked()) return;
+    if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
+    _stationLogo->unlock();
+    _stationLogo->setImage(nullptr, 0, 0);
+    _stationLogo->lock(true);
+    _stationLogoW = 0;
+    _stationLogoH = 0;
+    _stationLogoX = -1;
+    _stationLogoY = -1;
+    _stationLogoMoveW = -1;
+    _stationLogoLastPixels = nullptr;
+    return;
+  }
+
+  const bool isWeb = (config.getMode() == PM_WEB);
+  const char* sname = config.station.name;
+  const StationLogoEntry* entry = nullptr;
+
+  auto clearScaled = [&]() {
+    if (_stationLogoScaled) {
+      free(_stationLogoScaled);
+      _stationLogoScaled = nullptr;
+    }
+  };
+
+  // If the weather icon is enabled, it owns that screen real-estate.
+  // Station logos take the weather-icon slot only when weather is disabled.
+  if (_weatherIcon && config.store.showweather) {
+    clearScaled();
+    _stationLogo->unlock();
+    _stationLogo->setImage(nullptr, 0, 0); // clears previous area while unlocked
+    _stationLogo->lock(true);
+    _stationLogoW = 0;
+    _stationLogoH = 0;
+    _stationLogoX = -1;
+    _stationLogoY = -1;
+    _stationLogoMoveW = -1;
+    _stationLogoLastPixels = nullptr;
+    return;
+  }
+
+  if (isWeb) {
+    auto findExact = [&](const StationLogoEntry* tbl, size_t cnt) -> const StationLogoEntry* {
+      for (size_t i = 0; i < cnt; i++) {
+        const auto& e = tbl[i];
+        if (!e.match || !e.pixels || e.w == 0 || e.h == 0) continue;
+        if (normEqualsNoCase(sname, e.match)) return &e;
+      }
+      return nullptr;
+    };
+    auto findFuzzy = [&](const StationLogoEntry* tbl, size_t cnt) -> const StationLogoEntry* {
+      const StationLogoEntry* best = nullptr;
+      size_t bestLen = 0;
+      for (size_t i = 0; i < cnt; i++) {
+        const auto& e = tbl[i];
+        if (!e.match || !e.pixels || e.w == 0 || e.h == 0) continue;
+        if (!containsNoCase(sname, e.match) && !containsNoCase(e.match, sname)) continue;
+        const size_t l = strlen(e.match);
+        if (l > bestLen) { best = &e; bestLen = l; }
+      }
+      return best;
+    };
+
+    // 1) Prefer playlist-generated logos (from bulk file) using normalized exact match.
+    entry = findExact(STATION_LOGOS_PLAYLIST, STATION_LOGOS_PLAYLIST_COUNT);
+    // 2) Fallback to built-in defaults (still name-only).
+    if (!entry) entry = findExact(STATION_LOGOS_DEFAULT, STATION_LOGOS_DEFAULT_COUNT);
+    // 3) If a station updates its name when audio starts (ICY name), fall back to a fuzzy match.
+    if (!entry) entry = findFuzzy(STATION_LOGOS_PLAYLIST, STATION_LOGOS_PLAYLIST_COUNT);
+    if (!entry) entry = findFuzzy(STATION_LOGOS_DEFAULT, STATION_LOGOS_DEFAULT_COUNT);
+  }
+
+  if (!entry) {
+    clearScaled();
+    _stationLogo->unlock();
+    _stationLogo->setImage(nullptr, 0, 0); // clears previous area while unlocked
+    _stationLogo->lock(true);
+    _stationLogoW = 0;
+    _stationLogoH = 0;
+    _stationLogoX = -1;
+    _stationLogoY = -1;
+    _stationLogoMoveW = -1;
+    _stationLogoLastPixels = nullptr;
+    return;
+  }
+
+  const uint16_t* pixels = entry->pixels;
+  uint16_t w = entry->w;
+  uint16_t h = entry->h;
+
+  // Default VU layout: downscale large logos so they can sit back in the
+  // "weather slot" without overlapping track text or the clock seconds.
+  if (config.store.vuLayout == 0 && w == 80 && h == 80) {
+    const uint16_t dw = 64;
+    const uint16_t dh = 64;
+    clearScaled();
+    _stationLogoScaled = (uint16_t*)malloc((size_t)dw * (size_t)dh * sizeof(uint16_t));
+    if (_stationLogoScaled) {
+      for (uint16_t y = 0; y < dh; y++) {
+        const uint16_t sy = (uint16_t)((uint32_t)y * (uint32_t)h / (uint32_t)dh);
+        for (uint16_t x = 0; x < dw; x++) {
+          const uint16_t sx = (uint16_t)((uint32_t)x * (uint32_t)w / (uint32_t)dw);
+          _stationLogoScaled[(size_t)y * dw + x] = pixels[(size_t)sy * w + sx];
+        }
+      }
+      pixels = _stationLogoScaled;
+      w = dw;
+      h = dh;
+    }
+  } else {
+    clearScaled();
+  }
+
+  // If nothing changed (common when station name updates via ICY), do nothing to avoid flicker.
+  if (_stationLogoLastPixels == pixels && _stationLogoW == w && _stationLogoH == h && !_stationLogo->locked()) {
+    return;
+  }
+
+  // IMPORTANT: avoid drawing at the old position then moving (move clears old area and can
+  // erase the header bar). Clear image first, move to final position, then draw.
+  _stationLogo->lock(true);
+  _stationLogoW = w;
+  _stationLogoH = h;
+  _layoutStationLogo();
+  _stationLogo->unlock();
+  _stationLogo->setImage(pixels, w, h);
+  _stationLogoLastPixels = pixels;
 }
 
 char *split(char *str, const char *delim) {
@@ -982,7 +1403,8 @@ void Display::_title() {
   }
   
   if (strlen(config.station.title) > 0) {
-    char tmpbuf[strlen(config.station.title) + 1];
+    // Avoid VLA on the display-task stack (can trip stack canary).
+    static char tmpbuf[BUFLEN];
     strlcpy(tmpbuf, config.station.title, sizeof(tmpbuf));
      //Serial.printf("display.cpp -> _title(be) -> tmpbuf %s\r\n", tmpbuf);
     // IMPORTANT: clean invalid UTF-8 before splitting!

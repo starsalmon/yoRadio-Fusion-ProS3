@@ -197,6 +197,10 @@ inline ScrollConfig getDateConf(uint8_t ly) {
   ScrollConfig c = kDateBase;
   c.widget.top  = dateTopByLayout(ly);
   c.widget.left = dateLeftByLayout(ly);
+  // On VU layouts 1-3 the station/logo occupies the left side; keep the date area tighter.
+  if (ly == 1 || ly == 2 || ly == 3) {
+    if (c.width > 20) c.width = (uint16_t)(c.width - 20);
+  }
   return c;
 }
 inline ScrollConfig getDateConf() { return getDateConf(config.store.vuLayout); }

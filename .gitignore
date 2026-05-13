@@ -7,3 +7,11 @@ compile_commands.json
 .DS_Store
 .cache/
 mqttoptions.h
+
+# Local test assets (not for git)
+data/test.jpg
+
+# Bulk station-logo source assets (keep local)
+station_logos/bulk_logos.txt
+station_logos/images/
+station_logos/*.jpg

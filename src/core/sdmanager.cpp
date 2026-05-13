@@ -47,7 +47,12 @@ bool SDManager::cardPresent() {
   if(sectorSize()<1) {
     return false;
   }
-  uint8_t buff[sectorSize()] = { 0 };
+  // Avoid VLA on stack (can trip compiler/lints); SD sectors are typically 512 bytes.
+  uint8_t buff[512] = {0};
+  const uint32_t ss = sectorSize();
+  if (ss == 0 || ss > sizeof(buff)) {
+    return false;
+  }
   bool bread = readRAW(buff, 1);
   if(sectorSize()>0 && !bread) return false;
   return bread;
@@ -96,14 +101,31 @@ void SDManager::listSD(File &plSDfile, File &plSDindex, const char* dirname, uin
             break;
         }
         strcpy(filePath, fileName.c_str());
-        const char* fn = strrchr(filePath, '/') + 1;
+        const char* fn = strrchr(filePath, '/');
+        fn = fn ? (fn + 1) : filePath;
+
+        // Skip macOS metadata/AppleDouble and hidden/system files.
+        // These commonly appear as "._<name>" and can break SD playback if selected.
+        if (fn[0] == '.' ||
+            strcmp(fn, ".DS_Store") == 0 ||
+            strcmp(fn, "._.DS_Store") == 0 ||
+            strcmp(fn, "Thumbs.db") == 0 ||
+            strcmp(fn, "desktop.ini") == 0) {
+          free(filePath);
+          continue;
+        }
         if (isDir) {
             if (levels && !_checkNoMedia(filePath)) {
                 listSD(plSDfile, plSDindex, filePath, levels - 1);
             }
         } else {
-            if (_endsWith(strlwr((char*)fn), ".mp3") || _endsWith(fn, ".m4a") || _endsWith(fn, ".aac") ||
-                _endsWith(fn, ".wav") || _endsWith(fn, ".flac")) {
+            // Extension checks (case-insensitive).
+            char fnLower[64] = {0};
+            strlcpy(fnLower, fn, sizeof(fnLower));
+            strlwr(fnLower);
+            if (_endsWith(fnLower, ".mp3") || _endsWith(fnLower, ".m4a") || _endsWith(fnLower, ".aac") ||
+                _endsWith(fnLower, ".wav") || _endsWith(fnLower, ".flac") ||
+                _endsWith(fnLower, ".ogg") || _endsWith(fnLower, ".opus")) {
                 pos = plSDfile.position();
                 plSDfile.printf("%s\t%s\t0\n", fn, filePath);
                 plSDindex.write((uint8_t*)&pos, 4);

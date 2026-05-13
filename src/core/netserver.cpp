@@ -671,12 +671,13 @@ void NetServer::processQueue(){
                                   config.store.timeSyncInterval,
                                   config.store.timeSyncIntervalRTC); 
                                   break;
-      case GETWEATHER:    sprintf (wsBuf, "{\"wen\":%d,\"wlat\":\"%s\",\"wlon\":\"%s\",\"wkey\":\"%s\",\"wint\":%d}", 
+      case GETWEATHER:    sprintf (wsBuf, "{\"wen\":%d,\"wlat\":\"%s\",\"wlon\":\"%s\",\"wkey\":\"%s\",\"wint\":%d,\"logos\":%d}", 
                                   config.store.showweather, 
                                   config.store.weatherlat, 
                                   config.store.weatherlon, 
                                   config.store.weatherkey,
-                                  config.store.weatherSyncInterval); 
+                                  config.store.weatherSyncInterval,
+                                  config.getShowlogos()); 
                                   break;
       case GETCONTROLS:   sprintf (wsBuf, "{\"vols\":%d,\"enca\":%d,\"irtl\":%d,\"skipup\":%d,\"autoStartTime\":\"%s\",\"autoStopTime\":\"%s\"}", /* -------- Auto On-Off Timer -------- */
                                   config.store.volsteps, 

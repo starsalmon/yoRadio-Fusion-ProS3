@@ -157,7 +157,6 @@ void Player::_stop(bool alreadyStopped){
     const uint32_t pos = player.getAudioFilePosition();
     const uint32_t curSec = player.getAudioCurrentTime();
     const uint32_t durSec = player.getAudioFileDuration();
-    config.sdResumePos = pos;
     config.stopedSdStationId = config.lastStation();
 
     // Persist SD resume position (absolute file position).
@@ -181,6 +180,8 @@ void Player::_stop(bool alreadyStopped){
       }
     }
     config.saveValue(&config.store.lastSdResumePos, (uint32_t)persisted);
+    // Keep the runtime resume value in sync with what we persisted.
+    config.sdResumePos = persisted;
   }
   _status = STOPPED;
   setOutputPins(false);
@@ -350,15 +351,17 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
   Audio::loop();
 
 #ifdef USE_SD
-if (
-  config.getMode() == PM_SDCARD &&
-  !isRunning() &&
-  _status == PLAYING &&
-  player.getAudioFilePosition() == 0
-) {
-  Serial.println("[SD] EOF -> next()");
-  next();
-  return;
+// SD EOF fallback: only advance when we have valid bounds and we're at the end.
+// (The previous "filePosition==0" heuristic could trigger at track start and cause reboot loops.)
+if (config.getMode() == PM_SDCARD && !isRunning() && _status == PLAYING) {
+  if (player.sd_max > player.sd_min + 4096) {
+    const uint32_t pos = player.getAudioFilePosition();
+    if (pos >= (player.sd_max - 4096)) {
+      Serial.println("[SD] EOF -> next()");
+      next();
+      return;
+    }
+  }
 }
 #endif
 

@@ -9,6 +9,10 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 - **Battery gauge**: MAX17048 via I2C (robust init + clamped sampling). Can be disabled in `myoptions.h` with `BATTERY_ENABLED 0` (useful if no battery is connected).
 - **MAX17048 low-power**: put the gauge into sleep mode right before ESP deep sleep (reduces gauge current during sleep)
 - **Theme files cleanup**: custom theme headers live under `themes/` (instead of cluttering the repo root)
+- **Station logos (ILI9341)**:
+  - Station logos are matched by **station name** (not playlist index)
+  - **Runtime toggle**: `showlogos` (also defaults via `SHOW_LOGOS_DEFAULT` in `myoptions.h`)
+  - Bulk logo source lives in `station_logos/` (see below)
 - **Deep sleep power management**:
   - **Wake pins**: uses `WAKE_PIN1` + optional `WAKE_PIN2` (RTC GPIO only: GPIO0–GPIO21) via ESP32 `ext1` wake (`ANY_LOW`) with pullups enabled
   - **Auto deep sleep** (only when at least one wake pin is configured):
@@ -39,20 +43,35 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
   - Fixed decoder mutex ownership (avoid giving a mutex that wasn’t taken)
   - Fixed AudioBuffer accounting edge cases (resBuff underflow + read-pointer remap equality case)
 
+### Station logos (bulk import)
+
+This repo supports importing lots of RGB565 logos and only compiling in the ones that match your `playlist.csv` station names.
+
+- **Bulk source file**: `station_logos/bulk_logos.txt`
+- **Generator**: `tools/pio/gen_station_logos_from_bulk.py`
+- **Generated output**: `src/displays/bitmaps/station_logos_playlist.hpp`
+
 ### Known issues (work in progress)
 
 - **SD → WEB → ABC HLS AAC sometimes stalls**: after switching from SD playback to WEB streaming, certain ABC HLS AAC stations may fail to start (hangs after “stream ready / buffer filled”).
   - **Workarounds**: play any “known good” MP3 station once, or switch modes and try again.
 - **SD mount errors during mode switching**: you may see `sd_diskio` warnings like “token error” / “The physical drive cannot work”.
   - If SD playback still works afterwards, these are usually transient; SD bus/power timing is still being tuned.
+- **SD playback instability (~30s)**: some tracks restart from the beginning after ~30 seconds, may stop early before the song finishes, and selecting another track can sometimes reboot the device.
+- **SD album art**: removed for now (JPEG decode was unstable / caused crashes on this target).
+- **Theme/background artifacts right after boot**: fixed (was caused by the player page not fully repainting after the boot screen).
 
 ### TODO / Roadmap
 
+- **Mode switch via MQTT**: Add a mode switch and other controls that only exist in the webui e.g. tone, smart start, auto dimming, screensaver
 - **Test/refine low battery cutoff**: Not propperly tested, have seent this not work once
 - **Theme switching**: add a way to select/switch themes (e.g. from web UI / config, and persist the chosen theme)
+- **Boot screen inprovement**: Use the screen drawing scrolliness to create a simple animation so it look intentional. Add build info, support showing unicode for SSID's
 - **IR control UX**: set up IR receiver + add flashing “IR RX” icon on-screen
+- **Use jpg for station logos**: Store the full library of station logos in SPIFFS as jpg so theres no need to recompile after adding a new station (as long as a logo already exists in the library)
 - **SD playback resume**: **track resume is implemented**; resume **position** is still a work in progress
-- **Album art + station logos**: display on screen (likely larger change)
+- **Album art**: revisit later (needs a stable decoder/task model)
+- **Output via bluetooth**: may not be possible without a dedicated bt module
 
 ### Automatic patching (PlatformIO pre-build)
 

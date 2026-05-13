@@ -13,6 +13,7 @@ void mqttPublishStatus();
 void mqttPublishPlaylist();
 void mqttPublishVolume();
 void mqttPublishBattery();
+void mqttLoop();
 void zeroBuffer();
 
 #endif // #ifdef MQTT_ROOT_TOPIC

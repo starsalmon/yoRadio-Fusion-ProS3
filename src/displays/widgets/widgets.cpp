@@ -2434,6 +2434,49 @@ void WeatherIconWidget::setTemp(float tempC) {
 }
 
 
+/************************
+   RGB IMAGE WIDGET
+ ************************/
+
+void RgbImageWidget::init(WidgetConfig wconf, uint16_t bgcolor){
+  Widget::init(wconf, 0, bgcolor);
+  _img = nullptr;
+  _iw  = 0;
+  _ih  = 0;
+  _hasDrawn = false;
+}
+
+void RgbImageWidget::setImage(const uint16_t* img, uint16_t w, uint16_t h) {
+  if (_img == img && _iw == w && _ih == h) return;
+
+  if (_active && !_locked) _clear();
+  _img = img;
+  _iw  = w;
+  _ih  = h;
+  if (!_img || _iw == 0 || _ih == 0) {
+    _hasDrawn = false;
+  }
+
+  if (_active && !_locked) _draw();
+}
+
+void RgbImageWidget::_clear(){
+  if (!_active) return;
+  if (!_hasDrawn) return;
+  uint16_t w = _width ? _width : (_iw ? _iw : 0);
+  uint16_t h = _ih ? _ih : 0;
+  if (w == 0 || h == 0) return;
+  dsp.fillRect(_config.left, _config.top, w, h, _bgcolor);
+}
+
+void RgbImageWidget::_draw(){
+  if(!_active || _locked) return;
+  if (!_img || _iw == 0 || _ih == 0) return;
+  dsp.drawRGBBitmap(_config.left, _config.top, _img, _iw, _ih);
+  _hasDrawn = true;
+}
+
+
 /**************************
       STATIONNUM WIDGET
  **************************/

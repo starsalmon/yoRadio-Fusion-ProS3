@@ -64,6 +64,7 @@ platformio run -e yoradio-um_pros3-ili9341 -t uploadfs
 
 Notes:
 - The source images (`images_src/station_logos/`) are tracked in this repo; the generated outputs (`data/logos/`) are **gitignored**.
+- The generator also pre-emits `.ylg` files for **every** source image (keyed by the image filename stem), so new stations can pick up a logo immediately as long as the playlist station name matches the filename.
 - PNG transparency is supported (alpha → RGB565 color-key `0xF81F` during generation; firmware skips that key while drawing).
 - Logo lookup uses the playlist station name (stable) so logos don’t disappear when ICY metadata updates the on-screen station name.
 - `.ylg` files use a packed 14-byte header; firmware reads it with a packed struct.
@@ -80,6 +81,7 @@ Notes:
 - **SD album art**: removed for now (JPEG decode was unstable / caused crashes on this target).
 - **VU Label font**: L and R labels are slightly too large for the grey boxes in the Studio VU style. L and R sit slightly too high in the default VU style
 - **AAC HLS stability**: Some AAC HLS stations may stutter, this is extremely slight and only about once every 15min - might have been due to the browser refreshing in the background
+- **FLAC Playback**: Currently very choppy
 
 ### TODO / Roadmap
 

@@ -11,3 +11,7 @@ mqttoptions.h
 # Local test assets (not for git)
 data/test.jpg
 
+# Generated / local-only station logo assets
+data/logos/
+station_logos/large_logos/
+

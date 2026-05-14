@@ -84,7 +84,8 @@
 //#define TFT_MOSI  35
 //#define TFT_MISO  37
 
-#define BRIGHTNESS_PIN 14
+#define BRIGHTNESS_PIN 7
+/*****************************************/
 
 /*****************************************/
 // #define NEXTION_RX      15
@@ -95,21 +96,13 @@
 //#define TS_MODEL TS_MODEL_XPT2046
 //#define TS_CS 42
 /*****************************************/
-/* SD CARD */
-#define SDC_CS    1
-/****************************************/
-/*  I2S DAC  */
 
-/* PCM5102A  DAC */
-#define I2S_DOUT 40
-#define I2S_BCLK 41
-#define I2S_LRC  42
-
+/*****************************************/
 /* ENCODER 1 */
-#define ENC_BTNR 13 // S2
-#define ENC_BTNL 15 // S1
-#define ENC_BTNB 16 // KEY
-#define ENC_INTERNALPULLUP		true
+#define ENC_BTNR 15 // S2
+#define ENC_BTNL 16 // S1
+#define ENC_BTNB 13 // KEY
+#define ENC_INTERNALPULLUP		false
 
 /* ENCODER 2 */
 //#define ENC2_BTNR 0 // S2
@@ -117,24 +110,47 @@
 //#define ENC2_BTNB 3 // KEY
 //#define ENC2_INTERNALPULLUP		true
 
-// Buttons
+/* Buttons */
+#define BTN_INTERNALPULLUP    true
 #define BTN_MODE     12
 /********************************************/
+
+/********************************************/
+/*  I2S DAC  */
+
+/* PCM5102A  DAC */
+#define I2S_DOUT 40
+#define I2S_BCLK 41
+#define I2S_LRC  42
+
 // Mute
 #define MUTE_PIN     39            /*  MUTE Pin */
 #define MUTE_VAL    LOW          /*  Write this to MUTE_PIN when player is stop */
 /********************************************/
 
+/*****************************************/
 /* RTC module (DS3231) */
+
 // #define RTC_SCL     9
 // #define RTC_SDA     8
 // #define RTC_MODULE DS3231
 /********************************************/
 
+/*****************************************/
 /* REMOTE CONTROL INFRARED RECEIVER */
+
 #define IR_PIN 21
+/*****************************************/
+
+/*****************************************/
+/* SD CARD */
+
+#define SDC_CS    1
+/*****************************************/
+
 /********************************************/
 /* Other settings */
+
 // SD resume: when switching into SD mode, auto-play the last SD track.
 // Set to 0 to disable.
 #define SD_AUTORESUME_ON_MODE_SWITCH 1

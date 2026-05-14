@@ -83,6 +83,8 @@ class Display {
     int16_t _stationLogoMoveW = -1;
     const uint16_t* _stationLogoLastPixels = nullptr;
     uint16_t* _stationLogoScaled = nullptr;
+    char _stationLogoLastKey[9] = {0}; // 8 hex chars + NUL (or "default")
+    bool _stationLogoUsedDefault = false;
     uint32_t _sdStationChangedAt = 0;
     uint32_t _sdPstartAt = 0;
     Page *_boot;

@@ -457,6 +457,8 @@ class RgbImageWidget : public Widget {
     const uint16_t* _img = nullptr;
     uint16_t _iw = 0, _ih = 0;
     bool _hasDrawn = false;
+    bool _useKey = false;
+    uint16_t _key = 0;
     void _draw() override;
     void _clear() override;
 };

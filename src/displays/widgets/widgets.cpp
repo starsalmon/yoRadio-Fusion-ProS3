@@ -2444,6 +2444,10 @@ void RgbImageWidget::init(WidgetConfig wconf, uint16_t bgcolor){
   _iw  = 0;
   _ih  = 0;
   _hasDrawn = false;
+  // Station logos are generated with PNG alpha mapped to this RGB565 color-key.
+  // Must match tools/pio/gen_station_logos_from_images.py.
+  _useKey = true;
+  _key = 0xF81F; // magenta
 }
 
 void RgbImageWidget::setImage(const uint16_t* img, uint16_t w, uint16_t h) {
@@ -2472,7 +2476,28 @@ void RgbImageWidget::_clear(){
 void RgbImageWidget::_draw(){
   if(!_active || _locked) return;
   if (!_img || _iw == 0 || _ih == 0) return;
-  dsp.drawRGBBitmap(_config.left, _config.top, _img, _iw, _ih);
+  if (!_useKey) {
+    dsp.drawRGBBitmap(_config.left, _config.top, _img, _iw, _ih);
+    _hasDrawn = true;
+    return;
+  }
+
+  // Draw with a simple color-key "transparency": skip pixels equal to `_key`.
+  // This is used for station logos generated from PNG alpha.
+  const int16_t x0 = (int16_t)_config.left;
+  const int16_t y0 = (int16_t)_config.top;
+  for (uint16_t y = 0; y < _ih; y++) {
+    const uint16_t* row = _img + (size_t)y * _iw;
+    uint16_t x = 0;
+    while (x < _iw) {
+      while (x < _iw && row[x] == _key) x++;
+      if (x >= _iw) break;
+      const uint16_t start = x;
+      while (x < _iw && row[x] != _key) x++;
+      const uint16_t run = (uint16_t)(x - start);
+      dsp.drawRGBBitmap(x0 + (int16_t)start, y0 + (int16_t)y, row + start, run, 1);
+    }
+  }
   _hasDrawn = true;
 }
 

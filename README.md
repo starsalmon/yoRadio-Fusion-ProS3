@@ -63,7 +63,7 @@ platformio run -e yoradio-um_pros3-ili9341 -t uploadfs
 
 Notes:
 - The local image library (`station_logos/large_logos/`) and generated outputs (`data/logos/`) are intended to be **local-only** (gitignored).
-- There is also a **legacy/manual** bulk RGB565 import path via `station_logos/bulk_logos.txt` + `tools/pio/gen_station_logos_from_bulk.py`, but it is **not wired into PlatformIO** by default in this repo.
+- There is also a **legacy/manual** bulk RGB565 import path via `station_logos/bulk_logos.txt` + `tools/pio/gen_station_logos_from_bulk.py`, but `bulk_logos.txt` is **local-only** (gitignored) and the bulk pipeline is **not wired into PlatformIO** by default in this repo.
 
 ### Known issues (work in progress)
 

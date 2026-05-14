@@ -259,6 +259,9 @@ struct ircodes_t {
 
 struct station_t
 {
+  // Stable station name from the playlist (used for lookups like SPIFFS logos).
+  // `name` may be updated at runtime from ICY metadata.
+  char playlistName[BUFLEN];
   char name[BUFLEN];
   char url[BUFLEN];
   char title[BUFLEN];

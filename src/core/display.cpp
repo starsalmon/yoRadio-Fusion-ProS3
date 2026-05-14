@@ -1157,7 +1157,7 @@ static uint16_t* loadStationLogoFromSpiffs(const char* stationName, uint16_t* ou
   File f = SPIFFS.open(path, "r");
   if (!f) return nullptr;
 
-  struct Header {
+  struct __attribute__((packed)) Header {
     char magic[4];
     uint8_t version;
     uint8_t format;
@@ -1165,6 +1165,7 @@ static uint16_t* loadStationLogoFromSpiffs(const char* stationName, uint16_t* ou
     uint16_t h;
     uint32_t wordCount;
   } hdr;
+  static_assert(sizeof(Header) == 14, "YLG header must be packed (14 bytes)");
 
   if (f.read((uint8_t*)&hdr, sizeof(hdr)) != sizeof(hdr)) return nullptr;
   if (memcmp(hdr.magic, "YLG0", 4) != 0) return nullptr;

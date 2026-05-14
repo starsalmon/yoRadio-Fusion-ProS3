@@ -36,6 +36,7 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 - **HA device metadata via PlatformIO board definition**: injects manufacturer/model/hw_version at build time (see `tools/pio/ha_board_meta.py` + `platformio.ini`)
 - **MQTT battery state**: retained JSON payload with `usb/state/percent/voltage/rate`
 - **MQTT sleep trigger**: `cmd/sleep` topic (and `command` payload) enters deep sleep without disabling SmartStart
+- **Mode switch via MQTT**: Can now switch modes from Home Assistant
 - **Cursor/clangd hygiene**: `.clangd` removes toolchain-only flags for cleaner diagnostics
 - **Audio/HLS robustness work (in progress)**:
   - Improved TS/PES handling for HLS AAC (PES length 0, segment-boundary state reset)
@@ -48,7 +49,7 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 This build loads station logos from **SPIFFS** at runtime:
 
 - **Firmware reads**: `/logos/<hash>.ylg` (per-station) and `/logos/default.ylg` (fallback)
-- **Source image library (master/source, local-only)**: `images_src/station_logos/` (JPG/PNG)
+- **Source image library (master/source)**: `images_src/station_logos/` (JPG/PNG, tracked in repo)
 - **Default fallback image (optional)**: `images_src/station_logos/default_logo.png`
 - **Generator**: `tools/pio/gen_station_logos_from_images.py`
 - **Generated output (SPIFFS)**: `data/logos/*.ylg` (+ `data/logos/index.tsv`)
@@ -62,7 +63,10 @@ platformio run -e yoradio-um_pros3-ili9341 -t uploadfs
 ```
 
 Notes:
-- The source image library (`images_src/station_logos/`) and generated outputs (`data/logos/`) are intended to be **local-only** (gitignored).
+- The source images (`images_src/station_logos/`) are tracked in this repo; the generated outputs (`data/logos/`) are **gitignored**.
+- PNG transparency is supported (alpha → RGB565 color-key `0xF81F` during generation; firmware skips that key while drawing).
+- Logo lookup uses the playlist station name (stable) so logos don’t disappear when ICY metadata updates the on-screen station name.
+- `.ylg` files use a packed 14-byte header; firmware reads it with a packed struct.
 - There is also a **legacy/manual** bulk RGB565 import path via `images_src/station_logos/bulk_logos.txt` + `tools/pio/gen_station_logos_from_bulk.py`, but `bulk_logos.txt` is **local-only** (gitignored) and the bulk pipeline is **not wired into PlatformIO** by default in this repo.
 
 ### Known issues (work in progress)
@@ -79,7 +83,8 @@ Notes:
 
 ### TODO / Roadmap
 
-- **Mode switch via MQTT**: Add a mode switch and other controls that only exist in the webui e.g. tone, smart start, auto dimming, screensaver
+- **Fix up invalid pin warnings at boot**: Find what is generating "__pinMode(): Invalid IO 255 selected"
+- **More controls via MQTT**: Add other controls that only exist in the webui e.g. tone, smart start, auto dimming, screensaver. Include some of the new features too.
 - **Test/refine low battery cutoff**: Not propperly tested, have seent this not work once
 - **Theme switching**: add a way to select/switch themes (e.g. from web UI / config, and persist the chosen theme)
 - **Boot screen inprovement**: Use the screen drawing scrolliness to create a simple animation so it look intentional. Add build info, support showing unicode for SSID's
@@ -89,6 +94,8 @@ Notes:
 - **Album art**: revisit later (needs a stable decoder/task model)
 - **Output via bluetooth**: may not be possible without a dedicated bt module
 - **Podcast mode**: Dedicated mode to stream recent episodes from podcast feeds
+- **Load station logos from SD**: Might be easier to manage logos longer term if they can be loaded from the SD card. Might need jpeg decoding first
+- **Configure new features from web**: Allow setting options like BATTERY_ENABLED, AUTO_DEEPSLEEP_IDLE_MINUTES, AUTO_DEEPSLEEP_BATT_PCT etc. from the web interface.
 
 ### Automatic patching (PlatformIO pre-build)
 

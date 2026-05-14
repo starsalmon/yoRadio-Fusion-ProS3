@@ -122,7 +122,7 @@ struct config_t
   bool      flipscreen;
   bool      invertdisplay;
   bool      numplaylist;
-  uint8_t   vuLayout = 0;      /* ------ WEB UI STYLE 0: Default, 1: StreamLine, 2: BoomBox, 3: Studio ----- */
+  uint8_t   vuLayout = 3;      /* ------ WEB UI STYLE 0: Default, 1: StreamLine, 2: BoomBox, 3: Studio ----- */
   uint8_t   vuBarCountDef;     // 8..64
   uint8_t   vuBarGapDef;       // 0..6
   uint8_t   vuBarCountStr;     // 8..64

@@ -579,6 +579,5 @@
 #endif
 
 #ifndef VU_DEF_PEAK_COLOR
-  #define VU_DEF_PEAK_COLOR 0xFFFF  // white
+  #define VU_DEF_PEAK_COLOR 0x00FF  // blue
 #endif
-

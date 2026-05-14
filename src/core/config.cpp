@@ -168,6 +168,34 @@ if (store.lastPlayedSource > PL_SRC_DLNA)
     return;
   }
   BOOTLOG("SPIFFS mounted");
+  {
+    const uint32_t total = (uint32_t)SPIFFS.totalBytes();
+    const uint32_t used  = (uint32_t)SPIFFS.usedBytes();
+    const uint32_t freeb = (total > used) ? (total - used) : 0u;
+    const uint32_t pct   = (total > 0) ? (uint32_t)((uint64_t)used * 100ULL / (uint64_t)total) : 0u;
+    auto kb = [](uint32_t b) -> uint32_t { return (b + 1023u) / 1024u; };
+
+    auto dirSize = [](const char* path) -> uint32_t {
+      File d = SPIFFS.open(path);
+      if (!d || !d.isDirectory()) return 0u;
+      uint64_t sum = 0;
+      File f = d.openNextFile();
+      while (f) {
+        if (!f.isDirectory()) sum += (uint64_t)f.size();
+        f = d.openNextFile();
+      }
+      return (uint32_t)(sum > 0xFFFFFFFFULL ? 0xFFFFFFFFu : (uint32_t)sum);
+    };
+
+    const uint32_t wwwB   = dirSize("/www");
+    const uint32_t dataB  = dirSize("/data");
+    const uint32_t logosB = dirSize("/logos");
+
+    BOOTLOG("SPIFFS:\t\t%u KB used / %u KB total (%u%%) | free %u KB",
+            (unsigned)kb(used), (unsigned)kb(total), (unsigned)pct, (unsigned)kb(freeb));
+    BOOTLOG("SPIFFS use:\t/www=%u KB  /data=%u KB  /logos=%u KB",
+            (unsigned)kb(wwwB), (unsigned)kb(dataB), (unsigned)kb(logosB));
+  }
   emptyFS = _isFSempty();
   if(emptyFS) BOOTLOG("SPIFFS is empty!");
   #if IR_PIN!=255
@@ -587,7 +615,9 @@ void Config::initPlaylistMode() {
 }
 
 void Config::_initHW(){
-  loadTheme();
+  // IMPORTANT: do not touch SPIFFS here.
+  // SPIFFS is mounted later in Config() (SPIFFS.begin), and calling SPIFFS APIs
+  // before that can break mounting on some cores/targets.
   #if IR_PIN!=255
   eepromRead(EEPROM_START_IR, ircodes);
 /*  if(ircodes.ir_set!=4224){
@@ -989,7 +1019,7 @@ void Config::setDefaults() {
 #if (DSP_MODEL == DSP_GC9A01) || (DSP_MODEL == DSP_GC9A01A) || (DSP_MODEL == DSP_GC9A01_I80) || (DSP_MODEL==DSP_ST7789_76) || (DSP_MODEL==DSP_ST7789_240)
   store.vuLayout = 2;   // ------ WEB UI STYLE: BoomBox-----
 #else
-  store.vuLayout = 0;   // ------ WEB UI STYLE: Default-----
+  store.vuLayout = 3;   // ------ WEB UI STYLE: Default-----
 #endif
   store.vuBarCountDef = VU_DEF_BARS_DEF; 
   store.vuBarGapDef = VU_DEF_GAP_DEF;
@@ -1074,10 +1104,10 @@ void Config::setDefaults() {
   store.weatherIconSet = 0;
   store.playlistMode = 0;
   store.stallWatchdog = 0;
-  store.blDimEnable   = 0;
+  store.blDimEnable   = 1;
   store.blDimLevel    = 5;
-  store.blDimInterval = 60;
-  store.ttsEnabled = 1;
+  store.blDimInterval = 120;
+  store.ttsEnabled = 0;
   store.ttsDuringPlayback = false;
   store.ttsInterval = 60;
   store.clockFontMono = false;
@@ -1091,14 +1121,13 @@ void Config::setDefaults() {
   strlcpy(store.sntp1,"pool.ntp.org", 35);
   strlcpy(store.sntp2,"au.pool.ntp.org", 35);
   store.showweather=false;
-  if (SHOW_LOGOS_DEFAULT) store._reserved |= 0x0001;
-  else                    store._reserved &= (uint16_t)~0x0001;
   strlcpy(store.weatherlat,"47.1109", 10);
   strlcpy(store.weatherlon,"18.5773", 10);
   strlcpy(store.weatherkey,"", WEATHERKEY_LENGTH);
   store.grndHeight = 0;
   store.pressureSlope_x1000 = 120;
-  store._reserved = 0;
+  // _reserved bit 0 is used for the showlogos default.
+  store._reserved = (uint16_t)(SHOW_LOGOS_DEFAULT ? 0x0001 : 0x0000);
   store.lastSdStation = 0;
   store.lastSdResumePos = 0;
   store.lastDlnaStation = 0; //DLNA mod
@@ -1798,6 +1827,7 @@ void Config::bootInfo() {
   BOOTLOG("flipscreen:\t%s", store.flipscreen?"true":"false");
   BOOTLOG("invertdisplay:\t%s", store.invertdisplay?"true":"false");
   BOOTLOG("showweather:\t%s", store.showweather?"true":"false");
+  BOOTLOG("showlogos:\t%s", getShowlogos()?"true":"false");
   BOOTLOG("buttons:\tleft=%d, center=%d, right=%d, up=%d, down=%d, mode=%d, pullup=%s", 
           BTN_LEFT, BTN_CENTER, BTN_RIGHT, BTN_UP, BTN_DOWN, BTN_MODE, BTN_INTERNALPULLUP?"true":"false");
   BOOTLOG("encoders:\tl1=%d, b1=%d, r1=%d, pullup=%s, l2=%d, b2=%d, r2=%d, pullup=%s", 

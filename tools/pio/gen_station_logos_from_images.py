@@ -36,6 +36,8 @@ DEFAULT_LOGO_JPG = REPO_ROOT / "station_logos" / "default_logo.jpg"
 
 TARGET_W = 80
 TARGET_H = 80
+TRANSPARENT_KEY_565 = 0xF81F  # magenta; must match firmware-side color-key
+ALPHA_CUTOFF = 16             # <= treated as transparent
 
 
 def norm_name(s: str) -> str:
@@ -165,13 +167,18 @@ def rgb888_to_rgb565(r: int, g: int, b: int) -> int:
 
 
 def image_to_rgb565_80x80(path: Path) -> list[int]:
-    im = Image.open(path)
-    im = im.convert("RGB")
+    im = Image.open(path).convert("RGBA")
     if im.size != (TARGET_W, TARGET_H):
         im = im.resize((TARGET_W, TARGET_H), resample=Image.LANCZOS)
-    # getdata() returns tuples (r,g,b)
+    # getdata() returns tuples (r,g,b,a)
     px = list(im.getdata())
-    return [rgb888_to_rgb565(r, g, b) for (r, g, b) in px]
+    out: list[int] = []
+    for (r, g, b, a) in px:
+        if a <= ALPHA_CUTOFF:
+            out.append(TRANSPARENT_KEY_565)
+        else:
+            out.append(rgb888_to_rgb565(r, g, b))
+    return out
 
 
 def rle_encode_rgb565(pixels: list[int]) -> list[int]:

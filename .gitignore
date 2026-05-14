@@ -15,3 +15,6 @@ data/test.jpg
 data/logos/
 station_logos/large_logos/
 
+# Optional legacy bulk dump (keep local, don't commit)
+station_logos/bulk_logos.txt
+

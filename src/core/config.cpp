@@ -1302,7 +1302,7 @@ void Config::setTitle(const char* title) {
 void Config::setStation(const char* station) {
   memset(config.station.name, 0, BUFLEN);
   strlcpy(config.station.name, station, BUFLEN);
-  u8fix(config.station.title);
+  u8fix(config.station.name);
 }
 
 void Config::indexPlaylist() {
@@ -1421,7 +1421,9 @@ bool Config::loadStation(uint16_t ls) {
   if (cs == 0) {
     memset(station.url, 0, BUFLEN);
     memset(station.name, 0, BUFLEN);
+    memset(station.playlistName, 0, BUFLEN);
     strncpy(station.name, "yoRadio", BUFLEN);
+    strncpy(station.playlistName, station.name, BUFLEN);
     station.ovol = 0;
     return false;
   }
@@ -1438,7 +1440,9 @@ bool Config::loadStation(uint16_t ls) {
   if (parseCSV(playlist.readStringUntil('\n').c_str(), tmpBuf, tmpBuf2, sOvol)) {
     memset(station.url, 0, BUFLEN);
     memset(station.name, 0, BUFLEN);
+    memset(station.playlistName, 0, BUFLEN);
     strncpy(station.name, tmpBuf, BUFLEN);
+    strncpy(station.playlistName, tmpBuf, BUFLEN);
     strncpy(station.url, tmpBuf2, BUFLEN);
     station.ovol = sOvol;
     setLastStation(ls);

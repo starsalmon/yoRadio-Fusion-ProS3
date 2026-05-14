@@ -17,7 +17,7 @@ This repo supports two logo sources:
   - `../../tools/pio/pre_fs_generate_logos.py`: PlatformIO hook that runs the generator for `buildfs` / `uploadfs`.
 
 - **Bulk RGB565 → header (legacy/manual)**
-  - `bulk_logos.txt`: paste your logo dumps here (many logos).
+  - `bulk_logos.txt`: paste your logo dumps here (many logos). (Local-only / gitignored.)
   - `../../tools/pio/gen_station_logos_from_bulk.py`: generator that:
     - reads `data/data/playlist.csv`
     - filters logos to only the stations in the playlist

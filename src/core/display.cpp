@@ -1396,7 +1396,9 @@ void Display::_updateStationLogo() {
   }
 
   const bool isWeb = (config.getMode() == PM_WEB);
-  const char* sname = config.station.name;
+  // IMPORTANT: use the playlist station name for the logo key.
+  // `config.station.name` may be updated from ICY metadata after playback starts.
+  const char* sname = (config.station.playlistName[0] ? config.station.playlistName : config.station.name);
 
   auto clearScaled = [&]() {
     if (_stationLogoScaled) {

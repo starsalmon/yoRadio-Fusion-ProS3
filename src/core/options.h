@@ -315,6 +315,51 @@ The connection tables are located here https://github.com/e2002/yoradio#connecti
   #endif
   #define AUTOBACKLIGHT(x) ({uint16_t _lh=(x>AUTOBACKLIGHT_MAX?AUTOBACKLIGHT_MAX:x); map(_lh, AUTOBACKLIGHT_MAX, 0, AUTOBACKLIGHT_MIN, 100);})  // autobacklight function
 #endif
+
+/* --------------------------------------------------------------------------
+   Pin conflict guards (compile-time)
+
+   myoptions.h is user-editable and it's easy to accidentally assign the same
+   GPIO to multiple incompatible roles (e.g. encoder input + backlight PWM).
+   Fail the build early with a clear message when we detect common conflicts.
+   -------------------------------------------------------------------------- */
+
+#define YO_PIN_UNUSED(p) ((p) == 255 || (p) == -1)
+#define YO_PINS_CONFLICT(a, b) (!YO_PIN_UNUSED(a) && !YO_PIN_UNUSED(b) && ((a) == (b)))
+
+/* Backlight PWM vs encoder inputs */
+#if YO_PINS_CONFLICT(BRIGHTNESS_PIN, ENC_BTNL) || YO_PINS_CONFLICT(BRIGHTNESS_PIN, ENC_BTNB) || YO_PINS_CONFLICT(BRIGHTNESS_PIN, ENC_BTNR) || \
+    YO_PINS_CONFLICT(BRIGHTNESS_PIN, ENC2_BTNL) || YO_PINS_CONFLICT(BRIGHTNESS_PIN, ENC2_BTNB) || YO_PINS_CONFLICT(BRIGHTNESS_PIN, ENC2_BTNR)
+  #error "Pin conflict: BRIGHTNESS_PIN overlaps with an encoder pin (ENC_*). Move one of them to a different GPIO."
+#endif
+
+/* Encoder pins must be distinct */
+#if YO_PINS_CONFLICT(ENC_BTNL, ENC_BTNB) || YO_PINS_CONFLICT(ENC_BTNL, ENC_BTNR) || YO_PINS_CONFLICT(ENC_BTNB, ENC_BTNR)
+  #error "Pin conflict: ENC_BTNL/ENC_BTNB/ENC_BTNR overlap. Encoder pins must be on distinct GPIOs."
+#endif
+#if YO_PINS_CONFLICT(ENC2_BTNL, ENC2_BTNB) || YO_PINS_CONFLICT(ENC2_BTNL, ENC2_BTNR) || YO_PINS_CONFLICT(ENC2_BTNB, ENC2_BTNR)
+  #error "Pin conflict: ENC2_BTNL/ENC2_BTNB/ENC2_BTNR overlap. Encoder2 pins must be on distinct GPIOs."
+#endif
+
+/* Buttons should not overlap each other */
+#if YO_PINS_CONFLICT(BTN_LEFT, BTN_CENTER) || YO_PINS_CONFLICT(BTN_LEFT, BTN_RIGHT) || YO_PINS_CONFLICT(BTN_LEFT, BTN_UP) || YO_PINS_CONFLICT(BTN_LEFT, BTN_DOWN) || YO_PINS_CONFLICT(BTN_LEFT, BTN_MODE) || \
+    YO_PINS_CONFLICT(BTN_CENTER, BTN_RIGHT) || YO_PINS_CONFLICT(BTN_CENTER, BTN_UP) || YO_PINS_CONFLICT(BTN_CENTER, BTN_DOWN) || YO_PINS_CONFLICT(BTN_CENTER, BTN_MODE) || \
+    YO_PINS_CONFLICT(BTN_RIGHT, BTN_UP) || YO_PINS_CONFLICT(BTN_RIGHT, BTN_DOWN) || YO_PINS_CONFLICT(BTN_RIGHT, BTN_MODE) || \
+    YO_PINS_CONFLICT(BTN_UP, BTN_DOWN) || YO_PINS_CONFLICT(BTN_UP, BTN_MODE) || \
+    YO_PINS_CONFLICT(BTN_DOWN, BTN_MODE)
+  #error "Pin conflict: one or more BTN_* pins overlap. Each button should have a unique GPIO (or be set to 255 if unused)."
+#endif
+
+/* Chip-select style pins should not overlap (shared SPI signals are fine; CS pins are not) */
+#if YO_PINS_CONFLICT(TFT_CS, SDC_CS) || YO_PINS_CONFLICT(TFT_CS, VS1053_CS) || YO_PINS_CONFLICT(TFT_CS, TS_CS) || \
+    YO_PINS_CONFLICT(SDC_CS, VS1053_CS) || YO_PINS_CONFLICT(SDC_CS, TS_CS) || \
+    YO_PINS_CONFLICT(VS1053_CS, TS_CS)
+  #error "Pin conflict: one or more CS pins overlap (TFT_CS/SDC_CS/VS1053_CS/TS_CS). Each device needs a unique CS pin."
+#endif
+
+#undef YO_PINS_CONFLICT
+#undef YO_PIN_UNUSED
+
 #ifndef DSP_INVERT_TITLE
   #define DSP_INVERT_TITLE  true   // Invert title colors for displays ?
 #endif

@@ -12,7 +12,7 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 - **Station logos (ILI9341)**:
   - Station logos are matched by **station name** (not playlist index)
   - **Runtime toggle**: `showlogos` (also defaults via `SHOW_LOGOS_DEFAULT` in `myoptions.h`)
-  - Bulk logo source lives in `station_logos/` (see below)
+  - Logos are loaded from **SPIFFS** at runtime (`/logos/*.ylg`) and generated from a local image library (see below)
 - **Deep sleep power management**:
   - **Wake pins**: uses `WAKE_PIN1` + optional `WAKE_PIN2` (RTC GPIO only: GPIO0–GPIO21) via ESP32 `ext1` wake (`ANY_LOW`) with pullups enabled
   - **Auto deep sleep** (only when at least one wake pin is configured):
@@ -43,13 +43,27 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
   - Fixed decoder mutex ownership (avoid giving a mutex that wasn’t taken)
   - Fixed AudioBuffer accounting edge cases (resBuff underflow + read-pointer remap equality case)
 
-### Station logos (bulk import)
+### Station logos (SPIFFS image library)
 
-This repo supports importing lots of RGB565 logos and only compiling in the ones that match your `playlist.csv` station names.
+This build loads station logos from **SPIFFS** at runtime:
 
-- **Bulk source file**: `station_logos/bulk_logos.txt`
-- **Generator**: `tools/pio/gen_station_logos_from_bulk.py`
-- **Generated output**: `src/displays/bitmaps/station_logos_playlist.hpp`
+- **Firmware reads**: `/logos/<hash>.ylg` (per-station) and `/logos/default.ylg` (fallback)
+- **Source image library**: `station_logos/large_logos/` (preferred) or `station_logos/images/` (fallback) (JPG/PNG)
+- **Default fallback image (optional)**: `station_logos/default_logo.png` (or `.jpg`)
+- **Generator**: `tools/pio/gen_station_logos_from_images.py`
+- **Generated output (SPIFFS)**: `data/logos/*.ylg` (+ `data/logos/index.tsv`)
+
+Generation runs automatically when you build/upload the filesystem:
+
+```bash
+platformio run -e yoradio-um_pros3-ili9341 -t buildfs
+# or:
+platformio run -e yoradio-um_pros3-ili9341 -t uploadfs
+```
+
+Notes:
+- The local image library (`station_logos/large_logos/`) and generated outputs (`data/logos/`) are intended to be **local-only** (gitignored).
+- There is also a **legacy/manual** bulk RGB565 import path via `station_logos/bulk_logos.txt` + `tools/pio/gen_station_logos_from_bulk.py`, but it is **not wired into PlatformIO** by default in this repo.
 
 ### Known issues (work in progress)
 
@@ -60,7 +74,8 @@ This repo supports importing lots of RGB565 logos and only compiling in the ones
   - If SD playback still works afterwards, these are usually transient; SD bus/power timing is still being tuned.
 - **SD playback instability (~30s)**: some tracks restart from the beginning after ~30 seconds, may stop early before the song finishes, and selecting another track can sometimes reboot the device.
 - **SD album art**: removed for now (JPEG decode was unstable / caused crashes on this target).
-- **Theme/background artifacts right after boot**: fixed (was caused by the player page not fully repainting after the boot screen).
+- **VU Label font**: L and R labels are slightly too large for the grey boxes in the Studio VU style. L and R sit slightly too high in the default VU style
+- **AAC HLS stability**: Some AAC HLS stations may stutter, this is extremely slight and only about once every 15min - might have been due to the browser refreshing in the background
 
 ### TODO / Roadmap
 
@@ -69,10 +84,11 @@ This repo supports importing lots of RGB565 logos and only compiling in the ones
 - **Theme switching**: add a way to select/switch themes (e.g. from web UI / config, and persist the chosen theme)
 - **Boot screen inprovement**: Use the screen drawing scrolliness to create a simple animation so it look intentional. Add build info, support showing unicode for SSID's
 - **IR control UX**: set up IR receiver + add flashing “IR RX” icon on-screen
-- **Use jpg for station logos**: Store the full library of station logos in SPIFFS as jpg so theres no need to recompile after adding a new station (as long as a logo already exists in the library)
+- **Station logo workflow polish**: improve matching/coverage and automate maintaining the local image library
 - **SD playback resume**: **track resume is implemented**; resume **position** is still a work in progress
 - **Album art**: revisit later (needs a stable decoder/task model)
 - **Output via bluetooth**: may not be possible without a dedicated bt module
+- **Podcast mode**: Dedicated mode to stream recent episodes from podcast feeds
 
 ### Automatic patching (PlatformIO pre-build)
 

@@ -1,6 +1,7 @@
 // Modified in v0.9.710 ("vol_step") by Tamás Várai
 #include "Arduino.h"
 #include "options.h"
+#include "SPIFFS.h"
 #include "WiFi.h"
 #include "time.h"
 #include "config.h"
@@ -16,7 +17,6 @@
 #include "../displays/tools/l10n.h"
 #include "../battery.h"
 #include "../displays/bitmaps/footer_icons_16.h"
-#include "../displays/bitmaps/station_logos.hpp"
 #include "../myoptions.h"
 #include "sdmanager.h"
 
@@ -1079,6 +1079,123 @@ static bool containsNoCase(const char* haystack, const char* needle) {
   return false;
 }
 
+static void spiffsKeyFromStationName(const char* stationName, char* outKey, size_t outKeyLen) {
+  if (!outKey || outKeyLen == 0) return;
+  outKey[0] = '\0';
+  if (!stationName || !stationName[0]) return;
+
+  // Normalize to a short ASCII key then hash it to keep SPIFFS filenames short.
+  // Must match tools/pio/gen_station_logos_from_images.py.
+  char norm[96];
+  size_t j = 0;
+  bool lastUnderscore = false;
+  for (const unsigned char* p = (const unsigned char*)stationName; *p && j + 1 < sizeof(norm); p++) {
+    const unsigned char c = *p;
+    if (isalnum(c)) {
+      norm[j++] = (char)tolower(c);
+      lastUnderscore = false;
+    } else {
+      if (!lastUnderscore && j > 0 && j + 1 < sizeof(norm)) {
+        norm[j++] = '_';
+        lastUnderscore = true;
+      }
+    }
+  }
+  while (j > 0 && norm[j - 1] == '_') j--;
+  norm[j] = '\0';
+  if (j == 0) {
+    strlcpy(norm, "logo", sizeof(norm));
+  }
+
+  // FNV-1a 32-bit hash.
+  uint32_t h = 0x811C9DC5u;
+  for (size_t i = 0; norm[i]; i++) {
+    h ^= (uint8_t)norm[i];
+    h *= 0x01000193u;
+  }
+
+  // 8 hex chars.
+  snprintf(outKey, outKeyLen, "%08lx", (unsigned long)h);
+}
+
+static bool decodeRgb565RleFileToBuf(File& f, uint32_t wordCount, uint16_t w, uint16_t h, uint16_t* outPixels) {
+  if (!outPixels || w == 0 || h == 0 || (wordCount & 1u) != 0u) return false;
+  const size_t outCount = (size_t)w * (size_t)h;
+  size_t outI = 0;
+
+  for (uint32_t wi = 0; wi + 1u < wordCount; wi += 2u) {
+    uint16_t count = 0;
+    uint16_t color = 0;
+    if (f.read((uint8_t*)&count, 2) != 2) return false;
+    if (f.read((uint8_t*)&color, 2) != 2) return false;
+    if (count == 0) break;
+    if (outI + (size_t)count > outCount) return false;
+    for (uint16_t k = 0; k < count; k++) {
+      outPixels[outI++] = color;
+    }
+  }
+  return outI == outCount;
+}
+
+static uint16_t* loadStationLogoFromSpiffs(const char* stationName, uint16_t* outW, uint16_t* outH) {
+  if (outW) *outW = 0;
+  if (outH) *outH = 0;
+  if (!stationName || !stationName[0]) return nullptr;
+
+  char path[128];
+  // Special-case default logo.
+  if (strcmp(stationName, "_DEFAULT_") == 0 || strcmp(stationName, "default") == 0) {
+    strlcpy(path, "/logos/default.ylg", sizeof(path));
+  } else {
+    char key[96];
+    spiffsKeyFromStationName(stationName, key, sizeof(key));
+    if (!key[0]) return nullptr;
+    snprintf(path, sizeof(path), "/logos/%s.ylg", key);
+  }
+  if (!SPIFFS.exists(path)) return nullptr;
+
+  File f = SPIFFS.open(path, "r");
+  if (!f) return nullptr;
+
+  struct Header {
+    char magic[4];
+    uint8_t version;
+    uint8_t format;
+    uint16_t w;
+    uint16_t h;
+    uint32_t wordCount;
+  } hdr;
+
+  if (f.read((uint8_t*)&hdr, sizeof(hdr)) != sizeof(hdr)) return nullptr;
+  if (memcmp(hdr.magic, "YLG0", 4) != 0) return nullptr;
+  if (hdr.version != 1) return nullptr;
+  if (hdr.w == 0 || hdr.h == 0) return nullptr;
+
+  const size_t pixelCount = (size_t)hdr.w * (size_t)hdr.h;
+  const size_t pixelBytes = pixelCount * sizeof(uint16_t);
+  uint16_t* buf = (uint16_t*)malloc(pixelBytes);
+  if (!buf) return nullptr;
+
+  bool ok = false;
+  if (hdr.format == 0) {
+    const uint32_t expectedWords = (uint32_t)pixelCount;
+    if (hdr.wordCount == expectedWords) {
+      ok = (f.read((uint8_t*)buf, pixelBytes) == (int)pixelBytes);
+    }
+  } else if (hdr.format == 1) {
+    ok = decodeRgb565RleFileToBuf(f, hdr.wordCount, hdr.w, hdr.h, buf);
+  }
+
+  if (!ok) {
+    free(buf);
+    return nullptr;
+  }
+
+  if (outW) *outW = hdr.w;
+  if (outH) *outH = hdr.h;
+  return buf;
+}
+
 static inline bool rectIntersects(const RectI16& a, const RectI16& b) {
   if (a.w <= 0 || a.h <= 0 || b.w <= 0 || b.h <= 0) return false;
   return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
@@ -1245,6 +1362,8 @@ void Display::_updateStationLogo() {
   if (!config.getShowlogos()) {
     if (_stationLogo->locked()) return;
     if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
+    _stationLogoLastKey[0] = '\0';
+    _stationLogoUsedDefault = false;
     _stationLogo->unlock();
     _stationLogo->setImage(nullptr, 0, 0);
     _stationLogo->lock(true);
@@ -1262,6 +1381,8 @@ void Display::_updateStationLogo() {
     // Keep the image widget hidden in SD mode for now.
     if (_stationLogo->locked()) return;
     if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
+    _stationLogoLastKey[0] = '\0';
+    _stationLogoUsedDefault = false;
     _stationLogo->unlock();
     _stationLogo->setImage(nullptr, 0, 0);
     _stationLogo->lock(true);
@@ -1276,7 +1397,6 @@ void Display::_updateStationLogo() {
 
   const bool isWeb = (config.getMode() == PM_WEB);
   const char* sname = config.station.name;
-  const StationLogoEntry* entry = nullptr;
 
   auto clearScaled = [&]() {
     if (_stationLogoScaled) {
@@ -1289,6 +1409,8 @@ void Display::_updateStationLogo() {
   // Station logos take the weather-icon slot only when weather is disabled.
   if (_weatherIcon && config.store.showweather) {
     clearScaled();
+    _stationLogoLastKey[0] = '\0';
+    _stationLogoUsedDefault = false;
     _stationLogo->unlock();
     _stationLogo->setImage(nullptr, 0, 0); // clears previous area while unlocked
     _stationLogo->lock(true);
@@ -1301,39 +1423,10 @@ void Display::_updateStationLogo() {
     return;
   }
 
-  if (isWeb) {
-    auto findExact = [&](const StationLogoEntry* tbl, size_t cnt) -> const StationLogoEntry* {
-      for (size_t i = 0; i < cnt; i++) {
-        const auto& e = tbl[i];
-        if (!e.match || !e.pixels || e.w == 0 || e.h == 0) continue;
-        if (normEqualsNoCase(sname, e.match)) return &e;
-      }
-      return nullptr;
-    };
-    auto findFuzzy = [&](const StationLogoEntry* tbl, size_t cnt) -> const StationLogoEntry* {
-      const StationLogoEntry* best = nullptr;
-      size_t bestLen = 0;
-      for (size_t i = 0; i < cnt; i++) {
-        const auto& e = tbl[i];
-        if (!e.match || !e.pixels || e.w == 0 || e.h == 0) continue;
-        if (!containsNoCase(sname, e.match) && !containsNoCase(e.match, sname)) continue;
-        const size_t l = strlen(e.match);
-        if (l > bestLen) { best = &e; bestLen = l; }
-      }
-      return best;
-    };
-
-    // 1) Prefer playlist-generated logos (from bulk file) using normalized exact match.
-    entry = findExact(STATION_LOGOS_PLAYLIST, STATION_LOGOS_PLAYLIST_COUNT);
-    // 2) Fallback to built-in defaults (still name-only).
-    if (!entry) entry = findExact(STATION_LOGOS_DEFAULT, STATION_LOGOS_DEFAULT_COUNT);
-    // 3) If a station updates its name when audio starts (ICY name), fall back to a fuzzy match.
-    if (!entry) entry = findFuzzy(STATION_LOGOS_PLAYLIST, STATION_LOGOS_PLAYLIST_COUNT);
-    if (!entry) entry = findFuzzy(STATION_LOGOS_DEFAULT, STATION_LOGOS_DEFAULT_COUNT);
-  }
-
-  if (!entry) {
+  if (!isWeb || !sname || !sname[0]) {
     clearScaled();
+    _stationLogoLastKey[0] = '\0';
+    _stationLogoUsedDefault = false;
     _stationLogo->unlock();
     _stationLogo->setImage(nullptr, 0, 0); // clears previous area while unlocked
     _stationLogo->lock(true);
@@ -1346,31 +1439,105 @@ void Display::_updateStationLogo() {
     return;
   }
 
-  const uint16_t* pixels = entry->pixels;
-  uint16_t w = entry->w;
-  uint16_t h = entry->h;
+  // SPIFFS-only logos:
+  // - station-specific: /logos/<hash>.ylg
+  // - fallback default: /logos/default.ylg (generated from station_logos/default_logo.png)
+  const bool want64 = (config.store.vuLayout == 0);
+  const uint16_t wantW = want64 ? 64 : 80;
+  const uint16_t wantH = want64 ? 64 : 80;
+
+  char key[16];
+  spiffsKeyFromStationName(sname, key, sizeof(key));
+  if (!key[0]) strlcpy(key, "00000000", sizeof(key));
+
+  // If we were showing the default due to a missing logo and the logo file
+  // has appeared since (uploadfs), refresh without requiring a station change.
+  char stationPath[64];
+  snprintf(stationPath, sizeof(stationPath), "/logos/%s.ylg", key);
+  const bool stationFileNowExists = SPIFFS.exists(stationPath);
+
+  // If we're already showing this station at the right size, do nothing.
+  if (_stationLogoScaled &&
+      _stationLogoLastKey[0] &&
+      strcmp(_stationLogoLastKey, key) == 0 &&
+      _stationLogoW == wantW &&
+      _stationLogoH == wantH &&
+      _stationLogoLastPixels == _stationLogoScaled &&
+      !(_stationLogoUsedDefault && stationFileNowExists) &&
+      !_stationLogo->locked()) {
+    return;
+  }
+
+  uint16_t fw = 0;
+  uint16_t fh = 0;
+  uint16_t* filePixels = loadStationLogoFromSpiffs(sname, &fw, &fh);
+  const bool usedDefault = (filePixels == nullptr);
+  if (!filePixels) {
+    // Default logo from SPIFFS.
+    fw = 0;
+    fh = 0;
+    filePixels = loadStationLogoFromSpiffs("_DEFAULT_", &fw, &fh);
+  }
+
+  if (!filePixels) {
+    // Nothing to show.
+    clearScaled();
+    _stationLogoLastKey[0] = '\0';
+    _stationLogo->unlock();
+    _stationLogo->setImage(nullptr, 0, 0);
+    _stationLogo->lock(true);
+    _stationLogoW = 0;
+    _stationLogoH = 0;
+    _stationLogoX = -1;
+    _stationLogoY = -1;
+    _stationLogoMoveW = -1;
+    _stationLogoLastPixels = nullptr;
+    return;
+  }
+
+  clearScaled();
+  _stationLogoScaled = filePixels;
+  strlcpy(_stationLogoLastKey, key, sizeof(_stationLogoLastKey));
+  _stationLogoUsedDefault = usedDefault;
+  const uint16_t* pixels = _stationLogoScaled;
+  uint16_t w = fw;
+  uint16_t h = fh;
 
   // Default VU layout: downscale large logos so they can sit back in the
   // "weather slot" without overlapping track text or the clock seconds.
   if (config.store.vuLayout == 0 && w == 80 && h == 80) {
     const uint16_t dw = 64;
     const uint16_t dh = 64;
-    clearScaled();
-    _stationLogoScaled = (uint16_t*)malloc((size_t)dw * (size_t)dh * sizeof(uint16_t));
-    if (_stationLogoScaled) {
+    // IMPORTANT: `pixels` may already point at `_stationLogoScaled` (e.g. RLE-decoded).
+    // Don't free `_stationLogoScaled` until after we've finished reading from `pixels`.
+    const uint16_t* srcPixels = pixels;
+    uint16_t* tmp = (uint16_t*)malloc((size_t)dw * (size_t)dh * sizeof(uint16_t));
+    if (tmp) {
       for (uint16_t y = 0; y < dh; y++) {
         const uint16_t sy = (uint16_t)((uint32_t)y * (uint32_t)h / (uint32_t)dh);
         for (uint16_t x = 0; x < dw; x++) {
           const uint16_t sx = (uint16_t)((uint32_t)x * (uint32_t)w / (uint32_t)dw);
-          _stationLogoScaled[(size_t)y * dw + x] = pixels[(size_t)sy * w + sx];
+          tmp[(size_t)y * dw + x] = srcPixels[(size_t)sy * w + sx];
         }
       }
+
+      // Replace any previous scaled/decoded buffer with `tmp`.
+      if (_stationLogoScaled && srcPixels == _stationLogoScaled) {
+        free(_stationLogoScaled);
+      } else {
+        clearScaled();
+      }
+      _stationLogoScaled = tmp;
       pixels = _stationLogoScaled;
       w = dw;
       h = dh;
     }
   } else {
-    clearScaled();
+    // If the selected pixels are not using our dynamic buffer, free any
+    // previous buffer now. (If `pixels` *is* `_stationLogoScaled`, keep it.)
+    if (pixels != _stationLogoScaled) {
+      clearScaled();
+    }
   }
 
   // If nothing changed (common when station name updates via ICY), do nothing to avoid flicker.

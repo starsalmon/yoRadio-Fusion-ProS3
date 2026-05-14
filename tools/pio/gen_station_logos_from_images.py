@@ -8,6 +8,10 @@ Generate station logo files for SPIFFS from an image folder (JPG/PNG).
 
 Output:
 - For each station in playlist.csv, pick the best matching image filename.
+- Also emit a prepared logo for every image file in the source folder, using the
+  image filename stem as the name-to-hash input. This makes it easy to add a
+  station later without regenerating/renaming images (as long as the playlist
+  station name matches the filename stem).
 - Resize to 80x80, convert to RGB565.
 - Encode as either raw RGB565 or simple RLE (count,color uint16 pairs),
   choosing whichever is smaller per-logo.
@@ -236,23 +240,44 @@ def main() -> int:
         except OSError:
             pass
 
-    for station, cand in selected:
-        pixels = image_to_rgb565_80x80(cand.path)
+    # Build a de-duplicated job list:
+    # - First: playlist-selected images (authoritative keys for current stations)
+    # - Then: all remaining images by filename stem (prepared for future stations)
+    jobs: list[tuple[str, Path]] = []
+    jobs.extend((station, cand.path) for (station, cand) in selected)
+    for c in candidates:
+        # Default has its own stable output name.
+        if c.path.resolve() == DEFAULT_LOGO_PNG.resolve():
+            continue
+        if c.label.lower() == "default_logo":
+            continue
+        jobs.append((c.label, c.path))
+
+    written_keys: dict[str, Path] = {}
+    for name_for_key, img_path in jobs:
+        key = spiffs_key_from_station(name_for_key)
+        spiffs_name = f"{key}.ylg"
+        out_path = OUT_SPIFFS_DIR / spiffs_name
+
+        prev = written_keys.get(key)
+        if prev is not None:
+            if prev.resolve() != img_path.resolve():
+                print(
+                    f"WARN: key collision for {key}: keeping {prev.name}, skipping {img_path.name}",
+                    file=sys.stderr,
+                )
+            continue
+        written_keys[key] = img_path
+
+        pixels = image_to_rgb565_80x80(img_path)
         raw_words = pixels
         rle_words = rle_encode_rgb565(pixels)
-
-        raw_bytes = len(raw_words) * 2
-        rle_bytes = len(rle_words) * 2
-
-        key = spiffs_key_from_station(station)
-        spiffs_name = f"{key}.ylg"
-
-        if rle_bytes < raw_bytes:
-            write_spiffs_logo_file(OUT_SPIFFS_DIR / spiffs_name, fmt=1, w=TARGET_W, h=TARGET_H, words=rle_words)
+        if len(rle_words) * 2 < len(raw_words) * 2:
+            write_spiffs_logo_file(out_path, fmt=1, w=TARGET_W, h=TARGET_H, words=rle_words)
         else:
-            write_spiffs_logo_file(OUT_SPIFFS_DIR / spiffs_name, fmt=0, w=TARGET_W, h=TARGET_H, words=raw_words)
+            write_spiffs_logo_file(out_path, fmt=0, w=TARGET_W, h=TARGET_H, words=raw_words)
 
-        spiffs_index.append((station, spiffs_name))
+        spiffs_index.append((name_for_key, spiffs_name))
 
     # Default logo (used when a station doesn't have a matching SPIFFS logo file).
     if DEFAULT_LOGO_PNG.exists():

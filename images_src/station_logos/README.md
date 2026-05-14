@@ -7,8 +7,8 @@ This repo supports two logo sources:
 
 ### Files
 - **Image library → SPIFFS**
-  - `large_logos/`: local station logo library (JPG/PNG).
-  - `default_logo.png`: optional fallback logo.
+  - `./`: station logo library (JPG/PNG). (Local-only / gitignored by default.)
+  - `default_logo.png`: optional fallback logo (tracked).
   - `../../tools/pio/gen_station_logos_from_images.py`: generator that:
     - reads `data/data/playlist.csv`
     - converts matching images into `data/logos/*.ylg`
@@ -56,5 +56,5 @@ python3 tools/pio/gen_station_logos_from_bulk.py
 Then build/flash normally with PlatformIO.
 
 ### Note (folder move)
-The canonical location for `bulk_logos.txt` is now `station_logos/bulk_logos.txt` at the repo root.
+The canonical location for `bulk_logos.txt` is now `images_src/station_logos/bulk_logos.txt`.
 

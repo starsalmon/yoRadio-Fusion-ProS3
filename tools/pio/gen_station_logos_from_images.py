@@ -2,7 +2,7 @@
 """
 Generate station logo files for SPIFFS from an image folder (JPG/PNG).
 
-- Source folder: station_logos/large_logos/
+- Source folder: images_src/station_logos/
 - Playlist:       data/data/playlist.csv
 - Output SPIFFS:  data/logos/*.ylg
 
@@ -11,7 +11,7 @@ Output:
 - Resize to 80x80, convert to RGB565.
 - Encode as either raw RGB565 or simple RLE (count,color uint16 pairs),
   choosing whichever is smaller per-logo.
-- Also generate a default logo from station_logos/default_logo.png as /logos/default.ylg
+- Also generate a default logo from images_src/station_logos/default_logo.png as /logos/default.ylg
 """
 
 from __future__ import annotations
@@ -26,11 +26,10 @@ from PIL import Image
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SRC_DIR = REPO_ROOT / "station_logos" / "large_logos"
+SRC_DIR = REPO_ROOT / "images_src" / "station_logos"
 PLAYLIST_FILE = REPO_ROOT / "data" / "data" / "playlist.csv"
 OUT_SPIFFS_DIR = REPO_ROOT / "data" / "logos"
-DEFAULT_LOGO_PNG = REPO_ROOT / "station_logos" / "default_logo.png"
-DEFAULT_LOGO_JPG = REPO_ROOT / "station_logos" / "default_logo.jpg"
+DEFAULT_LOGO_PNG = REPO_ROOT / "images_src" / "station_logos" / "default_logo.png"
 
 TARGET_W = 80
 TARGET_H = 80
@@ -256,9 +255,8 @@ def main() -> int:
         spiffs_index.append((station, spiffs_name))
 
     # Default logo (used when a station doesn't have a matching SPIFFS logo file).
-    default_src = DEFAULT_LOGO_PNG if DEFAULT_LOGO_PNG.exists() else DEFAULT_LOGO_JPG
-    if default_src.exists():
-        dpixels = image_to_rgb565_80x80(default_src)
+    if DEFAULT_LOGO_PNG.exists():
+        dpixels = image_to_rgb565_80x80(DEFAULT_LOGO_PNG)
         draw_words = dpixels
         drle_words = rle_encode_rgb565(dpixels)
         if len(drle_words) * 2 < len(draw_words) * 2:
@@ -267,7 +265,7 @@ def main() -> int:
             write_spiffs_logo_file(OUT_SPIFFS_DIR / "default.ylg", fmt=0, w=TARGET_W, h=TARGET_H, words=draw_words)
         spiffs_index.append(("_DEFAULT_", "default.ylg"))
     else:
-        print(f"WARN: default logo not found at {DEFAULT_LOGO_PNG} (or .jpg)", file=sys.stderr)
+        print(f"WARN: default logo not found at {DEFAULT_LOGO_PNG}", file=sys.stderr)
 
     (OUT_SPIFFS_DIR / "index.tsv").write_text(
         "\n".join(f"{s}\t{fn}" for (s, fn) in spiffs_index) + ("\n" if spiffs_index else ""),

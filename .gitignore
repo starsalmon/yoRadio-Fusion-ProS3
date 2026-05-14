@@ -13,8 +13,12 @@ data/test.jpg
 
 # Generated / local-only station logo assets
 data/logos/
-station_logos/large_logos/
+
+# Master/source images (local-only by default)
+images_src/station_logos/*
+!images_src/station_logos/README.md
+!images_src/station_logos/default_logo.png
 
 # Optional legacy bulk dump (keep local, don't commit)
-station_logos/bulk_logos.txt
+images_src/station_logos/bulk_logos.txt
 

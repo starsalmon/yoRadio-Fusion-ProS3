@@ -1443,7 +1443,7 @@ void Display::_updateStationLogo() {
 
   // SPIFFS-only logos:
   // - station-specific: /logos/<hash>.ylg
-  // - fallback default: /logos/default.ylg (generated from station_logos/default_logo.png)
+  // - fallback default: /logos/default.ylg (generated from images_src/station_logos/default_logo.png)
   const bool want64 = (config.store.vuLayout == 0);
   const uint16_t wantW = want64 ? 64 : 80;
   const uint16_t wantH = want64 ? 64 : 80;

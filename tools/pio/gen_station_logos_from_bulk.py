@@ -2,7 +2,7 @@
 """
 Generate station logo header from a bulk RGB565 dump.
 
-- Input bulk file: station_logos/bulk_logos.txt
+- Input bulk file: images_src/station_logos/bulk_logos.txt
 - Input playlist:  data/data/playlist.csv
 - Output header:   src/displays/bitmaps/station_logos_playlist.hpp
 
@@ -18,7 +18,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BULK_FILE = REPO_ROOT / "station_logos" / "bulk_logos.txt"
+BULK_FILE = REPO_ROOT / "images_src" / "station_logos" / "bulk_logos.txt"
 PLAYLIST_FILE = REPO_ROOT / "data" / "data" / "playlist.csv"
 OUT_HEADER = REPO_ROOT / "src" / "displays" / "bitmaps" / "station_logos_playlist.hpp"
 

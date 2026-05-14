@@ -153,9 +153,10 @@ Assuming `MQTT_ROOT_TOPIC` already ends with `/`:
 
 ### Secrets / local-only files
 
-- **`data/data/` is treated as secrets/local-only**
-  - It contains its own `.gitignore` that ignores everything in that folder except the `.gitignore` itself.
-  - Put anything private there (tokens, local config blobs, etc).
+- **WiFi credentials**: `data/data/wifi.csv` is **gitignored**
+  - Use `data/data/wifi.example.csv` as a template.
+- **MQTT credentials**: `mqttoptions.h` is **gitignored**
+  - Use `mqttoptions.example.h` as a template.
 
 ### Build requirements
 

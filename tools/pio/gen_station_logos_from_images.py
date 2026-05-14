@@ -2,7 +2,7 @@
 """
 Generate station logo files for SPIFFS from an image folder (JPG/PNG).
 
-- Source folder: station_logos/large_logos/ (preferred) or station_logos/images/ (fallback)
+- Source folder: station_logos/large_logos/
 - Playlist:       data/data/playlist.csv
 - Output SPIFFS:  data/logos/*.ylg
 
@@ -26,9 +26,7 @@ from PIL import Image
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-_SRC_PRIMARY = REPO_ROOT / "station_logos" / "large_logos"
-_SRC_FALLBACK = REPO_ROOT / "station_logos" / "images"
-SRC_DIR = _SRC_PRIMARY if _SRC_PRIMARY.exists() else _SRC_FALLBACK
+SRC_DIR = REPO_ROOT / "station_logos" / "large_logos"
 PLAYLIST_FILE = REPO_ROOT / "data" / "data" / "playlist.csv"
 OUT_SPIFFS_DIR = REPO_ROOT / "data" / "logos"
 DEFAULT_LOGO_PNG = REPO_ROOT / "station_logos" / "default_logo.png"

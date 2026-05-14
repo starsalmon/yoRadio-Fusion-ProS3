@@ -7,9 +7,8 @@ This repo supports two logo sources:
 
 ### Files
 - **Image library → SPIFFS**
-  - `large_logos/`: optional local station logo library (JPG/PNG). If missing, the generator falls back to `images/`.
-  - `images/`: repo-provided logo library (JPG/PNG).
-  - `default_logo.png` (or `.jpg`): optional fallback logo.
+  - `large_logos/`: local station logo library (JPG/PNG).
+  - `default_logo.png`: optional fallback logo.
   - `../../tools/pio/gen_station_logos_from_images.py`: generator that:
     - reads `data/data/playlist.csv`
     - converts matching images into `data/logos/*.ylg`

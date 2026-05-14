@@ -48,8 +48,8 @@ This is a personal build of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yo
 This build loads station logos from **SPIFFS** at runtime:
 
 - **Firmware reads**: `/logos/<hash>.ylg` (per-station) and `/logos/default.ylg` (fallback)
-- **Source image library**: `station_logos/large_logos/` (preferred) or `station_logos/images/` (fallback) (JPG/PNG)
-- **Default fallback image (optional)**: `station_logos/default_logo.png` (or `.jpg`)
+- **Source image library**: `station_logos/large_logos/` (JPG/PNG)
+- **Default fallback image (optional)**: `station_logos/default_logo.png`
 - **Generator**: `tools/pio/gen_station_logos_from_images.py`
 - **Generated output (SPIFFS)**: `data/logos/*.ylg` (+ `data/logos/index.tsv`)
 

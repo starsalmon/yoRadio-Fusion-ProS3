@@ -45,7 +45,7 @@
 #define COLOR_RSSI              254,217,34     /*  rssi                                                        */
 #define COLOR_VOLBAR_OUT        255,255,255     /*  volume bar outline                                          */
 #define COLOR_VOLBAR_IN         254,217,34     /*  volume bar fill                                             */
-#define COLOR_DIGITS            100,100,255     /*  volume / station number                                     */
+#define COLOR_DIGITS            255,255,255     /*  volume / station number                                     */
 #define COLOR_DIVIDER             255,255,255     /*  divider color (DSP_ST7789, DSP_ILI9341, DSP_ILI9225)        */
 #define COLOR_BITRATE           254,217,34     /*  bitrate                                                     */
 #define COLOR_PL_CURRENT          255,255,255     /*  playlist current item                                       */

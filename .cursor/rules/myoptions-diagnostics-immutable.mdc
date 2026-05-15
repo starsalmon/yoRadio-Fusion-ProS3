@@ -1,0 +1,14 @@
+---
+description: Prevent accidental deletion of myoptions diagnostics section
+globs: myoptions.h
+alwaysApply: false
+---
+
+# `myoptions.h` diagnostics section is append-only
+
+When editing `myoptions.h`, **never remove or rename anything** in the `/* DIAGNOSTICS */` section (currently lines ~202–229).
+
+- Do not delete existing defines (even if commented out)
+- Do not delete existing comments/headers/separators
+- Only add new diagnostics toggles beneath the existing ones, or add new commented defines without removing old ones
+

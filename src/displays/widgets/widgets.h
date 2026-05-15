@@ -148,6 +148,8 @@ class ScrollWidget: public TextWidget {
     void setText(const char* txt);
     void setText(const char* txt, const char *format);
     void setWindowWidth(uint16_t w);
+    void setScrollStepMs(uint16_t ms) { _scrolltime = (ms < 5 ? 5 : ms); }
+    void setStopAfterCycle(bool v) { _stopAfterCycle = v; }
   private:
     char *_sep;
     char *_window;
@@ -159,6 +161,7 @@ class ScrollWidget: public TextWidget {
     uint32_t _scrolldelay;
     uint16_t _sepwidth, _startscrolldelay;
     uint8_t _charWidth;
+    bool _stopAfterCycle = false;
     uint16_t _winLeft(bool fb = false) const;
     psFrameBuffer* _fb=nullptr;
     /* pixel-alapú scroll support (FreeSans fontokhoz) */
@@ -362,11 +365,13 @@ class PlayListWidget: public Widget {
     using Widget::init;
     void init(ScrollWidget* current);
     void drawPlaylist(uint16_t currentItem);
+    void setForceMovingCursor(bool v) { _forceMovingCursor = v; }
     inline uint16_t itemHeight(){ return _plItemHeight; }
     inline uint16_t currentTop(){ return _plYStart+_plCurrentPos*_plItemHeight; }
 
   private:
     ScrollWidget* _current;
+    bool _forceMovingCursor = false;
 
     uint16_t _plItemHeight, _plTtemsCount, _plCurrentPos;
     int      _plYStart;

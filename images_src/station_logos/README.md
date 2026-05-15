@@ -11,7 +11,8 @@ This repo supports two logo sources:
   - `default_logo.png`: optional fallback logo (tracked).
   - `../../tools/pio/gen_station_logos_from_images.py`: generator that:
     - reads `data/data/playlist.csv`
-    - converts matching images into `data/logos/*.ylg`
+    - converts playlist-matched images into `data/logos/*.ylg`
+    - also pre-emits `.ylg` for **every** source image (keyed by filename stem) so new playlist entries can pick up a logo immediately if the station name matches the filename
     - writes `data/logos/index.tsv`
   - `../../tools/pio/pre_fs_generate_logos.py`: PlatformIO hook that runs the generator for `buildfs` / `uploadfs`.
 

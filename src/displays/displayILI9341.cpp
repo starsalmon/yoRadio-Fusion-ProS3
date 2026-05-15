@@ -3,6 +3,11 @@
 #include "dspcore.h"
 #include "../core/config.h"
 
+#ifndef TFT_SPI_FREQ
+// Default matches Adafruit_SPITFT SPI_DEFAULT_FREQ (40MHz).
+#define TFT_SPI_FREQ 40000000UL
+#endif
+
 #if DSP_HSPI
 DspCore::DspCore(): Adafruit_ILI9341(&SPI2, TFT_DC, TFT_CS, TFT_RST) {}
 #else
@@ -10,7 +15,8 @@ DspCore::DspCore(): Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST) {}
 #endif
 
 void DspCore::initDisplay() {
-  begin();             /* SPI_DEFAULT_FREQ 40000000 */
+  begin(TFT_SPI_FREQ);
+  Serial.printf("##[BOOT]#\tTFT_SPI_FREQ\t%lu\n", (unsigned long)TFT_SPI_FREQ);
   
   invert();
   cp437(true);

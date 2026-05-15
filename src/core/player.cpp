@@ -16,6 +16,9 @@
 Player player;
 QueueHandle_t playerQueue;
 
+volatile uint32_t g_audioLoopUsLast = 0;
+volatile uint32_t g_audioLoopUsAvg  = 0;
+
 #if VS1053_CS!=255 && !I2S_INTERNAL
   #if VS_HSPI
     Player::Player(): Audio(VS1053_CS, VS1053_DCS, VS1053_DREQ, &SPI2),
@@ -77,6 +80,18 @@ void Player::init() {
     if(VS1053_RST>0) ResetChip();
     begin();
   #endif
+
+  // Optional: pin the internal Audio decode/play task to a specific core.
+  // Helpful when UI work (DspTask) is pinned and you want to reduce contention.
+  // Example in myoptions.h:
+  //   #define AUDIO_TASK_CORE_ID 0
+  //   #define DSP_TASK_CORE_ID   1
+  #ifdef AUDIO_TASK_CORE_ID
+    setAudioTaskCore((uint8_t)AUDIO_TASK_CORE_ID);
+    Serial.printf("##[BOOT]#\taudio.task.core\t%u\n", (unsigned)AUDIO_TASK_CORE_ID);
+  #endif
+
+  Serial.printf("##[BOOT]#\tplayer.core\t%u\n", (unsigned)xPortGetCoreID());
   setBalance(config.store.balance);
   setTone(config.store.bass, config.store.middle, config.store.trebble);
   setVolumeSteps(100); // "audio_change" "vol_step" Új beállítás, a maximális hangerő.
@@ -348,7 +363,82 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
     }
   }
   checkAutoStartStop();   /* ----- Auto On-Off Timer ----- */
-  Audio::loop();
+
+  // --- Audio decode/network loop ---
+  uint32_t audioLoopUs = 0;
+  {
+    const uint32_t t0 = micros();
+    Audio::loop();
+    audioLoopUs = micros() - t0;
+  }
+  g_audioLoopUsLast = audioLoopUs;
+  // Simple EWMA so UI can react to sustained load, not spikes.
+  if (g_audioLoopUsAvg == 0) g_audioLoopUsAvg = audioLoopUs;
+  else g_audioLoopUsAvg = (uint32_t)(((uint64_t)g_audioLoopUsAvg * 15ULL + (uint64_t)audioLoopUs) / 16ULL);
+
+  // Optional: lightweight 1Hz audio diagnostics (stream/decoder perf).
+  // Enable in myoptions.h:
+  //   #define AUDIO_DIAG_LOG 1
+  //   #define AUDIO_DIAG_LOG_INTERVAL_MS 1000
+  #ifdef AUDIO_DIAG_LOG
+    #ifndef AUDIO_DIAG_LOG_INTERVAL_MS
+      #define AUDIO_DIAG_LOG_INTERVAL_MS 1000
+    #endif
+    static uint32_t s_lastLogMs = 0;
+    static uint32_t s_accLoopUs = 0;
+    static uint32_t s_accCalls  = 0;
+    static uint32_t s_maxLoopUs = 0;
+    static uint32_t s_lastBufMs = 0;
+    static uint32_t s_lastBuf   = 0;
+
+    s_accLoopUs += audioLoopUs;
+    s_accCalls++;
+    if (audioLoopUs > s_maxLoopUs) s_maxLoopUs = audioLoopUs;
+
+    const uint32_t now = millis();
+    if (s_lastLogMs == 0) { s_lastLogMs = now; s_lastBufMs = now; s_lastBuf = inBufferFilled(); }
+    if ((uint32_t)(now - s_lastLogMs) >= (uint32_t)AUDIO_DIAG_LOG_INTERVAL_MS) {
+      const uint32_t filled = inBufferFilled();
+      const uint32_t total  = getInBufferSize();
+      const uint32_t pct    = (total > 0) ? (uint32_t)((uint64_t)filled * 100ULL / (uint64_t)total) : 0u;
+
+      int32_t dBps = 0;
+      const uint32_t dtMs = now - s_lastBufMs;
+      if (dtMs > 0) dBps = (int32_t)((int64_t)((int32_t)filled - (int32_t)s_lastBuf) * 1000LL / (int64_t)dtMs);
+      s_lastBuf = filled;
+      s_lastBufMs = now;
+
+      const uint32_t logDtMs   = now - s_lastLogMs;
+      const uint32_t totLoopUs = s_accLoopUs;
+      const uint32_t avgLoopUs = (s_accCalls > 0) ? (s_accLoopUs / s_accCalls) : 0u;
+      uint32_t busyPct = (logDtMs > 0) ? (uint32_t)((uint64_t)totLoopUs * 100ULL / ((uint64_t)logDtMs * 1000ULL)) : 0u;
+      if (busyPct > 100u) busyPct = 100u;
+
+      Serial.printf(
+        "[AUD] core=%u run=%u codec=%s sr=%lu ch=%u br=%lu buf=%lu/%lu(%lu%%) d=%ldB/s loop=%luus avg=%luus max=%luus cpu=%lu%% aTaskHW=%lu\n",
+        (unsigned)xPortGetCoreID(),
+        (unsigned)(isRunning() ? 1 : 0),
+        getCodecname(),
+        (unsigned long)getSampleRate(),
+        (unsigned)getChannels(),
+        (unsigned long)getBitRate(),
+        (unsigned long)filled,
+        (unsigned long)total,
+        (unsigned long)pct,
+        (long)dBps,
+        (unsigned long)audioLoopUs,
+        (unsigned long)avgLoopUs,
+        (unsigned long)s_maxLoopUs,
+        (unsigned long)busyPct,
+        (unsigned long)getHighWatermark()
+      );
+
+      s_accLoopUs = 0;
+      s_accCalls  = 0;
+      s_maxLoopUs = 0;
+      s_lastLogMs = now;
+    }
+  #endif
 
 #ifdef USE_SD
 // SD EOF fallback: only advance when we have valid bounds and we're at the end.

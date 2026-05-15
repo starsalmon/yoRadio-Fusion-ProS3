@@ -96,13 +96,36 @@ static uint16_t batteryPctColor565(float pct) {
 }
 
 static void loopDspTask(void * pvParameters){
+  // Optional: log which core the display task is running on.
+  #ifdef DSP_DIAG_LOG
+    static bool s_logged = false;
+    if (!s_logged) {
+      s_logged = true;
+      Serial.printf("##[BOOT]#\tDspTask.core\t%u\n", (unsigned)xPortGetCoreID());
+    }
+    static uint32_t s_lastPerfMs = 0;
+    static uint32_t s_accDispUs  = 0;
+    static uint32_t s_accNetUs   = 0;
+    static uint32_t s_maxDispUs  = 0;
+    static uint32_t s_maxNetUs   = 0;
+  #endif
   while(true){
+    uint32_t dispUs = 0;
+    uint32_t netUs  = 0;
   #ifndef DUMMYDISPLAY
     if(displayQueue==NULL) break;
     if(timekeeper.loop0()){
-      display.loop();
+      {
+        const uint32_t t0 = micros();
+        display.loop();
+        dispUs = micros() - t0;
+      }
     #ifndef NETSERVER_LOOP1
-      netserver.loop();
+      {
+        const uint32_t t0 = micros();
+        netserver.loop();
+        netUs = micros() - t0;
+      }
     #endif
     }
   #else
@@ -111,6 +134,39 @@ static void loopDspTask(void * pvParameters){
       netserver.loop();
     #endif
   #endif
+
+  #ifdef DSP_DIAG_LOG
+    s_accDispUs += dispUs;
+    s_accNetUs  += netUs;
+    if (dispUs > s_maxDispUs) s_maxDispUs = dispUs;
+    if (netUs  > s_maxNetUs)  s_maxNetUs  = netUs;
+
+    const uint32_t now = millis();
+    if (s_lastPerfMs == 0) s_lastPerfMs = now;
+    if ((uint32_t)(now - s_lastPerfMs) >= 1000u) {
+      const uint32_t dtMs = now - s_lastPerfMs;
+      const uint32_t dispPct = (dtMs > 0) ? (uint32_t)((uint64_t)s_accDispUs * 100ULL / ((uint64_t)dtMs * 1000ULL)) : 0u;
+      const uint32_t netPct  = (dtMs > 0) ? (uint32_t)((uint64_t)s_accNetUs  * 100ULL / ((uint64_t)dtMs * 1000ULL)) : 0u;
+      const unsigned q = (displayQueue != NULL) ? (unsigned)uxQueueMessagesWaiting(displayQueue) : 0u;
+
+      Serial.printf(
+        "[DSP] core=%u cpuDisp=%lu%% cpuNet=%lu%% q=%u dispMax=%luus netMax=%luus\n",
+        (unsigned)xPortGetCoreID(),
+        (unsigned long)dispPct,
+        (unsigned long)netPct,
+        q,
+        (unsigned long)s_maxDispUs,
+        (unsigned long)s_maxNetUs
+      );
+
+      s_accDispUs = 0;
+      s_accNetUs  = 0;
+      s_maxDispUs = 0;
+      s_maxNetUs  = 0;
+      s_lastPerfMs = now;
+    }
+  #endif
+
     vTaskDelay(DSP_TASK_DELAY);
   }
   vTaskDelete( NULL );
@@ -651,6 +707,9 @@ if (newmode == _mode ||
     _pager->setPage( pages[PG_PLAYLIST]);
     _plcurrent->setText("");
     currentPlItem = config.lastStation();
+    // When audio is playing, prefer the "moving cursor" playlist renderer:
+    // it avoids per-step SD/SPIFFS reads + full list redraws that can starve audio.
+    if (_plwidget) _plwidget->setForceMovingCursor(player.isRunning());
     _drawPlaylist();
   }
   
@@ -741,6 +800,26 @@ void Display::_layoutChange(bool played){
 
   // VU/weather layout changes can affect where there's free space for the logo.
   _layoutStationLogo();
+
+  // Slow down scrolling to reduce display bandwidth/CPU spikes that can starve audio.
+  auto perfScrollMs = [&](uint16_t base) -> uint16_t {
+    // Never run "hyper fast" scroll; it looks janky and burns SPI bandwidth.
+    uint16_t out = (base < 80) ? 80 : base;
+    if (played && out < 140) out = 140;
+    return out;
+  };
+  if (_meta)   _meta->setScrollStepMs(perfScrollMs(metaConf.scrolltime));
+  if (_title1) _title1->setScrollStepMs(perfScrollMs(title1Conf.scrolltime));
+  if (_title2) _title2->setScrollStepMs(perfScrollMs(title2Conf.scrolltime));
+  if (_weather) _weather->setScrollStepMs(perfScrollMs(weatherConf.scrolltime));
+
+  // While playing, long lines should scroll once (slowly) then stop (until text changes).
+  const bool stopAfterCycle = played;
+  if (_meta)   _meta->setStopAfterCycle(stopAfterCycle);
+  if (_title1) _title1->setStopAfterCycle(stopAfterCycle);
+  if (_title2) _title2->setStopAfterCycle(stopAfterCycle);
+
+  if (_mode == STATIONS && _plwidget) _plwidget->setForceMovingCursor(played);
 }
 
 

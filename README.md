@@ -30,23 +30,24 @@ platformio device monitor -b 115200
 
 ### Repo layout (the parts you’ll actually touch)
 
-- **User config**: `myoptions.h`
-- **PlatformIO env**: `platformio.ini` (`yoradio-um_pros3-ili9341`)
-- **Playlist**: `data/data/playlist.csv` (`Name<TAB>URL<TAB>0`)
-- **Wi‑Fi credentials**: `data/data/wifi.csv` (gitignored) from `data/data/wifi.example.csv`
-- **Logos source**: `images_src/station_logos/` (tracked)
+- **User config**: [`myoptions.h`](myoptions.h)
+- **PlatformIO env**: [`platformio.ini`](platformio.ini) (`yoradio-um_pros3-ili9341`)
+- **Playlist**: [`data/data/playlist.csv`](data/data/playlist.csv) (`Name<TAB>URL<TAB>0`)
+- **Wi‑Fi credentials**: `data/data/wifi.csv` (gitignored) from [`data/data/wifi.example.csv`](data/data/wifi.example.csv)
+- **Logos source**: [`images_src/station_logos/`](images_src/station_logos/) (tracked)
 - **Generated logos (SPIFFS)**: `data/logos/*.ylg` (gitignored)
 
-### Docs index
+### Documentation
 
-- **What changed vs upstream**: `docs/CHANGES_SINCE_UPSTREAM.md`
-- **Worklog / polish notes (why this fork exists)**: `docs/WORKLOG_AND_POLISH_NOTES.md`
-- **Controls (buttons/encoders/IR/touch)**: `docs/CONTROLS.md`
-- **Known issues / rough edges**: `docs/KNOWN_ISSUES.md`
-- **Station logo pipeline (source images → SPIFFS `.ylg`)**: `images_src/station_logos/README.md`
-- **Plugin API docs**: `src/pluginsManager/README.md`
-- **Plugins folder notes**: `src/plugins/README.md`
-- **IRremote locales** (upstream lib docs): `src/IRremoteESP8266/locale/README.md`
+- **Worklog / polish notes (why this fork exists)**: [`docs/WORKLOG_AND_POLISH_NOTES.md`](docs/WORKLOG_AND_POLISH_NOTES.md)
+- **Changes vs upstream (repro commands + high-signal summary)**: [`docs/CHANGES_SINCE_UPSTREAM.md`](docs/CHANGES_SINCE_UPSTREAM.md)
+- **TODO / Roadmap**: [`docs/TODO_ROADMAP.md`](docs/TODO_ROADMAP.md)
+- **Known issues**: [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
+- **Controls (buttons/encoders/IR/touch)**: [`docs/CONTROLS.md`](docs/CONTROLS.md)
+- **Station logo pipeline (source images → SPIFFS `.ylg`)**: [`images_src/station_logos/README.md`](images_src/station_logos/README.md)
+- **Plugin API docs**: [`src/pluginsManager/README.md`](src/pluginsManager/README.md)
+- **Plugins folder notes**: [`src/plugins/README.md`](src/plugins/README.md)
+- **IRremote locales** (upstream lib docs): [`src/IRremoteESP8266/locale/README.md`](src/IRremoteESP8266/locale/README.md)
 
 ## What’s custom in this fork (high signal)
 
@@ -146,7 +147,9 @@ This pulls Moode’s `cfg_radio` from `command/cfg-table.php?cmd=get_cfg_tables`
 
 ## Station logos
 
-See `images_src/station_logos/README.md` for the full pipeline. Summary:
+More info: [`images_src/station_logos/README.md`](images_src/station_logos/README.md)
+
+Summary:
 
 - **Source**: `images_src/station_logos/*.png|*.jpg` (tracked)
 - **Output**: `data/logos/*.ylg` + `data/logos/index.tsv` (gitignored; uploaded to SPIFFS)
@@ -161,7 +164,7 @@ platformio run -e yoradio-um_pros3-ili9341 -t uploadfs
 
 The full upstream-style controls reference (buttons/encoders/IR/touch) lives here:
 
-- `docs/CONTROLS.md`
+- [`docs/CONTROLS.md`](docs/CONTROLS.md)
 
 ## Diagnostics / debug toggles
 
@@ -179,9 +182,9 @@ All the usual “turn on logging” knobs live in `myoptions.h` under `/* DIAGNO
   - Defaults to “poll on every Arduino loop”
   - You can experiment with a separate polling task via `CONTROLS_TASK_ENABLE`
 
-## Known issues (honest status)
+## Known issues
 
-Short version (full list in `docs/KNOWN_ISSUES.md`):
+More info: [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
 
 - **SD → WEB → HLS AAC stall (real bug)**: certain HLS AAC stations may fail to start after SD playback.
 - **Some AAC stations are “CPU heavy”** and can make UI responsiveness / VU refresh worse.
@@ -190,18 +193,4 @@ Short version (full list in `docs/KNOWN_ISSUES.md`):
 
 ## TODO / Roadmap
 
-- **Fix up invalid pin warnings at boot**: find what is generating `__pinMode(): Invalid IO 255 selected`
-- **Fix SD → WEB → HLS AAC stall properly** (not just workarounds)
-- **More controls via MQTT**: add other controls that only exist in the web UI (tone, smart start, auto dimming, screensaver), and include some fork-only features too
-- **Test/refine low battery cutoff**: not properly tested
-- **Theme switching**: add a way to select/switch themes (web UI/config + persist chosen theme)
-- **Boot screen improvement**: simple animation + build info; unicode SSID handling
-- **IR control UX**: set up receiver + on-screen “IR RX” indicator
-- **Station logo workflow polish**: improve matching/coverage; automate maintaining the local image library
-- **SD playback resume**: track resume is implemented; resume *position* still WIP
-- **Album art**: revisit later (needs stable decoder/task model)
-- **Output via bluetooth**: may not be possible without a dedicated BT module
-- **Podcast mode**: dedicated mode to stream recent episodes from podcast feeds
-- **Load station logos from SD**: might be easier long-term; likely needs stable image decode first
-- **Configure new features from web**: allow setting options like `BATTERY_ENABLED`, `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT` from the web interface
-- **Reduce blocking patterns and busy-waits** (queue allocation loops, MQTT playlist block)
+More info: [`docs/TODO_ROADMAP.md`](docs/TODO_ROADMAP.md)

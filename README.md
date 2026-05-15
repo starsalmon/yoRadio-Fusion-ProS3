@@ -41,6 +41,7 @@ platformio device monitor -b 115200
 
 - **Worklog / polish notes (why this fork exists)**: [`docs/WORKLOG_AND_POLISH_NOTES.md`](docs/WORKLOG_AND_POLISH_NOTES.md)
 - **Changes vs upstream (repro commands + high-signal summary)**: [`docs/CHANGES_SINCE_UPSTREAM.md`](docs/CHANGES_SINCE_UPSTREAM.md)
+- **Suggested fixes**: [`docs/SUGGESTED_FIXES.md`](docs/SUGGESTED_FIXES.md)
 - **TODO / Roadmap**: [`docs/TODO_ROADMAP.md`](docs/TODO_ROADMAP.md)
 - **Known issues**: [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
 - **Controls (buttons/encoders/IR/touch)**: [`docs/CONTROLS.md`](docs/CONTROLS.md)

@@ -74,6 +74,10 @@ class Player: public Audio {
 
 extern Player player;
 
+// Audio perf telemetry (updated from Player::loop). Used by UI throttles.
+extern volatile uint32_t g_audioLoopUsLast;
+extern volatile uint32_t g_audioLoopUsAvg;
+
 extern __attribute__((weak)) void player_on_start_play();
 extern __attribute__((weak)) void player_on_stop_play();
 extern __attribute__((weak)) void player_on_track_change();

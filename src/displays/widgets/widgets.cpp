@@ -632,6 +632,10 @@ void ScrollWidget::_calcX() {
   if (-_x > (int16_t)(_textwidth + _sepwidth) - (int16_t)fbl) {
     _x = fbl;
     dsp.setScrollId(NULL);
+    if (_stopAfterCycle) {
+      // Stop after one full pass; will restart on next setText().
+      _doscroll = false;
+    }
   } else {
     dsp.setScrollId(this);
   }
@@ -1298,7 +1302,89 @@ void VuWidget::_draw() {
 }
 
 void VuWidget::loop() {
-  if (_active && !_locked) _draw();
+  if (!_active || _locked) return;
+
+  // VU rendering is one of the most expensive UI operations (canvas fill + RGB565 blit).
+  // If we update too fast, it can starve audio decode/buffering on heavier streams
+  // (e.g. some AAC/HE-AAC/HLS variants).
+  static uint32_t lastMs = 0;
+  static uint32_t lastDrawUs = 0;
+  static uint32_t lastLogMs = 0;
+  static uint32_t lastBufSampleMs = 0;
+  static uint32_t lastBufFilled = 0;
+  static int32_t  lastBufDeltaPerSec = 0;
+  const uint32_t now = millis();
+
+  // Fast by default; back off only when the buffer is trending downward or draws are expensive.
+  uint16_t minFrameMs = player.isRunning() ? 25 : 20; // ~40fps playing, ~50fps idle max
+
+  if (player.isRunning()) {
+    // If the audio loop is consistently heavy, reduce UI pressure.
+    // (g_audioLoopUsAvg is an EWMA of Audio::loop() duration)
+    const uint32_t audioAvgUs = g_audioLoopUsAvg;
+    if (audioAvgUs > 12000) minFrameMs = max<uint16_t>(minFrameMs, 120); // sustained heavy load
+    else if (audioAvgUs > 6000) minFrameMs = max<uint16_t>(minFrameMs, 80);
+
+    const uint32_t total = player.getInBufferSize();
+    const uint32_t filled = player.inBufferFilled();
+    if (total > 0) {
+      const uint32_t pct = (uint32_t)((uint64_t)filled * 100ULL / (uint64_t)total);
+
+      // Sample buffer trend (bytes/sec). This catches "CPU/WiFi starvation" even if pct is still high.
+      if (now - lastBufSampleMs >= 1000) {
+        const uint32_t dtMs = now - lastBufSampleMs;
+        if (dtMs > 0) {
+          const int32_t d = (int32_t)filled - (int32_t)lastBufFilled;
+          lastBufDeltaPerSec = (int32_t)((int64_t)d * 1000LL / (int64_t)dtMs);
+        }
+        lastBufFilled = filled;
+        lastBufSampleMs = now;
+      }
+
+      // If we're running low on buffered data, back off UI work aggressively.
+      if (pct < 12) return;            // hard protect against underruns
+      if (pct < 20) minFrameMs = max<uint16_t>(minFrameMs, 120);
+      else if (pct < 25) minFrameMs = max<uint16_t>(minFrameMs, 80);
+
+      // If the buffer is draining, back off (even when pct is still "high").
+      // Ignore small negative deltas (noise / normal jitter).
+      if (lastBufDeltaPerSec < -5000) {
+        minFrameMs = max<uint16_t>(minFrameMs, 80);
+      }
+    } else {
+      minFrameMs = 80;
+    }
+  }
+
+  if ((uint32_t)(now - lastMs) < (uint32_t)minFrameMs) return;
+  lastMs = now;
+
+  const uint32_t startUs = micros();
+  _draw();
+  lastDrawUs = micros() - startUs;
+
+  // If a single frame was expensive, proactively slow the next ones a bit.
+  if (player.isRunning()) {
+    if (lastDrawUs > 15000) lastMs = now + 80;   // effectively ~<=12fps for a moment
+    else if (lastDrawUs > 9000) lastMs = now + 40;
+  }
+
+  // Optional: 1Hz perf log (enable by defining VU_PERF_LOG in myoptions.h).
+#ifdef VU_PERF_LOG
+  if (now - lastLogMs >= 1000) {
+    lastLogMs = now;
+    const uint32_t total = player.getInBufferSize();
+    const uint32_t filled = player.inBufferFilled();
+    const uint32_t pct = (total > 0) ? (uint32_t)((uint64_t)filled * 100ULL / (uint64_t)total) : 0u;
+    Serial.printf("[VU] buf=%lu/%lu (%lu%%) d=%ld B/s frame=%u ms draw=%lu us\n",
+                  (unsigned long)filled,
+                  (unsigned long)total,
+                  (unsigned long)pct,
+                  (long)lastBufDeltaPerSec,
+                  (unsigned)minFrameMs,
+                  (unsigned long)lastDrawUs);
+  }
+#endif
 }
 
 void VuWidget::_clear() {
@@ -2085,7 +2171,7 @@ void PlayListWidget::_loadPlaylistPage(int pageIndex, int itemsPerPage) {
 void PlayListWidget::drawPlaylist(uint16_t currentItem) {
 
 #ifndef DSP_LCD
-  if (config.store.playlistMode == 1) {
+  if (_forceMovingCursor || config.store.playlistMode == 1) {
     _drawMovingCursor(currentItem);
   } else {
     _drawScrollCenter(currentItem);

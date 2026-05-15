@@ -11,6 +11,12 @@
 #include "driver/rtc_io.h"
 #include "../pluginsManager/pluginsManager.h"
 
+// Run control polling (buttons/encoders/IR/touch) on a separate core so
+// Audio::loop() stalls on core 1 don't make input feel unresponsive.
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+
 long encOldPosition  = 0;
 long enc2OldPosition  = 0;
 int lpId = -1;
@@ -28,6 +34,130 @@ bool     waitingForWakeIr = false;
 OneButton button[] {{BTN_LEFT, true, BTN_INTERNALPULLUP}, {BTN_CENTER, true, BTN_INTERNALPULLUP}, {BTN_RIGHT, true, BTN_INTERNALPULLUP}, {ENC_BTNB, true, ENC_INTERNALPULLUP}, {BTN_UP, true, BTN_INTERNALPULLUP}, {BTN_DOWN, true, BTN_INTERNALPULLUP}, {ENC2_BTNB, true, ENC2_INTERNALPULLUP}, {BTN_MODE, true, BTN_INTERNALPULLUP}};
 constexpr uint8_t nrOfButtons = sizeof(button) / sizeof(button[0]);
 #endif
+
+// ---- Controls task (optional, DISABLED by default) ----
+// Default behavior (recommended for audio stability) is to poll controls on every
+// Arduino `loop()` via `loopControls()` (the original behavior).
+//
+// To enable the extra controls polling task, add to `myoptions.h`:
+//   #define CONTROLS_TASK_ENABLE 1
+//
+// To force-disable (even if enabled elsewhere):
+//   #define CONTROLS_TASK_DISABLE 1
+#ifdef CONTROLS_TASK_DISABLE
+  #undef CONTROLS_TASK_ENABLE
+  #define CONTROLS_TASK_ENABLE 0
+#endif
+#ifndef CONTROLS_TASK_ENABLE
+  #define CONTROLS_TASK_ENABLE 0
+#endif
+
+#ifndef CONTROLS_TASK_CORE_ID
+  // Keep controls polling off the audio core so it can't steal time from AAC decode.
+  // Display is already on core 0 (DspTask), and button polling is very light.
+  #define CONTROLS_TASK_CORE_ID 0
+#endif
+
+#ifndef CONTROLS_TASK_PRIORITY
+  // Lower than the Arduino loop task; audio stability comes first.
+  #define CONTROLS_TASK_PRIORITY 1
+#endif
+
+#ifndef CONTROLS_TASK_PERIOD_MS
+  // Lower tick rate reduces any chance of interfering with display timing.
+  #define CONTROLS_TASK_PERIOD_MS 10
+#endif
+
+static TaskHandle_t s_controlsTaskHandle = nullptr;
+
+enum : uint8_t { CE_CLICK=1, CE_DBL=2, CE_LP_START=3, CE_LP_STOP=4, CE_LP_DURING=5 };
+struct controls_evt_t { uint8_t type; int8_t id; };
+static QueueHandle_t s_controlsEvtQ = nullptr;
+
+static inline void controlsEvtSend(uint8_t type, int id){
+  // If the controls task/queue isn't enabled, fall back to original behavior:
+  // execute handlers immediately in the current context (Arduino loop).
+  if (!s_controlsEvtQ) {
+    switch (type) {
+      case CE_CLICK:     onBtnClick(id); break;
+      case CE_DBL:       onBtnDoubleClick(id); break;
+      case CE_LP_START:  onBtnLongPressStart(id); break;
+      case CE_LP_STOP:   onBtnLongPressStop(id); break;
+      case CE_LP_DURING: onBtnDuringLongPress(id); break;
+      default: break;
+    }
+    return;
+  }
+  controls_evt_t e;
+  e.type = type;
+  e.id = (int8_t)id;
+  (void)xQueueSend(s_controlsEvtQ, &e, 0);
+}
+
+static void pollButtonsTick(){
+#if ISPUSHBUTTONS
+  for (unsigned i = 0; i < nrOfButtons; i++) {
+    if ((i == 0 && BTN_LEFT == 255) || (i == 1 && BTN_CENTER == 255) || (i == 2 && BTN_RIGHT == 255) || (i == 3 && ENC_BTNB == 255) || (i == 4 && BTN_UP == 255) || (i == 5 && BTN_DOWN == 255) || (i == 6 && ENC2_BTNB == 255) || (i == 7 && BTN_MODE == 255)) continue;
+    button[i].tick();
+    if (lpId >= 0) {
+      controlsEvtSend(CE_LP_DURING, lpId);
+    }
+  }
+#endif
+}
+
+static void controlsTaskFn(void*){
+  Serial.printf("##[BOOT]#\tcontrols.task.core\t%u\n", (unsigned)xPortGetCoreID());
+  for(;;){
+    pollButtonsTick();
+    vTaskDelay(pdMS_TO_TICKS(CONTROLS_TASK_PERIOD_MS));
+  }
+}
+
+bool controlsTaskRunning(){
+  return s_controlsTaskHandle != nullptr;
+}
+
+bool startControlsTask(){
+#if defined(CONTROLS_TASK_ENABLE) && (CONTROLS_TASK_ENABLE==1)
+  if (!s_controlsEvtQ) {
+    s_controlsEvtQ = xQueueCreate(16, sizeof(controls_evt_t));
+  }
+  if (s_controlsTaskHandle) return true;
+  BaseType_t ok = xTaskCreatePinnedToCore(
+    controlsTaskFn,
+    "ControlsTask",
+    1024 * 4,
+    nullptr,
+    CONTROLS_TASK_PRIORITY,
+    &s_controlsTaskHandle,
+    CONTROLS_TASK_CORE_ID
+  );
+  if (ok != pdPASS) {
+    s_controlsTaskHandle = nullptr;
+    Serial.println("##[BOOT]#\tcontrols.task\tFAILED");
+    return false;
+  }
+  return true;
+#else
+  return false;
+#endif
+}
+
+void processControlsEvents(){
+  if (!s_controlsEvtQ) return;
+  controls_evt_t e;
+  while (xQueueReceive(s_controlsEvtQ, &e, 0) == pdTRUE) {
+    switch (e.type) {
+      case CE_CLICK:    onBtnClick((int)e.id); break;
+      case CE_DBL:      onBtnDoubleClick((int)e.id); break;
+      case CE_LP_START: onBtnLongPressStart((int)e.id); break;
+      case CE_LP_STOP:  onBtnLongPressStop((int)e.id); break;
+      case CE_LP_DURING:onBtnDuringLongPress((int)e.id); break;
+      default: break;
+    }
+  }
+}
 
 #if ENC_HALFQUARD==false
 #define ENCODER_STEPS 4
@@ -117,16 +247,16 @@ void initControls() {
   {
     if ((i == 0 && BTN_LEFT == 255) || (i == 1 && BTN_CENTER == 255) || (i == 2 && BTN_RIGHT == 255) || (i == 3 && ENC_BTNB == 255) || (i == 4 && BTN_UP == 255) || (i == 5 && BTN_DOWN == 255) || (i == 6 && ENC2_BTNB == 255) || (i == 7 && BTN_MODE == 255)) continue;
     button[i].attachClick([](void* p) {
-      onBtnClick((int)p);
+      controlsEvtSend(CE_CLICK, (int)p);
     }, (void*)i);
     button[i].attachDoubleClick([](void* p) {
-      onBtnDoubleClick((int)p);
+      controlsEvtSend(CE_DBL, (int)p);
     }, (void*)i);
     button[i].attachLongPressStart([](void* p) {
-      onBtnLongPressStart((int)p);
+      controlsEvtSend(CE_LP_START, (int)p);
     }, (void*)i);
     button[i].attachLongPressStop([](void* p) {
-      onBtnLongPressStop((int)p);
+      controlsEvtSend(CE_LP_STOP, (int)p);
     }, (void*)i);
     button[i].setClickTicks(BTN_CLICK_TICKS);
     button[i].setPressTicks(BTN_PRESS_TICKS);
@@ -157,14 +287,8 @@ void loopControls() {
   encoder2Loop();
 #endif
 #if ISPUSHBUTTONS
-  for (unsigned i = 0; i < nrOfButtons; i++)
-  {
-    if ((i == 0 && BTN_LEFT == 255) || (i == 1 && BTN_CENTER == 255) || (i == 2 && BTN_RIGHT == 255) || (i == 3 && ENC_BTNB == 255) || (i == 4 && BTN_UP == 255) || (i == 5 && BTN_DOWN == 255) || (i == 6 && ENC2_BTNB == 255)) continue;
-    button[i].tick();
-    if (lpId >= 0) {
-      if (DSP_MODEL == DSP_DUMMY && (lpId == 4 || lpId == 5)) continue;
-      onBtnDuringLongPress(lpId);
-    }
+  if (!controlsTaskRunning()) {
+    pollButtonsTick();
   }
 #endif
 #if IR_PIN!=255
@@ -284,11 +408,11 @@ void irWakeup() {
                     }
                     // csak valódi kódokat vizsgálunk
                     if (isIrPowerCode(code)) {
-                        Serial.printf("POWER: 0x%lX\n", code);
+                        Serial.printf("POWER: 0x%X\n", (unsigned)code);
                         valid = true;
                         break;
                     } else {
-                        Serial.printf("Not POWER: 0x%lX\n", code);
+                        Serial.printf("Not POWER: 0x%X\n", (unsigned)code);
                     }
                 }
             }
@@ -306,7 +430,7 @@ void irWakeup() {
 /*----- Összehasonlít a 3 tárolt POWER kóddal -----*/
 bool isIrPowerCode(uint32_t code) {
     for (int i = 0; i < 3; i++) {
-        Serial.printf("Stored[%d]: 0x%08lX\n", i, (uint32_t)config.ircodes.irVals[IR_POWER][i]);
+        Serial.printf("Stored[%d]: 0x%08X\n", i, (unsigned)(uint32_t)config.ircodes.irVals[IR_POWER][i]);
         if (config.ircodes.irVals[IR_POWER][i] == code) { return true; }
     }
     return false;
@@ -521,7 +645,7 @@ void onBtnLongPressStop(int id) {
 }
 
 unsigned long lpdelay;
-boolean checklpdelay(int m, unsigned long &tstamp) {
+bool checklpdelay(int m, unsigned long &tstamp) {
   if (millis() - tstamp > m) {
     tstamp = millis();
     return true;

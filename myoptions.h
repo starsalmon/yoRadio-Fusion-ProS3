@@ -75,7 +75,7 @@
 //#define DSP_MODEL DSP_GC9A01A
 //#define HUN_LCD
 /*****************************************/
-
+#define TFT_SPI_FREQ 60000000UL
 //#define DSP_HSPI 1
 #define TFT_DC 5
 #define TFT_CS 4
@@ -158,11 +158,14 @@
 // Station logos + album art (runtime toggle default).
 // Set to 0 if you want them hidden by default after flashing.
 #define SHOW_LOGOS_DEFAULT 1
+
 //#define PLAYER_FORCE_MONO false  /*  mono option on boot - false stereo, true mono. "false" */
 #define I2S_INTERNAL    false    /*  If true - use esp32 internal DAC. "false" */
 //#define ROTATE_90   false        /*  Optional 90 degree rotation for square displays."false"*/
 //#define TFT_ROTATE      2        /*  Display rotation. 0 - 0, 1 - 90, 2 - 180, 3 - 270 degrees */
 //#define HIDE_VOLPAGE             /* Hide volume page; navigate using the volume progress bar. */
+
+/* DEEP SLEEP OPTIONS */
 // Deep sleep wake button (RTC GPIO only: GPIO0..GPIO21).
 // If you already have a MODE/encoder button wired, you can point WAKE_PIN1 at that GPIO.
 // Example:
@@ -179,23 +182,60 @@
 // the device in deep sleep with no wake source.
 #define AUTO_DEEPSLEEP_IDLE_MINUTES 15
 #define AUTO_DEEPSLEEP_BATT_PCT 5
+
+/* BACKLIGHT OPTIONS */
 #define FADE_PERIOD 300
 //#define LIGHT_SENSOR      40               /*  Light sensor  */
 //#define AUTOBACKLIGHT(x)  *function*        /*  Autobacklight function. See options.h for example  */
-//#define NAME_STRIM              /* Show station name from the stream. (MOD Maleksm) */
+//#define DOWN_LEVEL           2      /* lowest level brightness (from 0 to 255) */
+//#define DOWN_INTERVAL        60     /* interval for BacklightDown in sec (60 sec = 1 min) */
 
-// MQTT options
+/* MQTT options */
 // - Set MQTT_DISABLE=1 to fully disable MQTT features (including HA discovery).
 // - Set MQTT_QUIET_LOGS=1 to suppress noisy AsyncMqttClient INFO logs on Serial.
 #ifndef MQTT_DISABLE
-  #define MQTT_DISABLE 0
+  #define MQTT_DISABLE 1
 #endif
 #ifndef MQTT_QUIET_LOGS
   #define MQTT_QUIET_LOGS 1
 #endif
+/* ***************************************** */
 
-//#define DOWN_LEVEL           2      /* lowest level brightness (from 0 to 255) */
-//#define DOWN_INTERVAL        60     /* interval for BacklightDown in sec (60 sec = 1 min) */
+/* ***************************************** */
+/* DIAGNOSTICS */
+
+/* Display diagnostics */
+//#define DSP_DIAG_LOG 1
+//#define VU_PERF_LOG 1
+
+/* Audio diagnostics */
+//#define AUDIO_DIAG_LOG 1
+// optional
+//#define AUDIO_DIAG_LOG_INTERVAL_MS 1000
+
+//#define AUDIO_TASK_CORE_ID 0
+//#define DSP_TASK_CORE_ID 1
+
+// ---- Controls task (optional, DISABLED by default) ----
+// Default behavior (recommended for audio stability) is to poll controls on every
+// Arduino `loop()` via `loopControls()` (the original behavior).
+//
+// To enable the extra controls polling task
+// #define CONTROLS_TASK_ENABLE 1
+//
+// To force-disable (even if enabled elsewhere):
+//#define CONTROLS_TASK_DISABLE 1
+
+// Keep controls polling off the audio core so it can't steal time from AAC decode.
+// Display is already on core 0 (DspTask), and button polling is very light.
+//#define CONTROLS_TASK_CORE_ID 0
+
+// Lower than the Arduino loop task; audio stability comes first.
+//#define CONTROLS_TASK_PRIORITY 1
+
+// Lower tick rate reduces any chance of interfering with display timing.
+//#define CONTROLS_TASK_PERIOD_MS 10
+
 /* ***************************************** */
 
 #endif

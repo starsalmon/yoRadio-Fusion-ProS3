@@ -1,15 +1,19 @@
 #ifndef controls_h
 #define controls_h
 #include "common.h"
+#include <Arduino.h>
 
 #if IR_PIN!=255
 enum : uint8_t { IR_POWER=0, IR_PLAY_STOP=1, IR_BACK=2, IR_PREV=3, IR_LIST=4, IR_NEXT=5, IR_VOLUME_DOWN=6, IR_MODE=7, IR_VOLUME_UP=8, IR_1=9, IR_2=10, IR_3=11, IR_4=12, IR_5=13, IR_6=14, IR_7=15, IR_8=16, IR_9=17, IR_0=18  };
 #endif
 
-boolean checklpdelay(int m, unsigned long &tstamp);
+bool checklpdelay(int m, unsigned long &tstamp);
 
 void initControls();
 void loopControls();
+bool startControlsTask();
+bool controlsTaskRunning();
+void processControlsEvents();
 #if (ENC_BTNL!=255 && ENC_BTNR!=255) || (ENC2_BTNL!=255 && ENC2_BTNR!=255)
 class yoEncoder;
 void encodersLoop(yoEncoder *enc, bool first=true);

@@ -118,6 +118,7 @@ void setup() {
     config.initPlaylistMode();
     netserver.begin();
     initControls();
+    startControlsTask();
     display.putRequest(DSP_START);
     while(!display.ready()) delay(10);
     return;
@@ -130,6 +131,7 @@ void setup() {
   netserver.begin();
   telnet.begin();
   initControls();
+  startControlsTask();
   display.putRequest(DSP_START);
   while(!display.ready()) delay(10);
   #if USE_OTA
@@ -148,6 +150,7 @@ void setup() {
 void loop() {
   timekeeper.loop1();
   telnet.loop();
+  processControlsEvents();
 #ifdef USE_DLNA
   // After DLNA build/append: refresh playlist at runtime (main context)
   static uint32_t dlnaReloadAt = 0;
@@ -256,6 +259,8 @@ void loop() {
 #endif
 
   pm.on_loop();   // ledstrip plugin - always runs (even in screensaver)
+  // Always poll encoders/IR/touch in the main loop. Button clicks are captured by
+  // ControlsTask when enabled, so loopControls() will skip button.tick() in that case.
   loopControls();
   #ifdef NETSERVER_LOOP1
   netserver.loop();

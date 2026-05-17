@@ -26,6 +26,7 @@ class Player: public Audio {
     bool        _volTimer;   /* delayed volume save  */
     uint32_t    _resumeFilePos;
     plStatus_e  _status;
+    bool        _speakerForceMuted = false;
     //char        _plError[PLERR_LN];
   private:
     void _stop(bool alreadyStopped = false);
@@ -66,6 +67,8 @@ class Player: public Audio {
     uint8_t volToI2S(uint8_t volume);
     void stopInfo();
     void setOutputPins(bool isPlaying);
+    void setSpeakerForceMuted(bool v);
+    bool speakerForceMuted() const { return _speakerForceMuted; }
     void setResumeFilePos(uint32_t pos) { _resumeFilePos = pos; }
     #ifdef USE_DLNA
     void switchToWebPlaylist();  // Switch from DLNA back to web playlist

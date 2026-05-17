@@ -62,6 +62,22 @@ Some HLS AAC streams behave differently even at similar bitrates. This fork incl
   - `HIDE_CLOCK` to remove the clock widget
   - `HIDE_DATE_WIDGET` to remove the date widget
 
+### Bluetooth audio output (A2DP Source) via companion ESP32
+
+ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ESP32** path to transmit A2DP audio (SBC) while the ProS3 continues to do UI/network/stream decode.
+
+- Implemented a ProS3-side control module (`src/core/bt_companion.{h,cpp}`):
+  - UART control protocol (`PING/STATUS/CONNECT/DISCONNECT/SLEEP`)
+  - Wake pin pulse to bring the companion out of deep sleep
+  - Output toggle on **MODE double-click** (internal speaker vs BT), with internal amp mute while keeping I2S audio flowing
+- Companion firmware work (separate PlatformIO project) hardened for real use:
+  - Deep sleep made reliable (task shutdown ordering)
+  - Logging made optional/quiet by default
+  - Corrected BT target matching so `CONNECT <name>` works deterministically
+- Current user-observed behavior:
+  - BT audio is stable once connected
+  - Switching to BT can take ~30s (ongoing UX improvement area: status LED + connection-state feedback + faster connect path)
+
 ### Station list management (Moode import automation)
 
 - Added `tools/moode/export_moode_radio_to_yoradio_csv.py` to scrape Moode’s station table and merge into `data/data/playlist.csv` (URL de-dupe, don’t clobber custom names).

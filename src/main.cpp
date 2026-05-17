@@ -10,6 +10,7 @@
 #include "core/network.h"
 #include "core/netserver.h"
 #include "core/controls.h"
+#include "core/bt_companion.h"
 #ifdef MQTT_ROOT_TOPIC
   #include "core/mqtt.h"
 #endif
@@ -121,6 +122,7 @@ void setup() {
   telnet.begin();
   initControls();
   startControlsTask();
+  btcompanion_init();
   display.putRequest(DSP_START);
   while(!display.ready()) delay(10);
   #if USE_OTA
@@ -144,6 +146,7 @@ void setup() {
 void loop() {
   timekeeper.loop1();
   telnet.loop();
+  btcompanion_loop();
   processControlsEvents();
 #ifdef USE_DLNA
   // After DLNA build/append: refresh playlist at runtime (main context)

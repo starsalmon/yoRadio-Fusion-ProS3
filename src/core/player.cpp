@@ -473,8 +473,21 @@ if (config.getMode() == PM_SDCARD && !isRunning() && _status == PLAYING) {
 
 void Player::setOutputPins(bool isPlaying) {
   if(REAL_LEDBUILTIN!=255) digitalWrite(REAL_LEDBUILTIN, LED_INVERT?!isPlaying:isPlaying);
-  bool _ml = MUTE_LOCK?!MUTE_VAL:(isPlaying?!MUTE_VAL:MUTE_VAL);
+  bool _ml = false;
+  if (MUTE_LOCK) {
+    _ml = !MUTE_VAL;
+  } else if (_speakerForceMuted) {
+    _ml = MUTE_VAL;
+  } else {
+    _ml = isPlaying ? !MUTE_VAL : MUTE_VAL;
+  }
   if(MUTE_PIN!=255) digitalWrite(MUTE_PIN, _ml);
+}
+
+void Player::setSpeakerForceMuted(bool v) {
+  if (_speakerForceMuted == v) return;
+  _speakerForceMuted = v;
+  setOutputPins(_status == PLAYING);
 }
 
 void Player::_play(uint16_t stationId) {

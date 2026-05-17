@@ -133,6 +133,24 @@
 #define MUTE_VAL    LOW          /*  Write this to MUTE_PIN when player is stop */
 /********************************************/
 
+/********************************************/
+/* Companion ESP32 for Bluetooth A2DP TX */
+// ProS3 (ESP32-S3) is BLE-only, so A2DP requires a second (Classic BT) ESP32.
+// UART:
+//   ProS3 TX GPIO43 -> HiGrow RX GPIO39 (series resistor ~1k)
+//   ProS3 RX GPIO44 <- HiGrow TX GPIO13 (series resistor ~1k)
+// Wake:
+//   ProS3 GPIO38 -> HiGrow GPIO38 (EXT0 wake on HiGrow)
+#define BT_COMPANION_ENABLE 1
+#define BT_COMPANION_UART_PORT 1
+#define BT_COMPANION_UART_BAUD 115200
+#define BT_COMPANION_UART_TX   43
+#define BT_COMPANION_UART_RX   44
+#define BT_COMPANION_WAKE_PIN  38
+#define BT_COMPANION_WAKE_PULSE_MS 600
+#define BT_COMPANION_SINK_NAME "HiFi-IIS"
+/********************************************/
+
 /*****************************************/
 /* RTC module (DS3231) */
 
@@ -199,11 +217,12 @@
 // - Set MQTT_DISABLE=1 to fully disable MQTT features (including HA discovery).
 // - Set MQTT_QUIET_LOGS=1 to suppress noisy AsyncMqttClient INFO logs on Serial.
 #ifndef MQTT_DISABLE
-  #define MQTT_DISABLE 1
+  #define MQTT_DISABLE 0
 #endif
 #ifndef MQTT_QUIET_LOGS
   #define MQTT_QUIET_LOGS 1
 #endif
+
 /* ***************************************** */
 
 /* ***************************************** */

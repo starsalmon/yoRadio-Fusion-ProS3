@@ -8,6 +8,7 @@
 #include "display.h"
 #include "network.h"
 #include "netserver.h"
+#include "bt_companion.h"
 #include "driver/rtc_io.h"
 #include "../pluginsManager/pluginsManager.h"
 
@@ -818,6 +819,16 @@ void onBtnDoubleClick(int id) {
         if (display.mode() != PLAYER) return;
         if (network.status != CONNECTED && network.status!=SDREADY && config.getMode() != PM_SDCARD) return;
         player.next();
+        break;
+      }
+    case EVT_BTNMODE: {
+        // MODE double-click: toggle audio output (internal speaker vs BT companion).
+        Serial.println("[BT2] MODE double-click -> toggle output");
+        btcompanion_toggle();
+        player.setSpeakerForceMuted(btcompanion_enabled());
+        Serial.printf("[BT2] now enabled=%d speakerMuted=%d\n",
+                      btcompanion_enabled() ? 1 : 0,
+                      player.speakerForceMuted() ? 1 : 0);
         break;
       }
     default:

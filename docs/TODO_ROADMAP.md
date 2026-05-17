@@ -14,6 +14,7 @@
   - Change speaker icon to BT icon when in BT mode
   - Switch to last output device on boot
   - Save last volume per output and restore when switching
+  - Put BT companion into deep sleep when ProS3 enters deep sleep
   - NeoLED statuses: booting, network connect, SD card indexing, BT connecting/disconnecting
     - While waiting for BT connect: slow blue pulse
     - Add/confirm companion → ProS3 status reporting (connected/disconnected)

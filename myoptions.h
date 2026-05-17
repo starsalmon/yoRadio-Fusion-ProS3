@@ -87,6 +87,11 @@
 #define BRIGHTNESS_PIN 7
 /*****************************************/
 
+// Optional UI toggles
+// Uncomment to hide individual widgets globally:
+// #define HIDE_CLOCK
+// #define HIDE_DATE_WIDGET
+
 /*****************************************/
 // #define NEXTION_RX      15
 // #define NEXTION_TX     16

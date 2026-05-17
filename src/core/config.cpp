@@ -367,10 +367,11 @@ void Config::changeMode(int newmode) { // DLNA mod
 
     if (SDC_CS == 255 && newmode == PM_SDCARD) { return; }
 
-    if (network.status == SOFT_AP || display.mode() == LOST) {
-        saveValue(&store.play_mode, (uint8_t)PM_SDCARD);
-        delay(50);
-        ESP.restart();
+    // If we're not connected (SoftAP / LOST), switching into SD mode should NOT reboot.
+    // Rebooting here also "locks" the device into SD mode on subsequent boots.
+    if ((network.status == SOFT_AP || display.mode() == LOST) && newmode == PM_SDCARD) {
+        // Treat this as an "offline-but-usable" state so UI mode switching and playback work.
+        network.status = SDREADY;
     }
 
     // IMPORTANT: if we're leaving SD while SD playback is active, stop first *before*
@@ -390,6 +391,16 @@ void Config::changeMode(int newmode) { // DLNA mod
         }
         player.lockOutput = false;
         delay(30);
+    }
+
+    // Switching to WEB without a network is not very useful. If we're leaving SD and
+    // WiFi isn't connected, reboot so boot immediately attempts WiFi and falls back
+    // to the AP config screen.
+    if (oldMode == PM_SDCARD && newmode == PM_WEB && WiFi.status() != WL_CONNECTED) {
+        saveValue(&store.play_mode, (uint8_t)PM_WEB);
+        delay(50);
+        ESP.restart();
+        return;
     }
 
     /* === SD only when explicitly requested === */

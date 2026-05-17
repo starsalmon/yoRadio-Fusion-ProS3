@@ -370,7 +370,8 @@ The connection tables are located here https://github.com/e2002/yoradio#connecti
   #define RSSI_DIGIT       false   // Extended weather
 #endif
 #ifndef RSSI_STEPS
-  #define RSSI_STEPS       -50,-60,-70,-80
+  // RSSI thresholds used for bar icons. This fork uses 5 steps for the ILI9341 footer icons.
+  #define RSSI_STEPS       -50,-60,-70,-80,-90
 #endif
 #ifndef CLOCKFONT_MONO
   #define CLOCKFONT_MONO   true     // monospace clock font

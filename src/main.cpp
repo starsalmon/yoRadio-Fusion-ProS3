@@ -112,17 +112,6 @@ void setup() {
   display.init();
   player.init();
   network.begin();
-  if (network.status != CONNECTED && network.status!=SDREADY) {
-    // Still initialize playlist/station so the player UI can show the last station number
-    // even when we boot into "not connected yet" state (no autoplay).
-    config.initPlaylistMode();
-    netserver.begin();
-    initControls();
-    startControlsTask();
-    display.putRequest(DSP_START);
-    while(!display.ready()) delay(10);
-    return;
-  }
   if(SDC_CS!=255) {
     display.putRequest(WAITFORSD, 0);
     Serial.print("##[BOOT]#\tSD search\t");
@@ -135,12 +124,17 @@ void setup() {
   display.putRequest(DSP_START);
   while(!display.ready()) delay(10);
   #if USE_OTA
-    setupOTA();
+    if (network.status == CONNECTED || network.status == SOFT_AP) setupOTA();
   #endif
   if (config.getMode()==PM_SDCARD) player.initHeaders(config.station.url);
   player.lockOutput=false;
   if (config.store.smartstart == 1) {
-    player.sendCommand({PR_PLAY, config.lastStation()});
+    // Only auto-play when we actually have a usable playback path:
+    // - CONNECTED: web streaming is possible
+    // - PM_SDCARD: SD playback is possible (even if we're currently in SoftAP mode)
+    if (network.status == CONNECTED || config.getMode() == PM_SDCARD) {
+      player.sendCommand({PR_PLAY, config.lastStation()});
+    }
   }
   clock_tts_setup();
   Audio::audio_info_callback =  my_audio_info;   // "audio_change" audiohandlers.h ban kezelve.
@@ -179,13 +173,16 @@ void loop() {
     }
   }
 #endif
-  if (network.status == CONNECTED || network.status==SDREADY) {
+  // SD playback should stay usable even when WiFi fails and we fall back to SoftAP.
+  // (network.status == SDREADY is only set when booting in SD mode; it does not
+  // represent "SD available" in all cases.)
+  if (network.status == CONNECTED || network.status==SDREADY || config.getMode() == PM_SDCARD) {
     player.loop();
 #ifdef MQTT_ROOT_TOPIC
-    mqttLoop();
+    if (network.status == CONNECTED) mqttLoop();
 #endif
 #if USE_OTA
-    ArduinoOTA.handle();
+    if (network.status == CONNECTED || network.status == SOFT_AP) ArduinoOTA.handle();
 #endif
   }
 

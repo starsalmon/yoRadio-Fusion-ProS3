@@ -50,60 +50,69 @@ const WidgetConfig bitrateConf  PROGMEM = { 70, 191, 1, WA_LEFT };
 // Footer vertical alignment:
 // Anchor all footer icons off the volume bar so spacing stays consistent.
 #define VOLBAR_TOP         (240 - TFT_FRAMEWDT - 6) // matches volbarConf top
-#define ICON_PAD_ABOVE_BAR 1
-#define ICON_BOTTOM_Y      (VOLBAR_TOP - ICON_PAD_ABOVE_BAR)
+#define ICON_BOTTOM_Y      (VOLBAR_TOP - 1)
+#define TEXT_BOTTOM_Y      (VOLBAR_TOP - 1)
+#define TEXT_ICON_SPACING  2 // 2px is the spacing between text and icons
 
-// Icon sizes (px)
-// Keep widths/heights together so layout math is consistent.
-#define VOL_ICON_W         18
-#define VOL_ICON_H         18
-#define BAT_ICON_W         22
-#define BAT_ICON_H         12
-#define BAT_BOLT_W         9
-#define BAT_BOLT_H         12
-#define CLASSIC_ICON_H     16  // classic 5x7 @2x
-#define RSSI_ICON_W        24  // classic bars "\001\002" at 2x: 2 chars * 12px
+/* Footer Icon Sizes (px) */
+/**************************/
 #define LAN_ICON_W         18
 #define LAN_ICON_H         20
+#define VOL_ICON_W         18
+#define VOL_ICON_H         18
+#define BAT_BOLT_W         9
+#define BAT_BOLT_H         12
+#define BAT_ICON_W         22
+#define BAT_ICON_H         12
+#define RSSI_ICON_W        24  // WiFi RSSI icon width (bitmap)
+#define RSSI_ICON_H        17
+#define CLASSIC_ICON_H     16  // classic 5x7 @2x
 
-#define VOL_ICON_TOP       (ICON_BOTTOM_Y - VOL_ICON_H)
-#define BAT_ICON_TOP       (ICON_BOTTOM_Y - BAT_ICON_H - 1)
-#define BAT_BOLT_TOP       (ICON_BOTTOM_Y - BAT_BOLT_H)
-#define CLASSIC_ICON_TOP   (ICON_BOTTOM_Y - CLASSIC_ICON_H)
-#define LAN_ICON_TOP       (ICON_BOTTOM_Y - LAN_ICON_H - 1)
+/* Footer Widget Positon Calculations */
+/**************************/
+// LAN icon is the first icon in the cluster, so it is anchored to the left side of the screen
+#define LAN_ICON_TOP       (ICON_BOTTOM_Y - LAN_ICON_H)
+#define LAN_ICON_LEFT      (TFT_FRAMEWDT)
+#define IP_TEXT_LEFT       (LAN_ICON_LEFT + LAN_ICON_W + TEXT_ICON_SPACING)
 
-// Footer volume layout:
+//Speaker icon is the second icon in the cluster, so it is anchored to the center of the screen
 // - Speaker icon stays fixed
 // - Volume text is left-anchored right next to it (so 9% vs 99% doesn't shift spacing)
+#define VOL_ICON_TOP       (ICON_BOTTOM_Y - VOL_ICON_H)
 #define VOL_ICON_LEFT      ((DSP_WIDTH / 2) - 6)
-#define VOL_ICON_TEXT_PAD  2
-#define VOL_TEXT_LEFT      (VOL_ICON_LEFT + VOL_ICON_W + VOL_ICON_TEXT_PAD)
+#define VOL_TEXT_LEFT      (VOL_ICON_LEFT + VOL_ICON_W + TEXT_ICON_SPACING)
 
-// Footer battery layout (right side):
+// Battery icon is the fourth icon in the cluster, so it is anchored to the right side of the screen but leaving room for the RSSI icon
 // - Battery icon stays fixed
 // - Battery percent is left-anchored next to it
 // Compute battery cluster from a single right limit so it stays clear/consistent.
-#define FOOTER_GAP         12   // space between battery cluster and RSSI bars (move cluster left)
-#define BAT_GROUP_W        50  // reserves room for icon + "100%" (tight, to pull cluster right)
-#define BAT_RIGHT_LIMIT    (DSP_WIDTH - TFT_FRAMEWDT - RSSI_ICON_W - FOOTER_GAP)
-#define BAT_ICON_LEFT      (BAT_RIGHT_LIMIT - BAT_GROUP_W)
-#define BAT_ICON_TEXT_PAD  2
-#define BAT_TEXT_LEFT      (BAT_ICON_LEFT + BAT_ICON_W + BAT_ICON_TEXT_PAD)
+#define BAT_ICON_TOP       (ICON_BOTTOM_Y - BAT_ICON_H - 2)
+#define BAT_RIGHT_LIMIT    (DSP_WIDTH - TFT_FRAMEWDT - RSSI_ICON_W - 12) // space between battery cluster and RSSI bars (move cluster left)
+#define BAT_ICON_LEFT      (BAT_RIGHT_LIMIT - 50) // 50px is the width of the battery icon + text
+#define BAT_TEXT_LEFT      (BAT_ICON_LEFT + BAT_ICON_W + TEXT_ICON_SPACING)
 
+// Charging indicator (bolt) is the third icon in the cluster, it is anchored to the left of the battery icon
 // Optional charging indicator (bolt) shown when 5V sense is on.
-#define BAT_BOLT_PAD       2
-#define BAT_BOLT_LEFT      (BAT_ICON_LEFT - BAT_BOLT_PAD - BAT_BOLT_W)
+#define BAT_BOLT_TOP       (ICON_BOTTOM_Y - BAT_BOLT_H -1)
+#define BAT_BOLT_LEFT      (BAT_ICON_LEFT - BAT_BOLT_W - TEXT_ICON_SPACING)
+
+// RSSI icon is the last icon in the cluster, so itis anchored to the right side of the screen
+#define RSSI_ICON_TOP      (ICON_BOTTOM_Y - RSSI_ICON_H - 1)
+#define RSSI_ICON_LEFT     (DSP_WIDTH - TFT_FRAMEWDT - RSSI_ICON_W)
+
+// Legacy classic icon positions - not used
+#define CLASSIC_ICON_TOP   (ICON_BOTTOM_Y - CLASSIC_ICON_H)
+
+// All text widgets are anchored to the top of the volume bar
+#define BAR_TEXT_TOP       (TEXT_BOTTOM_Y - 16) // 16px is the height of the text widget
+
+/* Footer Widget Positions */
+/**************************/
 // Footer (bottom row): use a slightly larger DejaVu GFXfont (smooth, not blocky).
 // textsize=7 maps to DejaVuSans8_HU via yoScrollFont() default branch.
-const WidgetConfig voltxtConf   PROGMEM = { VOL_TEXT_LEFT, 210, 7, WA_LEFT };
-// LAN/IP icon + text
-#define LAN_ICON_LEFT      (TFT_FRAMEWDT)
-#define LAN_ICON_TEXT_PAD  2
-#define IP_TEXT_LEFT       (LAN_ICON_LEFT + LAN_ICON_W + LAN_ICON_TEXT_PAD)
-
-const WidgetConfig iptxtConf    PROGMEM = { IP_TEXT_LEFT, 210, 7, WA_LEFT };
-const WidgetConfig rssiConf     PROGMEM = { TFT_FRAMEWDT + 26, 210, 7, WA_RIGHT };   // leave room for wifi bars icon
-const WidgetConfig battxtConf   PROGMEM = { BAT_TEXT_LEFT, 210, 7, WA_LEFT };
+const WidgetConfig voltxtConf   PROGMEM = { VOL_TEXT_LEFT, BAR_TEXT_TOP, 7, WA_LEFT };
+const WidgetConfig iptxtConf    PROGMEM = { IP_TEXT_LEFT, BAR_TEXT_TOP, 7, WA_LEFT };
+const WidgetConfig battxtConf   PROGMEM = { BAT_TEXT_LEFT, BAR_TEXT_TOP, 7, WA_LEFT };
 
 // Footer icons (classic glcdfont, 1x) drawn as separate widgets so we can keep
 // smooth DejaVu text while still showing icon glyphs.
@@ -111,10 +120,10 @@ const WidgetConfig battxtConf   PROGMEM = { BAT_TEXT_LEFT, 210, 7, WA_LEFT };
 // 100+X forces classic font scaling (see TextWidget::init).
 const WidgetConfig ipiconConf   PROGMEM = { LAN_ICON_LEFT, LAN_ICON_TOP, 102, WA_LEFT };
 const WidgetConfig voliconConf  PROGMEM = { VOL_ICON_LEFT, VOL_ICON_TOP, 102, WA_LEFT };
-// Battery bitmap is 22x12; top is tuned to align visually with footer text.
 const WidgetConfig baticonConf  PROGMEM = { BAT_ICON_LEFT, BAT_ICON_TOP, 102, WA_LEFT };
 const WidgetConfig batchgConf   PROGMEM = { BAT_BOLT_LEFT, BAT_BOLT_TOP, 102, WA_LEFT };
-const WidgetConfig rssibarConf  PROGMEM = { TFT_FRAMEWDT, CLASSIC_ICON_TOP, 102, WA_RIGHT };
+const WidgetConfig rssibarConf  PROGMEM = { RSSI_ICON_LEFT, RSSI_ICON_TOP, 102, WA_RIGHT };
+const WidgetConfig rssiConf     PROGMEM = { TFT_FRAMEWDT, CLASSIC_ICON_TOP, 102, WA_RIGHT };   // leave room for wifi bars icon
 const WidgetConfig numConf      PROGMEM = { 0, 150, 0, WA_CENTER };
 const WidgetConfig apNameConf   PROGMEM = { TFT_FRAMEWDT, 66, 2, WA_CENTER };
 const WidgetConfig apName2Conf  PROGMEM = { TFT_FRAMEWDT, 90, 2, WA_CENTER };

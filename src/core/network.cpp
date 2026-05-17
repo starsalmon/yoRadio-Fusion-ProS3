@@ -54,9 +54,12 @@ void MyNetwork::WiFiReconnected(WiFiEvent_t event, WiFiEventInfo_t info){
   if(config.getMode()==PM_SDCARD) {
     network.status=CONNECTED;
     display.putRequest(NEWIP, 0);
+    display.putRequest(DSPRSSI, WiFi.RSSI());
   }else{
     display.putRequest(NEWMODE, PLAYER);
     if (network.lostPlaying) player.sendCommand({PR_PLAY, config.lastStation()});
+    display.putRequest(NEWIP, 0);
+    display.putRequest(DSPRSSI, WiFi.RSSI());
   }
   #ifdef MQTT_ROOT_TOPIC
     connectToMqtt();
@@ -70,10 +73,13 @@ void MyNetwork::WiFiLostConnection(WiFiEvent_t event, WiFiEventInfo_t info){
     if(config.getMode()==PM_SDCARD) {
       network.status=SDREADY;
       display.putRequest(NEWIP, 0);
+      display.putRequest(DSPRSSI, 0);
     }else{
       network.lostPlaying = player.isRunning();
       if (network.lostPlaying) { player.lockOutput = true; player.sendCommand({PR_STOP, 0}); }
       display.putRequest(NEWMODE, LOST);
+      display.putRequest(NEWIP, 0);
+      display.putRequest(DSPRSSI, 0);
     }
   }
   network.beginReconnect = true;
@@ -130,6 +136,7 @@ void searchWiFi(void * pvParameters){
     telnet.begin(true);
     network.setWifiParams();
     display.putRequest(NEWIP, 0);
+    display.putRequest(DSPRSSI, WiFi.RSSI());
     printWifiDiag("boot(sdready)");
     #if defined(MQTT_ROOT_TOPIC) && !(defined(MQTT_DISABLE) && MQTT_DISABLE)
       mqttInit();

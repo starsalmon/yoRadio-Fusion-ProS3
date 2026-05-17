@@ -231,8 +231,16 @@ void Display::init() {
   _footer = new Page();
   _plwidget = new PlayListWidget();
   _nums = new NumWidget();
-  _clock = new ClockWidget();
-  _date = new DateWidget();
+  #ifndef HIDE_CLOCK
+    _clock = new ClockWidget();
+  #else
+    _clock = nullptr;
+  #endif
+  #ifndef HIDE_DATE_WIDGET
+    _date = new DateWidget();
+  #else
+    _date = nullptr;
+  #endif
   _meta = new ScrollWidget();
   _title1 = new ScrollWidget();
   _plcurrent = new ScrollWidget();
@@ -276,9 +284,15 @@ void Display::_buildPager(){
   // and STATION_FILL as the intended header color.
   _meta->init("*", metaConf, config.theme.meta, config.theme.metafill);
   _title1->init("*", title1Conf, config.theme.title1, config.theme.background);
-  _clock->init(getclockConf(), 0, 0);
-  _date->init(getDateConf(), config.theme.date, config.theme.background);
-  _date->setNamedayEnabled(config.store.showNameday);
+  #ifndef HIDE_CLOCK
+    if (_clock) _clock->init(getclockConf(), 0, 0);
+  #endif
+  #ifndef HIDE_DATE_WIDGET
+    if (_date) {
+      _date->init(getDateConf(), config.theme.date, config.theme.background);
+      _date->setNamedayEnabled(config.store.showNameday);
+    }
+  #endif
   #if DSP_MODEL==DSP_NOKIA5110
     _plcurrent->init("*", playlistConf, 0, 1);
   #else
@@ -379,8 +393,8 @@ void Display::_buildPager(){
       }
     #endif
     #ifndef HIDE_RSSI
-      _rssiIcon = new TextWidget(rssibarConf, 4, false, config.theme.rssi, config.theme.background);
-      _rssiIcon->setText("\001\002"); // default (weak signal) until first RSSI update
+      // WiFi RSSI icon bitmap (24x17). Use a real "not connected" icon when WiFi isn't associated.
+      _rssiIcon = new BitmapWidget(rssibarConf, ICON_WIFI_NOT_CONNECTED_24x17, ICON_WIFI_W, ICON_WIFI_H, config.theme.rssi, config.theme.background, BitmapFormat::GFX_MSB);
     #endif
   #endif
   _nums->init(numConf, 10, false, config.theme.digit, config.theme.background);
@@ -458,11 +472,19 @@ void Display::_buildPager(){
     #endif
   #endif
   if(_vuwidget) pages[PG_PLAYER]->addWidget( _vuwidget);
-  pages[PG_PLAYER]->addWidget(_clock);
-  pages[PG_SCREENSAVER]->addWidget(_clock);
-  pages[PG_PLAYER]->addWidget(_date);
+  #ifndef HIDE_CLOCK
+    if (_clock) {
+      pages[PG_PLAYER]->addWidget(_clock);
+      pages[PG_SCREENSAVER]->addWidget(_clock);
+    }
+  #endif
+  #ifndef HIDE_DATE_WIDGET
+    if (_date) pages[PG_PLAYER]->addWidget(_date);
+  #endif
   #if DSP_MODEL==DSP_ILI9488 || DSP_MODEL==DSP_ILI9486 || DSP_MODEL==DSP_NV3041A || DSP_MODEL==DSP_ST7796
-  pages[PG_SCREENSAVER]->addWidget(_date);
+  #ifndef HIDE_DATE_WIDGET
+    if (_date) pages[PG_SCREENSAVER]->addWidget(_date);
+  #endif
   #endif
   pages[PG_PLAYER]->addPage(_footer);
 
@@ -563,6 +585,13 @@ void Display::_start() {
 
   if(_vuwidget) _vuwidget->lock();
   if(_rssi || _rssiIcon) _setRSSI(WiFi.RSSI());
+
+  // Avoid ever rendering a bogus clock/date during the initial page draw.
+  // (The clock/date widgets can be drawn as part of the page render before _time() runs.)
+  if (network.timeinfo.tm_year < 120) {
+    if (_clock) _clock->lock(true);
+    if (_date)  _date->lock(true);
+  }
   #ifndef HIDE_BAT
     if (_battxt) {
       const float pct = battery_is_ready() ? battery_get_percent() : 0.0f;
@@ -579,7 +608,16 @@ void Display::_start() {
   #endif*/
   #ifndef HIDE_IP
     #if DSP_MODEL != DSP_ST7789_76
-      if(_volip) _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
+      if(_volip) {
+        // SD playback without network: show a useful status instead of 0.0.0.0
+        if (WiFi.status() == WL_CONNECTED) {
+          _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
+        } else if (network.status == SOFT_AP && config.getMode() != PM_SDCARD) {
+          _volip->setText(config.ipToStr(WiFi.softAPIP()), iptxtFmt);
+        } else {
+          _volip->setText("no IP", iptxtFmt);
+        }
+      }
     #endif
   #endif
   // Force a full redraw when entering the player page at boot,
@@ -626,10 +664,12 @@ if (newmode == _mode ||
     }
    if (player.isRunning()) {
      auto cm = getclockMove();
-     if (cm.width < 0) _clock->moveBack();
-     else              _clock->moveTo(cm);
+     if (_clock) {
+       if (cm.width < 0) _clock->moveBack();
+       else              _clock->moveTo(cm);
+     }
    } else {
-    _clock->moveBack();
+    if (_clock) _clock->moveBack();
   }
     #ifdef DSP_LCD
       dsp.clearDsp();
@@ -676,7 +716,7 @@ if (newmode == _mode ||
     }
     if (newmode == SCREENBLANK) {
       //dsp.clearClock();
-      _clock->clear();
+      if (_clock) _clock->clear();
       config.setDspOn(false, false);
     }
   }else{
@@ -752,8 +792,10 @@ void Display::_layoutChange(bool played){
     if (played) {
       if (_vuwidget) _vuwidget->unlock();
       auto cm = getclockMove();
-      if (cm.width < 0) _clock->moveBack();
-      else              _clock->moveTo(cm);
+      if (_clock) {
+        if (cm.width < 0) _clock->moveBack();
+        else              _clock->moveTo(cm);
+      }
       if (_weather) _weather->moveTo(weatherMoveVU);
       if (_date) {
         _date->setText("");
@@ -766,7 +808,7 @@ void Display::_layoutChange(bool played){
     } else {
       // Keep VU visible even when not playing (it will naturally settle to idle).
       if (_vuwidget) _vuwidget->unlock();
-      _clock->moveBack();
+      if (_clock) _clock->moveBack();
       if (_weather) _weather->moveBack();
       if (_date) {
         _date->setText("");
@@ -779,7 +821,7 @@ void Display::_layoutChange(bool played){
     if (_vuwidget && !_vuwidget->locked()) _vuwidget->lock();
     if (played) {
       if (_weather) _weather->moveTo(weatherMove);
-      _clock->moveBack();
+      if (_clock) _clock->moveBack();
 
       if (_date) {
         _date->setText("");
@@ -788,7 +830,7 @@ void Display::_layoutChange(bool played){
       }
     } else {
       if (_weather) _weather->moveBack();
-      _clock->moveBack();
+      if (_clock) _clock->moveBack();
 
       if (_date) {
         _date->setText("");
@@ -944,7 +986,15 @@ void Display::loop() {
           #endif*/
           #ifndef HIDE_IP
             #if DSP_MODEL != DSP_ST7789_76
-              if(_volip) _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
+              if(_volip) {
+                if (WiFi.status() == WL_CONNECTED) {
+                  _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
+                } else if (network.status == SOFT_AP && config.getMode() != PM_SDCARD) {
+                  _volip->setText(config.ipToStr(WiFi.softAPIP()), iptxtFmt);
+                } else {
+                  _volip->setText("no IP", iptxtFmt);
+                }
+              }
             #endif
           #endif
           break;
@@ -975,7 +1025,13 @@ void Display::loop() {
               _bitrate->setText(config.station.bitrate==0 ? "" : buf);
           }
           if (_volip) {
-             _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
+            if (WiFi.status() == WL_CONNECTED) {
+              _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
+            } else if (network.status == SOFT_AP && config.getMode() != PM_SDCARD) {
+              _volip->setText(config.ipToStr(WiFi.softAPIP()), iptxtFmt);
+            } else {
+              _volip->setText("no IP", iptxtFmt);
+            }
           }
           if (_weather && config.store.showweather) {
              _weather->setText(LANG::const_getWeather);
@@ -1050,10 +1106,57 @@ void Display::loop() {
 
 void Display::_setRSSI(int rssi) {
   if(!_rssi && !_rssiIcon) return;
+
+  // ILI9341 footer uses a bitmap WiFi icon: show a "not connected" glyph when not associated.
+  #if DSP_MODEL==DSP_ILI9341
+    if (_rssiIcon) {
+      if (WiFi.status() != WL_CONNECTED) {
+        // Not associated to WiFi: show the "X" icon.
+        _rssiIcon->setBitmap(ICON_WIFI_BAD_24x17, ICON_WIFI_W, ICON_WIFI_H);
+        return;
+      }
+
+      // Associated but no IP yet: show the "?" icon.
+      if (WiFi.localIP() == IPAddress(0, 0, 0, 0)) {
+        _rssiIcon->setBitmap(ICON_WIFI_NOT_CONNECTED_24x17, ICON_WIFI_W, ICON_WIFI_H);
+        return;
+      }
+
+      int rssi_steps[] = {RSSI_STEPS}; // expects 5 thresholds for this fork
+      constexpr int kDefaultBars = 0;
+      int bars = kDefaultBars;
+
+      // If RSSI is bogus (>=0), show "bad" icon.
+      if (rssi >= 0) {
+        _rssiIcon->setBitmap(ICON_WIFI_BAD_24x17, ICON_WIFI_W, ICON_WIFI_H);
+        return;
+      }
+
+      // 5 thresholds => 6 bar levels (0..5)
+      if (rssi >= rssi_steps[0]) bars = 5;
+      else if (rssi >= rssi_steps[1]) bars = 4;
+      else if (rssi >= rssi_steps[2]) bars = 3;
+      else if (rssi >= rssi_steps[3]) bars = 2;
+      else if (rssi >= rssi_steps[4]) bars = 1;
+      else bars = 0;
+
+      const uint8_t* bmp =
+        (bars >= 5) ? ICON_WIFI_5_24x17 :
+        (bars == 4) ? ICON_WIFI_4_24x17 :
+        (bars == 3) ? ICON_WIFI_3_24x17 :
+        (bars == 2) ? ICON_WIFI_2_24x17 :
+        (bars == 1) ? ICON_WIFI_1_24x17 :
+                     ICON_WIFI_0_24x17;
+      _rssiIcon->setBitmap(bmp, ICON_WIFI_W, ICON_WIFI_H);
+      return;
+    }
+  #endif
+
 #if RSSI_DIGIT
   if (_rssi) _rssi->setText(rssi, rssiFmt);
   return;
 #endif
+  #if DSP_MODEL!=DSP_ILI9341
   // If we have a dedicated RSSI icon widget, show bars there and keep digits on the main RSSI widget.
   if (_rssiIcon) {
     char rssiG[3];
@@ -1066,6 +1169,7 @@ void Display::_setRSSI(int rssi) {
     _rssiIcon->setText(rssiG);
     return;
   }
+  #endif
 
   // If the RSSI widget uses a GFXfont (DejaVu), the legacy icon-bar codes
   // (\001..\006) will not render correctly. Fall back to digits.
@@ -1720,6 +1824,64 @@ void Display::_time(bool redraw) {
     config.setBrightness();
   }
 #endif
+
+  // If the clock widget is compiled out, we can still drive the date widget (if present)
+  // using the same validity criteria.
+  if (!_clock) {
+    static bool s_timeWasValid = false;
+    static bool s_timeWidgetsLocked = false;
+    const bool timeValid = (network.timeinfo.tm_year >= 120); // 2020+
+    if (!timeValid) {
+      if (!s_timeWidgetsLocked) {
+        if (_date) _date->lock(true);
+        s_timeWidgetsLocked = true;
+      }
+      s_timeWasValid = false;
+      return;
+    }
+    if (s_timeWidgetsLocked) {
+      if (_date) _date->unlock();
+      s_timeWidgetsLocked = false;
+    }
+    if (!s_timeWasValid) {
+      if (_date) _date->moveTo(getdateMove());
+      s_timeWasValid = true;
+    }
+    if (_date) _date->update();
+    return;
+  }
+
+  // Hide clock/date until time is actually valid. This avoids showing bogus
+  // 1970/2000-era values for a few seconds during boot. TimeKeeper uses the same
+  // criterion (tm_year < 120).
+  static bool s_timeWasValid = false;
+  static bool s_timeWidgetsLocked = false;
+  const bool timeValid = (network.timeinfo.tm_year >= 120); // 2020+
+  if (!timeValid) {
+    // Lock widgets to prevent the pager from drawing stale/garbage values.
+    if (!s_timeWidgetsLocked) {
+      if (_clock) _clock->lock(true);
+      if (_date)  _date->lock(true);
+      s_timeWidgetsLocked = true;
+    }
+    s_timeWasValid = false;
+    return;
+  }
+
+  // Time is valid: ensure widgets are visible again.
+  if (s_timeWidgetsLocked) {
+    if (_clock) _clock->unlock();
+    if (_date)  _date->unlock();
+    s_timeWidgetsLocked = false;
+  }
+
+  // If time just became valid, bring clock/date back to their normal positions.
+  if (!s_timeWasValid) {
+    if (_clock) _clock->moveTo(getclockMove());
+    if (_date)  _date->moveTo(getdateMove());
+    s_timeWasValid = true;
+  }
+
   static int lastSSMinute = -1;
   if (!config.isScreensaver) {
     lastSSMinute = -1;
@@ -1779,7 +1941,7 @@ void Display::_time(bool redraw) {
     }
   }
 
-  _clock->draw();
+  if (_clock) _clock->draw();
   if (_date) _date->update();
   /*#ifdef USE_NEXTION
     nextion.printClock(network.timeinfo);
@@ -1884,7 +2046,15 @@ void Display::_refreshWeatherUI() {
   #endif*/
   #ifndef HIDE_IP
     #if DSP_MODEL != DSP_ST7789_76
-      if(_volip) _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
+      if(_volip) {
+        if (WiFi.status() == WL_CONNECTED) {
+          _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);
+        } else if (network.status == SOFT_AP && config.getMode() != PM_SDCARD) {
+          _volip->setText(config.ipToStr(WiFi.softAPIP()), iptxtFmt);
+        } else {
+          _volip->setText("no IP", iptxtFmt);
+        }
+      }
     #endif
   #endif
   }
@@ -1917,8 +2087,16 @@ void Display::_rebuildUI() {
   _footer    = new Page();
   _plwidget  = new PlayListWidget();
   _nums      = new NumWidget();
-  _clock     = new ClockWidget();
-  _date      = new DateWidget();
+  #ifndef HIDE_CLOCK
+    _clock     = new ClockWidget();
+  #else
+    _clock     = nullptr;
+  #endif
+  #ifndef HIDE_DATE_WIDGET
+    _date      = new DateWidget();
+  #else
+    _date      = nullptr;
+  #endif
   _meta      = new ScrollWidget();
   _title1    = new ScrollWidget();
   _plcurrent = new ScrollWidget();

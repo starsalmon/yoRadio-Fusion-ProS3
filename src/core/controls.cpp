@@ -295,12 +295,12 @@ void loopControls() {
   irLoop();
 #endif
 #if (TS_MODEL!=TS_MODEL_UNDEFINED) && (DSP_MODEL!=DSP_DUMMY)
-  if (network.status == CONNECTED || network.status==SDREADY) touchscreen.loop();
+  if (network.status == CONNECTED || network.status==SDREADY || config.getMode() == PM_SDCARD) touchscreen.loop();
 #endif
 }
 #if ENC_BTNL!=255 || ENC2_BTNL!=255
 void encodersLoop(yoEncoder *enc, bool first){
-  if (network.status != CONNECTED && network.status!=SDREADY) return;
+  if (network.status != CONNECTED && network.status!=SDREADY && config.getMode() != PM_SDCARD) return;
   if(display.mode()==LOST) return;
   int8_t encoderDelta = enc->encoderChanged();
   if (encoderDelta!=0)
@@ -655,7 +655,7 @@ bool checklpdelay(int m, unsigned long &tstamp) {
 }
 
 void onBtnDuringLongPress(int id) {
-  if (network.status != CONNECTED && network.status!=SDREADY) return;
+  if (network.status != CONNECTED && network.status!=SDREADY && config.getMode() != PM_SDCARD) return;
   if (checklpdelay(BTN_LONGPRESS_LOOP_DELAY, lpdelay)) {
     switch ((controlEvt_e)id) {
       case EVT_BTNLEFT: {
@@ -717,7 +717,8 @@ void onBtnClick(int id) {
   bool passBnCenter = (controlEvt_e)id==EVT_BTNCENTER || (controlEvt_e)id==EVT_ENCBTNB || (controlEvt_e)id==EVT_ENC2BTNB;
   controlEvt_e btnid = static_cast<controlEvt_e>(id);
   pm.on_btn_click(btnid);
-  if (network.status != CONNECTED && network.status!=SDREADY && (controlEvt_e)id!=EVT_BTNMODE && !passBnCenter) return;
+  if (network.status != CONNECTED && network.status!=SDREADY && config.getMode() != PM_SDCARD &&
+      (controlEvt_e)id!=EVT_BTNMODE && !passBnCenter) return;
   switch (btnid) {
     case EVT_BTNLEFT: {
         controlsEvent(false);
@@ -803,7 +804,7 @@ void onBtnDoubleClick(int id) {
   switch ((controlEvt_e)id) {
     case EVT_BTNLEFT: {
         if (display.mode() != PLAYER) return;
-        if (network.status != CONNECTED && network.status!=SDREADY) return;
+        if (network.status != CONNECTED && network.status!=SDREADY && config.getMode() != PM_SDCARD) return;
         player.prev();
         break;
       }
@@ -815,7 +816,7 @@ void onBtnDoubleClick(int id) {
       }
     case EVT_BTNRIGHT: {
         if (display.mode() != PLAYER) return;
-        if (network.status != CONNECTED && network.status!=SDREADY) return;
+        if (network.status != CONNECTED && network.status!=SDREADY && config.getMode() != PM_SDCARD) return;
         player.next();
         break;
       }

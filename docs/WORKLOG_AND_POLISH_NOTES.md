@@ -55,6 +55,13 @@ Some HLS AAC streams behave differently even at similar bitrates. This fork incl
 
 - Fixed the `dateFormat` mapping so **web UI examples and TFT output match** (documented in `README.md` and implemented in `src/displays/widgets/widgets.cpp`).
 
+### Clock/date visibility + user-configurable hiding
+
+- Fixed an annoying boot/offline artifact where the clock/date could briefly show **1970-era** values before time sync.
+- Added two separate build toggles in `myoptions.h`:
+  - `HIDE_CLOCK` to remove the clock widget
+  - `HIDE_DATE_WIDGET` to remove the date widget
+
 ### Station list management (Moode import automation)
 
 - Added `tools/moode/export_moode_radio_to_yoradio_csv.py` to scrape Moode’s station table and merge into `data/data/playlist.csv` (URL de-dupe, don’t clobber custom names).

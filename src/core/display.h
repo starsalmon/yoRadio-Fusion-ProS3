@@ -92,7 +92,7 @@ class Display {
     TextWidget* _battxt = nullptr;
     BitmapWidget* _ipIcon = nullptr;
     BitmapWidget* _volIcon = nullptr;
-    TextWidget* _rssiIcon = nullptr;
+    BitmapWidget* _rssiIcon = nullptr;
     BitmapWidget* _batIcon = nullptr;
     BitmapWidget* _batChgIcon = nullptr;
     bool _locked = false;

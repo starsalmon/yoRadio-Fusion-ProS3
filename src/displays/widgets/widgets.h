@@ -48,7 +48,7 @@ class Widget{
       _config.top = mv.y;
       if(mv.width>0) _width = mv.width;
       _reset();
-      _draw();
+      if(_active && !_locked) _draw();
     }
     void moveBack(){
       if(!_moved) return;
@@ -58,7 +58,7 @@ class Widget{
       _width = _backMove.width;
       _moved = false;
       _reset();
-      _draw();
+      if(_active && !_locked) _draw();
     }
   protected:
     bool _active, _moved, _locked;

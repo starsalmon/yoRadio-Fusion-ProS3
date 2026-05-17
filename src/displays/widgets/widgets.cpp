@@ -312,10 +312,10 @@ void TextWidget::setText(const char* txt) {
     strlcpy(_text, utf8To(txt, _uppercase), _buffsize);
   _textwidth = _measureText(_text);
   if (strcmp(_oldtext, _text) == 0) return;
-  if (_active) dsp.fillRect(_oldleft == 0 ? _realLeft() : min(_oldleft, _realLeft()),  _config.top, max(_oldtextwidth, _textwidth), _textheight, _bgcolor);
+  if (_active && !_locked) dsp.fillRect(_oldleft == 0 ? _realLeft() : min(_oldleft, _realLeft()),  _config.top, max(_oldtextwidth, _textwidth), _textheight, _bgcolor);
   _oldtextwidth = _textwidth;
   _oldleft = _realLeft();
-  if (_active) _draw();
+  if (_active && !_locked) _draw();
 }
 
 void TextWidget::setText(int val, const char *format){
@@ -359,7 +359,7 @@ uint16_t TextWidget::_realLeft(bool w_fb) {
 }
 
 void TextWidget::_draw() {
-  if(!_active) return;
+  if(!_active || _locked) return;
   dsp.setTextColor(_fgcolor, _bgcolor);
 #ifndef DSP_LCD
   if (_gfxFont) {
@@ -500,7 +500,7 @@ void ScrollWidget::setText(const char* txt) {
   if (dsp.getScrollId() == this) dsp.setScrollId(NULL);
   _scrolldelay = millis();
 
-  if (_active) {
+  if (_active && !_locked) {
     _setTextParams();
 
     if (_doscroll) {
@@ -1902,7 +1902,7 @@ void ClockWidget::_clearClock(){
 }
 
 void ClockWidget::draw(bool force){
-  if(!_active) return;
+  if(!_active || _locked) return;
 
   applyClockFontFromConfig();
 
@@ -2365,11 +2365,11 @@ uint8_t PlayListWidget::_fillPlMenu(int from, uint8_t count) {
       DATE WIDGET
  **************************/
 void DateWidget::update() {
-  if (!_active) return;
+  if (!_active || _locked) return;
 
-  time_t now = time(nullptr);
-  struct tm ti;
-  localtime_r(&now, &ti);
+  // Use the shared time source (RTC or SNTP-backed) so date matches the clock.
+  // Also allows valid date offline when an RTC is present.
+  tm ti = network.timeinfo;
 
   char dateBuf[64];
   uint8_t fmt = config.store.dateFormat;

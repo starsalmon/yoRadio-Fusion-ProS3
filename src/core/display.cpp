@@ -423,7 +423,11 @@ void Display::_buildPager(){
       }
       // Charging bolt icon (visible only when 5V sense is on)
       {
-        const uint8_t* bbmp = battery_usb_present() ? ICON_BOLT_9x12 : nullptr;
+        // ProS3 5V sense can be unreliable depending on power-path wiring; use charge rate
+        // as the indicator instead. Show the bolt unless we're clearly discharging.
+        const float rate = battery_is_ready() ? battery_get_charge_rate() : 0.0f;
+        const bool show = (rate >= -1.0f);
+        const uint8_t* bbmp = show ? ICON_BOLT_9x12 : nullptr;
         _batChgIcon = new BitmapWidget(batchgConf, bbmp, ICON_BOLT_W, ICON_BOLT_H, config.theme.rssi, config.theme.background, BitmapFormat::GFX_MSB);
       }
     #endif
@@ -1095,7 +1099,9 @@ void Display::loop() {
                 _battxt->setText((int)pct, battxtFmt);
             }
             if (_batChgIcon) {
-                const uint8_t* bbmp = battery_usb_present() ? ICON_BOLT_9x12 : nullptr;
+                const float rate = battery_is_ready() ? battery_get_charge_rate() : 0.0f;
+                const bool show = (rate >= -1.0f);
+                const uint8_t* bbmp = show ? ICON_BOLT_9x12 : nullptr;
                 _batChgIcon->setBitmap(bbmp, ICON_BOLT_W, ICON_BOLT_H);
             }
             if (_batIcon) {

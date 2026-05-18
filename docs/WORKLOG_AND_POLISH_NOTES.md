@@ -97,6 +97,12 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
   - BT audio is stable once connected
   - Switching to BT can take ~30s (ongoing UX improvement area: status LED + connection-state feedback + faster connect path)
 
+### Charging indicator (footer bolt) without 5V sense
+
+- On this hardware/power-path, the PROS3 **5V sense** pin can be unreliable (or unused), so the footer **charging bolt** now uses the MAX17048 **charge rate** estimate instead:
+  - Bolt is shown when \(rate \ge -1\%\!/\!h\) (charging or near-full drift)
+  - Bolt is hidden when \(rate < -1\%\!/\!h\) (clearly discharging)
+
 ### Station list management (Moode import automation)
 
 - Added `tools/moode/export_moode_radio_to_yoradio_csv.py` to scrape Moode’s station table and merge into `data/data/playlist.csv` (URL de-dupe, don’t clobber custom names).

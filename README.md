@@ -115,6 +115,8 @@ MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes
   - `cmd/sleep`: enter deep sleep (recommended vs `command`)
   - `cmd/volume`: `0..100`
   - `cmd/brightness`: `0..100`
+  - `cmd/playback_mode`: `Web Streaming|SD Card|DLNA` (Home Assistant “select”)
+  - `cmd/output_device`: `Speaker|Bluetooth` (Home Assistant “select”, only when `BT_COMPANION_ENABLE != 0`)
 
 - **Home Assistant discovery (retained)**:
   - Published under `homeassistant/<component>/<nodeId>/<objectId>/config`

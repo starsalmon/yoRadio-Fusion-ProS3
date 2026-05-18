@@ -27,6 +27,8 @@ class Player: public Audio {
     uint32_t    _resumeFilePos;
     plStatus_e  _status;
     bool        _speakerForceMuted = false;
+    bool        _speakerUnmutePending = false;
+    uint32_t    _speakerUnmuteAtMs = 0;
     //char        _plError[PLERR_LN];
   private:
     void _stop(bool alreadyStopped = false);
@@ -68,6 +70,7 @@ class Player: public Audio {
     void stopInfo();
     void setOutputPins(bool isPlaying);
     void setSpeakerForceMuted(bool v);
+    void scheduleSpeakerUnmute(uint32_t delayMs);
     bool speakerForceMuted() const { return _speakerForceMuted; }
     void setResumeFilePos(uint32_t pos) { _resumeFilePos = pos; }
     #ifdef USE_DLNA

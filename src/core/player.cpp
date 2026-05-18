@@ -461,6 +461,15 @@ if (config.getMode() == PM_SDCARD && !isRunning() && _status == PLAYING) {
       _volTimer=false;
     }
   }
+
+  // Deferred speaker unmute (used when switching from BT output back to speaker).
+  if (_speakerUnmutePending && (int32_t)(millis() - _speakerUnmuteAtMs) >= 0) {
+    _speakerUnmutePending = false;
+    _speakerUnmuteAtMs = 0;
+    if (config.store.outputDevice == 0) {
+      setSpeakerForceMuted(false);
+    }
+  }
   
   
   /*
@@ -487,7 +496,17 @@ void Player::setOutputPins(bool isPlaying) {
 void Player::setSpeakerForceMuted(bool v) {
   if (_speakerForceMuted == v) return;
   _speakerForceMuted = v;
+  if (v) {
+    // Cancel any pending unmute if we're explicitly forcing mute.
+    _speakerUnmutePending = false;
+    _speakerUnmuteAtMs = 0;
+  }
   setOutputPins(_status == PLAYING);
+}
+
+void Player::scheduleSpeakerUnmute(uint32_t delayMs) {
+  _speakerUnmutePending = true;
+  _speakerUnmuteAtMs = millis() + delayMs;
 }
 
 void Player::_play(uint16_t stationId) {

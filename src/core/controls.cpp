@@ -25,13 +25,6 @@ int lpId = -1;
 uint32_t wakeCheckUntil = 0;
 bool     waitingForWakeIr = false;
 
-#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
-// When switching from BT output back to internal speaker, keep the speaker muted briefly
-// after applying the new (speaker) volume to avoid a loud transient.
-static bool s_speakerUnmutePending = false;
-static uint32_t s_speakerUnmuteAtMs = 0;
-#endif
-
 #if DSP_MODEL==DSP_DUMMY
 #define DUMMYDISPLAY
 #endif
@@ -288,21 +281,6 @@ void loopControls() {
   if(display.mode()==UPDATING || display.mode()==SDCHANGE) return;
   if(SDC_CS==255 && display.mode()==LOST) return;
   if(ctrls_on_loop) ctrls_on_loop();
-
-#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
-  // Finish a "switch to speaker" by unmuting slightly after the volume change.
-  // (See EVT_BTNMODE double-click handler.)
-  {
-    if (s_speakerUnmutePending && (int32_t)(millis() - s_speakerUnmuteAtMs) >= 0) {
-      s_speakerUnmutePending = false;
-      s_speakerUnmuteAtMs = 0;
-      if (config.store.outputDevice == 0) {
-        player.setSpeakerForceMuted(false);
-      }
-    }
-  }
-#endif
-
 #if ENC_BTNL!=255
   encoder1Loop();
 #endif
@@ -864,10 +842,6 @@ void onBtnDoubleClick(int id) {
         config.setVolume(newVol);
         player.setVol(newVol);
 
-        // Cancel any pending unmute by default; we may re-arm below.
-        s_speakerUnmutePending = false;
-        s_speakerUnmuteAtMs = 0;
-
         if (nowBt) {
           // Switching to BT: mute speaker immediately, then enable companion.
           player.setSpeakerForceMuted(true);
@@ -877,8 +851,7 @@ void onBtnDoubleClick(int id) {
           // volume has time to propagate through the audio pipeline before unmuting.
           btcompanion_setEnabled(false);
           player.setSpeakerForceMuted(true);
-          s_speakerUnmutePending = true;
-          s_speakerUnmuteAtMs = millis() + 500u;
+          player.scheduleSpeakerUnmute(500u);
         }
 #else
         // Companion feature not compiled in: ignore output toggles.

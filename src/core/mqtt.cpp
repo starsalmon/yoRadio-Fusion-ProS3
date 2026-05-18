@@ -6,6 +6,7 @@
 #include "WiFi.h"
 #include "player.h"
 #include "display.h"
+#include "bt_companion.h"
 #if (BRIGHTNESS_PIN != 255)
 #include "../plugins/backlight/backlight.h"
 #endif
@@ -53,6 +54,34 @@ static void mqttPublishAvailability(bool online) {
   if (!mqttClient.connected()) return;
   if (availabilityTopic[0] == '\0') return;
   mqttClient.publish(availabilityTopic, 0, true, online ? "online" : "offline");
+}
+
+static void mqttPublishOutputDevice(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  static int s_last = -1;
+  const int cur = (int)config.store.outputDevice;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+  const char* v = (cur == 1) ? "Bluetooth" : "Speaker";
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "output_device");
+  mqttClient.publish(t2, 0, true, v);
+#else
+  // Feature not compiled: always speaker.
+  static bool s_done = false;
+  if (!force && s_done) return;
+  s_done = true;
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "output_device");
+  mqttClient.publish(t2, 0, true, "Speaker");
+#endif
 }
 
 static void mqttPublishHADiscovery() {
@@ -236,6 +265,47 @@ static void mqttPublishHADiscovery() {
     pubCfg("sensor", "mode", cfg);
   }
 
+  // Mode as a selector (combined state + control).
+  // Prefer this over the legacy "Toggle Mode" button + mode sensor.
+  {
+    char opts[96] = {0};
+    // Options must be a JSON array; keep this deterministic and small.
+#ifdef USE_DLNA
+    strlcpy(opts, "[\"Web Streaming\",\"SD Card\",\"DLNA\"]", sizeof(opts));
+#else
+    strlcpy(opts, "[\"Web Streaming\",\"SD Card\"]", sizeof(opts));
+#endif
+
+    char cfg[700];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Mode\",\"unique_id\":\"%s_mode_select\","
+             "\"state_topic\":\"%smode\","
+             "\"command_topic\":\"%scmd/playback_mode\","
+             "\"options\":%s,"
+             "\"icon\":\"mdi:layers-triple\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, opts, availabilityTopic, dev);
+    pubCfg("select", "mode", cfg);
+  }
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  // Output device as a selector (combined state + control).
+  {
+    char cfg[700];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Audio Output\",\"unique_id\":\"%s_output_device_select\","
+             "\"state_topic\":\"%soutput_device\","
+             "\"command_topic\":\"%scmd/output_device\","
+             "\"options\":[\"Speaker\",\"Bluetooth\"],"
+             "\"icon\":\"mdi:speaker-bluetooth\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("select", "output_device", cfg);
+  }
+#endif
+
   // --- Buttons ---
   {
     char cfg[520];
@@ -255,7 +325,7 @@ static void mqttPublishHADiscovery() {
     {"stop", "Stop", "stop", "mdi:stop"},
     {"start", "Play", "start", "mdi:play"},
     {"reboot", "Reboot", "reboot", "mdi:restart"},
-    {"toggle_mode", "Toggle Mode", "mode -1", "mdi:swap-horizontal"},
+    // Legacy: mode is now exposed as a select (combined state+command).
   };
   for (const auto& b : buttons) {
     char cfg[520];
@@ -300,6 +370,10 @@ static void mqttPublishHADiscovery() {
 
   // --- Cleanup old entities (publish empty retained config to remove) ---
   {
+    // Old toggle-mode button (replaced by select)
+    pubCfg("button", "toggle_mode", "");
+    // Old mode sensor (replaced by select)
+    pubCfg("sensor", "mode", "");
     // Old volume sensor + intermediate volume_level sensor
     pubCfg("sensor", "volume", "");
     pubCfg("sensor", "volume_level", "");
@@ -380,6 +454,14 @@ void onMqttConnect(bool sessionPresent) {
   zeroBuffer();
   sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/brightness");
   mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/playback_mode");
+  mqttClient.subscribe(topic, 2);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  zeroBuffer();
+  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/output_device");
+  mqttClient.subscribe(topic, 2);
+#endif
   mqttPublishAvailability(true);
   if (!s_haDiscoveryPublished && mqttHADiscoveryTaskHandle == nullptr) {
     xTaskCreatePinnedToCore(mqttHADiscoveryTask, "haDisc", 4096, nullptr, 1, &mqttHADiscoveryTaskHandle, 0);
@@ -388,6 +470,7 @@ void onMqttConnect(bool sessionPresent) {
   mqttPublishVolume();
   mqttPublishPlaylist();
   mqttPublishBattery();
+  mqttPublishOutputDevice(true);
   // Ensure HA gets an initial value immediately on connect.
   mqttPublishTrackTime(true);
 }
@@ -441,6 +524,7 @@ void mqttPublishStatus() {
       snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "mode");
       mqttClient.publish(t2, 0, true, mode);
     }
+    mqttPublishOutputDevice(false);
   }
 }
 
@@ -479,6 +563,7 @@ static void mqttPublishTrackTime(bool force) {
 
 void mqttLoop() {
   mqttPublishTrackTime(false);
+  mqttPublishOutputDevice(false);
 }
 
 void mqttPublishPlaylist() {
@@ -551,6 +636,105 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
   if (len == 0) return;
+
+  // Dedicated command topic: <root>cmd/output_device (HA select)
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  {
+    char outTopic[160];
+    snprintf(outTopic, sizeof(outTopic), "%s%s", MQTT_ROOT_TOPIC, "cmd/output_device");
+    if (strcmp(topic, outTopic) == 0) {
+      const size_t n = (len < 31) ? len : 31;
+      char buf[32];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+
+      const bool wantBt =
+        (strcasecmp(s, "bluetooth") == 0) ||
+        (strcasecmp(s, "bt") == 0) ||
+        (strcmp(s, "1") == 0);
+
+      const bool wantSpk =
+        (strcasecmp(s, "speaker") == 0) ||
+        (strcasecmp(s, "spk") == 0) ||
+        (strcmp(s, "0") == 0);
+
+      if (!wantBt && !wantSpk) return;
+
+      const bool wasBt = (config.store.outputDevice == 1);
+      const bool nowBt = wantBt;
+      if (nowBt == wasBt) {
+        mqttPublishOutputDevice(true);
+        return;
+      }
+
+      // Save current volume for the current output, then switch outputs and restore.
+      const uint8_t curVol = config.store.volume;
+      if (wasBt) config.saveValue(&config.store.volumeBt, curVol, false);
+      else       config.saveValue(&config.store.volumeSpeaker, curVol, false);
+
+      config.saveValue(&config.store.outputDevice, (uint8_t)(nowBt ? 1 : 0));
+
+      const uint8_t newVol = nowBt ? config.store.volumeBt : config.store.volumeSpeaker;
+      config.setVolume(newVol);
+      player.setVol(newVol);
+
+      if (nowBt) {
+        player.setSpeakerForceMuted(true);
+        btcompanion_setEnabled(true);
+      } else {
+        btcompanion_setEnabled(false);
+        player.setSpeakerForceMuted(true);
+        player.scheduleSpeakerUnmute(500u);
+      }
+
+      mqttPublishOutputDevice(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+#endif
+
+  // Dedicated command topic: <root>cmd/playback_mode (HA select)
+  {
+    char modeTopic[160];
+    snprintf(modeTopic, sizeof(modeTopic), "%s%s", MQTT_ROOT_TOPIC, "cmd/playback_mode");
+    if (strcmp(topic, modeTopic) == 0) {
+      const size_t n = (len < 31) ? len : 31;
+      char buf[32];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+
+#ifdef USE_DLNA
+      if (strcasecmp(s, "dlna") == 0) {
+        player.sendCommand({PR_SWITCH_PLAYLIST, 1});
+        mqttPublishStatus();
+        return;
+      }
+#endif
+      if (strcasecmp(s, "sd card") == 0 || strcasecmp(s, "sd") == 0) {
+        config.changeMode(PM_SDCARD);
+        mqttPublishStatus();
+        return;
+      }
+      if (strcasecmp(s, "web streaming") == 0 || strcasecmp(s, "web") == 0) {
+#ifdef USE_DLNA
+        if (config.store.playlistSource == PL_SRC_DLNA) {
+          player.sendCommand({PR_SWITCH_PLAYLIST, 0});
+        }
+#endif
+        config.changeMode(PM_WEB);
+        mqttPublishStatus();
+        return;
+      }
+      return;
+    }
+  }
 
   // Dedicated command topic: <root>cmd/volume
   {

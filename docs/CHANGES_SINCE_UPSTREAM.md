@@ -56,11 +56,14 @@ The local diff shows large, real changes in `src/` (dozens of files; thousands o
 
 - **Config/network/MQTT (`src/core/config.*`, `src/core/mqtt.*`, `src/core/netserver.cpp`)**
   - PROS3 hardware bring-up sequencing (SPIFFS ordering, rail enables, etc.)
+  - Offline SD playback mode switching without requiring Wi‑Fi (avoid unnecessary reboots)
+  - Connectivity footer UX (IP shows `no IP` when disconnected; Wi‑Fi icons + RSSI steps)
   - Additional MQTT/Home Assistant discovery behaviors in this fork
   - Web config surface updates (e.g. `dateFormat`)
 
 - **New modules**
   - `src/battery.*` (MAX17048)
+  - `src/core/bt_companion.*` (UART-controlled companion ESP32 for A2DP TX)
   - `src/idf_component.yml` (IDF component metadata)
 
 ### “Date format fix” (documented + in code)

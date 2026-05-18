@@ -58,6 +58,10 @@ platformio device monitor -b 115200
   - Wake pins: `WAKE_PIN1` + optional `WAKE_PIN2` (RTC GPIO only) via ext1 wake
   - Auto deep sleep (when wake pins are configured): `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT`
 - **5V present sense**: `CHARGE_SENSE_PIN` + charging icon in footer when 5V is present
+- **Offline SD playback + footer connectivity UX**:
+  - Switch into SD mode without needing Wi‑Fi (avoid unnecessary reboots)
+  - Footer IP shows `no IP` when disconnected instead of `0.0.0.0`
+  - Wi‑Fi icon logic improved (5-step RSSI + explicit “not connected” icons)
 - **Display tuning**:
   - `TFT_SPI_FREQ` is used by the ILI9341 driver and logged at boot as `##[BOOT]# TFT_SPI_FREQ <value>`
 - **Date format mapping fixed (web UI + TFT)**: `dateFormat` is now consistent (see below)
@@ -66,6 +70,9 @@ platformio device monitor -b 115200
   - PNG alpha is supported (alpha → RGB565 color-key `0xF81F`; firmware treats that key as transparent)
   - Lookup uses the **stable playlist name** so logos don’t disappear when ICY metadata changes the displayed station title
   - `.ylg` header is packed (14 bytes) in both generator and firmware
+- **Bluetooth audio output (A2DP Source) via companion ESP32 (optional)**:
+  - ESP32‑S3 is BLE-only, so Classic-BT A2DP TX is handled by a second ESP32 over UART + I2S
+  - Output can be toggled (speaker vs BT) and the footer shows BT **off/searching/connected/audio** state (separate BT icon left of the speaker)
 - **Audio/UI performance work** (opt-in diagnostics + throttling):
   - 1Hz audio diagnostics (`[AUD] …`) and display loop diagnostics (`[DSP] …`)
   - Adaptive VU throttling based on buffer health and audio loop time

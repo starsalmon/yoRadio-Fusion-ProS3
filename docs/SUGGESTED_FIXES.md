@@ -6,15 +6,18 @@ This is a punch-list of issues spotted during a read-only scan. Nothing here has
 
 #### `setup()` early return skips important initialization
 
-If boot starts in a “not connected yet” state, `setup()` returns before:
-- `Audio::audio_info_callback = my_audio_info`
-- `pm.on_end_setup()`
-- `telnet.begin()`
+**Status: FIXED in this fork.** `setup()` no longer returns early on “not connected yet” paths, so the initialization sequence now runs consistently (including audio-info hooks and end-of-setup plugin events).
 
-That can leave audio-info hooks unwired for the whole run.
+Historical note (what was wrong):
 
-- **Where**: `src/main.cpp` (early return path around the “network not connected” branch; the callback is only set later on the happy path)
-- **Next step**: refactor `setup()` so global hooks and “end-of-setup” plugin events run on both paths
+- If boot started in a “not connected yet” state, `setup()` returned before:
+  - `Audio::audio_info_callback = my_audio_info`
+  - `pm.on_end_setup()`
+  - `telnet.begin()`
+
+That could leave audio-info hooks unwired for the whole run.
+
+- **Where (was)**: `src/main.cpp` (early return path around the “network not connected” branch)
 
 #### Busy-wait loops if queue creation fails (starvation / watchdog risk)
 

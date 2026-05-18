@@ -58,6 +58,8 @@ const WidgetConfig bitrateConf  PROGMEM = { 70, 191, 1, WA_LEFT };
 /**************************/
 #define LAN_ICON_W         18
 #define LAN_ICON_H         20
+#define BT_ICON_W          17
+#define BT_ICON_H          16
 #define VOL_ICON_W         18
 #define VOL_ICON_H         18
 #define BAT_BOLT_W         9
@@ -78,9 +80,13 @@ const WidgetConfig bitrateConf  PROGMEM = { 70, 191, 1, WA_LEFT };
 //Speaker icon is the second icon in the cluster, so it is anchored to the center of the screen
 // - Speaker icon stays fixed
 // - Volume text is left-anchored right next to it (so 9% vs 99% doesn't shift spacing)
-#define VOL_ICON_TOP       (ICON_BOTTOM_Y - VOL_ICON_H)
+#define VOL_ICON_TOP       (ICON_BOTTOM_Y - VOL_ICON_H - 1)
 #define VOL_ICON_LEFT      ((DSP_WIDTH / 2) - 6)
 #define VOL_TEXT_LEFT      (VOL_ICON_LEFT + VOL_ICON_W + TEXT_ICON_SPACING)
+
+// Optional BT output indicator icon (left of the speaker icon)
+#define BT_ICON_TOP        (ICON_BOTTOM_Y - BT_ICON_H - 1)
+#define BT_ICON_LEFT       (VOL_ICON_LEFT - BT_ICON_W - TEXT_ICON_SPACING)
 
 // Battery icon is the fourth icon in the cluster, so it is anchored to the right side of the screen but leaving room for the RSSI icon
 // - Battery icon stays fixed
@@ -93,7 +99,7 @@ const WidgetConfig bitrateConf  PROGMEM = { 70, 191, 1, WA_LEFT };
 
 // Charging indicator (bolt) is the third icon in the cluster, it is anchored to the left of the battery icon
 // Optional charging indicator (bolt) shown when 5V sense is on.
-#define BAT_BOLT_TOP       (ICON_BOTTOM_Y - BAT_BOLT_H -1)
+#define BAT_BOLT_TOP       (ICON_BOTTOM_Y - BAT_BOLT_H - 1)
 #define BAT_BOLT_LEFT      (BAT_ICON_LEFT - BAT_BOLT_W - TEXT_ICON_SPACING)
 
 // RSSI icon is the last icon in the cluster, so itis anchored to the right side of the screen
@@ -119,6 +125,7 @@ const WidgetConfig battxtConf   PROGMEM = { BAT_TEXT_LEFT, BAR_TEXT_TOP, 7, WA_L
 // Icons at 2x (classic) to match the earlier “big icons” look.
 // 100+X forces classic font scaling (see TextWidget::init).
 const WidgetConfig ipiconConf   PROGMEM = { LAN_ICON_LEFT, LAN_ICON_TOP, 102, WA_LEFT };
+const WidgetConfig bticonConf   PROGMEM = { BT_ICON_LEFT, BT_ICON_TOP, 102, WA_LEFT };
 const WidgetConfig voliconConf  PROGMEM = { VOL_ICON_LEFT, VOL_ICON_TOP, 102, WA_LEFT };
 const WidgetConfig baticonConf  PROGMEM = { BAT_ICON_LEFT, BAT_ICON_TOP, 102, WA_LEFT };
 const WidgetConfig batchgConf   PROGMEM = { BAT_BOLT_LEFT, BAT_BOLT_TOP, 102, WA_LEFT };

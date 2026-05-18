@@ -19,6 +19,16 @@ This document exists so we don’t undersell the work.
 - **Fixed SPIFFS mount timing**: avoided accessing theme/SPIFFS before `SPIFFS.begin()` (was causing mount failures on full erase).
 - **Fixed `showlogos` default state** so it doesn’t silently come up disabled after resets (this was a real “why are my logos gone?” trap).
 
+### Offline SD playback + connectivity footer UX
+
+- **Mode switching into SD playback without Wi‑Fi**: switching to `PM_SDCARD` no longer forces a reboot just because Wi‑Fi is down or the device is in SoftAP mode.
+  - Net effect: you can go “offline” and still reliably enter SD playback, rather than bouncing through restarts.
+- **IP/LAN widget behavior while offline**:
+  - Shows **`no IP`** (instead of `0.0.0.0`) when Wi‑Fi is up/down but no usable IP is assigned.
+  - Updates immediately on Wi‑Fi connect/loss events.
+- **Wi‑Fi icon logic refined** (ILI9341 footer):
+  - Distinguishes “not associated” vs “associated but no IP” vs signal strength (5‑step RSSI bar icons).
+
 ### Display/UI performance: make it smooth *without* killing audio
 
 - **Text scrolling throttle during playback** (and “scroll once then stop”) to reduce redraw churn while audio decode is busy.
@@ -70,6 +80,15 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
   - UART control protocol (`PING/STATUS/CONNECT/DISCONNECT/SLEEP`)
   - Wake pin pulse to bring the companion out of deep sleep
   - Output toggle on **MODE double-click** (internal speaker vs BT), with internal amp mute while keeping I2S audio flowing
+- Output UX polish on the ProS3 footer (ILI9341):
+  - Added a **separate BT icon widget** to the left of the speaker icon (so speaker volume icon stays a speaker).
+  - BT icon shows **OFF / SEARCHING / CONNECTED / AUDIO**:
+    - SEARCHING blinks about ~1Hz
+    - CONNECTED (link up, waiting for audio) vs AUDIO (audio started) are distinct icons
+  - Switching from BT → speaker delays speaker unmute by ~0.5s after volume restore to avoid a brief loud transient.
+- Made reconnect behavior more robust (especially after reboot mid-BT):
+  - On enable, ProS3 asks the companion for `STATUS` first; if it’s already connected, it won’t tear down a stable link.
+  - Gentle “kick” retry while SEARCHING (first at ~45s, then every 60s indefinitely) instead of aggressive spamming.
 - Companion firmware work (separate PlatformIO project) hardened for real use:
   - Deep sleep made reliable (task shutdown ordering)
   - Logging made optional/quiet by default

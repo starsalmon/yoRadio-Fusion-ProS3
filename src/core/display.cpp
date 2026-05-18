@@ -19,6 +19,7 @@
 #include "../displays/bitmaps/footer_icons_16.h"
 #include "../myoptions.h"
 #include "sdmanager.h"
+#include "bt_companion.h"
 
 Display display;
 #ifdef USE_NEXTION
@@ -362,8 +363,42 @@ void Display::_buildPager(){
         int vol = config.store.volume;
         if (vol > 100) vol = 100;
         if (vol < 0) vol = 0;
+        // Speaker icon remains a speaker icon. BT output status is shown by a separate BT icon.
         const uint8_t* vbmp = (vol <= 33) ? ICON_VOL_MUTE_18 : (vol <= 66) ? ICON_VOL_DOWN_18 : ICON_VOL_UP_18;
         _volIcon = new BitmapWidget(voliconConf, vbmp, ICON_VOL_W, ICON_VOL_H, config.theme.vol, config.theme.background, BitmapFormat::GFX_MSB);
+
+        #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+          // BT output icon (left of speaker). When BT output is disabled, show a "BT off" icon
+          // in the same color as the speaker icon.
+          const auto rgb565 = [](uint8_t r, uint8_t g, uint8_t b) -> uint16_t {
+            return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+          };
+          const uint16_t btBlue = rgb565(0, 130, 252);
+          const bool btOut = (config.store.outputDevice == 1);
+          const BtCompanionLinkState ls = btcompanion_linkState();
+
+          const uint8_t* bbmp = ICON_BT_DISABLED_17x16;
+          uint16_t bfg = config.theme.vol;
+          if (btOut) {
+            bfg = btBlue;
+          const bool blinkOn = (((uint32_t)millis() / 500u) & 1u) != 0u;
+          if (ls == BtCompanionLinkState::SEARCHING) {
+            // Blink the searching icon on/off (not alternating with the plain BT glyph).
+            bbmp = ICON_BT_SEARCHING_17x16;
+            bfg = blinkOn ? btBlue : config.theme.background;
+          } else {
+            bfg = btBlue;
+            // Swap mapping:
+            // - CONNECTED (waiting for audio): show plain BT
+            // - AUDIO (flowing): show "connected" BT glyph
+            bbmp = (ls == BtCompanionLinkState::CONNECTED) ? ICON_BT_17x16
+                                                           : ICON_BT_CONNECTED_17x16; // AUDIO
+          }
+          } else {
+            bbmp = ICON_BT_DISABLED_17x16;
+          }
+          _btIcon = new BitmapWidget(bticonConf, bbmp, BT_ICON_W, BT_ICON_H, bfg, config.theme.background, BitmapFormat::GFX_MSB);
+        #endif
       }
     #endif
     #if !defined(HIDE_BAT) && (!defined(BATTERY_ENABLED) || (BATTERY_ENABLED != 0))
@@ -412,6 +447,7 @@ void Display::_buildPager(){
   _stationLogo->lock(true);
   
   #if DSP_MODEL==DSP_ILI9341
+    if(_btIcon)   _footer->addWidget(_btIcon);
     if(_volIcon)  _footer->addWidget(_volIcon);
     if(_ipIcon)   _footer->addWidget(_ipIcon);
     if(_batChgIcon) _footer->addWidget(_batChgIcon);
@@ -1979,9 +2015,39 @@ void Display::_volume() {
   if (vol > 100) vol = 100;
   if (vol < 0) vol = 0;
 
-  // Update volume icon first; it clears a 24x24 area, so we'll redraw the bar after.
+  // Update footer icons first; they clear a small area, so we'll redraw the bar after.
   #if DSP_MODEL==DSP_ILI9341
     #ifndef HIDE_VOL
+      #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+        // BT output icon (left of speaker)
+        if (_btIcon) {
+          const auto rgb565 = [](uint8_t r, uint8_t g, uint8_t b) -> uint16_t {
+            return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+          };
+          const uint16_t btBlue = rgb565(0, 130, 252);
+          const bool btOut = (config.store.outputDevice == 1);
+          const BtCompanionLinkState ls = btcompanion_linkState();
+          const uint8_t* bbmp = ICON_BT_DISABLED_17x16;
+          uint16_t bfg = config.theme.vol;
+          if (btOut) {
+            bfg = btBlue;
+          const bool blinkOn = (((uint32_t)millis() / 500u) & 1u) != 0u;
+          if (ls == BtCompanionLinkState::SEARCHING) {
+            bbmp = ICON_BT_SEARCHING_17x16;
+            bfg = blinkOn ? btBlue : config.theme.background;
+          } else {
+            bfg = btBlue;
+            bbmp = (ls == BtCompanionLinkState::CONNECTED) ? ICON_BT_17x16
+                                                           : ICON_BT_CONNECTED_17x16; // AUDIO
+          }
+          } else {
+            bbmp = ICON_BT_DISABLED_17x16;
+          }
+          _btIcon->setBitmapAndColor(bbmp, BT_ICON_W, BT_ICON_H, bfg);
+        }
+      #endif
+
+      // Speaker volume icon
       if (_volIcon) {
         const uint8_t* vbmp = (vol <= 33) ? ICON_VOL_MUTE_18 : (vol <= 66) ? ICON_VOL_DOWN_18 : ICON_VOL_UP_18;
         _volIcon->setBitmap(vbmp, ICON_VOL_W, ICON_VOL_H);

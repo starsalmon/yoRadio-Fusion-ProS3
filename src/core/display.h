@@ -91,6 +91,7 @@ class Display {
     TextWidget *_bootstring, *_volip, *_voltxt, *_rssi, *_bitrate;
     TextWidget* _battxt = nullptr;
     BitmapWidget* _ipIcon = nullptr;
+    BitmapWidget* _btIcon = nullptr;
     BitmapWidget* _volIcon = nullptr;
     BitmapWidget* _rssiIcon = nullptr;
     BitmapWidget* _batIcon = nullptr;

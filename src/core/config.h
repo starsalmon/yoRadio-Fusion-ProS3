@@ -48,7 +48,7 @@
   #define ESP_ARDUINO_3 1
 #endif
 
-#define CONFIG_VERSION  17
+#define CONFIG_VERSION  18
 
 enum playMode_e : uint8_t {  //DLNA mod
   PM_WEB    = 0,
@@ -242,6 +242,13 @@ struct config_t
   // Added at the end on purpose so older EEPROM layouts stay compatible.
   // Absolute file position for SD resume (0 = disabled).
   uint32_t  lastSdResumePos;
+
+  // Output device persistence (fork extension).
+  // 0 = internal speaker/amp, 1 = BT companion (Classic-BT A2DP TX).
+  uint8_t   outputDevice;
+  // Remember last volume per output so switching feels instant.
+  uint8_t   volumeSpeaker;
+  uint8_t   volumeBt;
 };
 
 #if IR_PIN != 255

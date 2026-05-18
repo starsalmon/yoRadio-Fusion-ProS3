@@ -11,13 +11,15 @@
 - **SD playback resume**: track resume is implemented; resume *position* still WIP
 - **Album art**: revisit later (needs stable decoder/task model)
 - **Bluetooth output UX polish** (Companion ESP32 A2DP TX):
-  - Change speaker icon to BT icon when in BT mode
+  - NeoLED statuses: booting, network connect, SD card indexing, BT connecting/disconnecting
+    - While waiting for BT connect: slow blue pulse
+  - Speed up BT connect (currently can take ~30s depending on speaker)
+  - Consider a cleaner “connected/disconnected” status message from the companion (optional; ProS3 currently polls `STATUS`)
+- **Recently completed (BT companion basics)**:
+  - Change speaker icon to BT icon when in BT mode (with searching/connected state)
   - Switch to last output device on boot
   - Save last volume per output and restore when switching
   - Put BT companion into deep sleep when ProS3 enters deep sleep
-  - NeoLED statuses: booting, network connect, SD card indexing, BT connecting/disconnecting
-    - While waiting for BT connect: slow blue pulse
-    - Add/confirm companion → ProS3 status reporting (connected/disconnected)
 - **Podcast mode**: dedicated mode to stream recent episodes from podcast feeds
 - **Load station logos from SD**: might be easier long-term; likely needs stable image decode first
 - **Configure new features from web**: allow setting options like `BATTERY_ENABLED`, `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT` from the web interface

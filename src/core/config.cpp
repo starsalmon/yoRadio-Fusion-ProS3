@@ -9,6 +9,7 @@
 #include "timekeeper.h"
 #include "telnet.h"
 #include "rtcsupport.h"
+#include "bt_companion.h"
 #include "../battery.h"
 #include "../displays/defaults.h" 
 #include "../displays/tools/l10n.h"
@@ -128,6 +129,17 @@ if (store.lastPlayedSource > PL_SRC_DLNA)
     while (store.version != CONFIG_VERSION) _setupVersion();
   }
   BOOTLOG("CONFIG_VERSION\t%d", store.version);
+
+  // Restore last output device and associated volume before Player init.
+  // (Player::init loads config.store.volume once during startup.)
+#ifndef BT_COMPANION_ENABLE
+  // Safety: if the companion feature isn't compiled in, force output to speaker.
+  store.outputDevice = 0;
+#endif
+  if (store.outputDevice > 1) store.outputDevice = 0;
+  if (store.volumeSpeaker > 100) store.volumeSpeaker = 100;
+  if (store.volumeBt > 100) store.volumeBt = 100;
+  store.volume = (store.outputDevice == 1) ? store.volumeBt : store.volumeSpeaker;
 
   // Restore SD resume position (absolute file position). This is only applied
   // when playing the same SD track that was last stopped.
@@ -293,6 +305,13 @@ void Config::_setupVersion(){
       if (SHOW_LOGOS_DEFAULT) r |= 0x0001;
       else                   r &= (uint16_t)~0x0001;
       saveValue(&store._reserved, r);
+      break;
+    }
+    case 17: {
+      // Add persisted output device + per-output volume memory.
+      saveValue(&store.outputDevice, (uint8_t)0, false);
+      saveValue(&store.volumeSpeaker, (uint8_t)store.volume, false);
+      saveValue(&store.volumeBt, (uint8_t)store.volume, false);
       break;
     }
   }
@@ -1010,6 +1029,9 @@ void Config::setDefaults() {
   store.config_set = 4262;
   store.version = CONFIG_VERSION;
   store.volume = 12;
+  store.outputDevice = 0;
+  store.volumeSpeaker = store.volume;
+  store.volumeBt = store.volume;
   store.balance = 0;
   store.trebble = 0;
   store.middle = 0;
@@ -1275,11 +1297,20 @@ bool Config::importIR() {
 #endif
 
 void Config::saveVolume(){
-  saveValue(&store.volume, store.volume, true, true);
+  // Persist current volume + per-output remembered volumes.
+  // (saveValue writes individual fields to their EEPROM addresses)
+  saveValue(&store.volume, store.volume, false, true);
+  if (store.outputDevice == 1) store.volumeBt = store.volume;
+  else                         store.volumeSpeaker = store.volume;
+  saveValue(&store.volumeSpeaker, store.volumeSpeaker, false, true);
+  saveValue(&store.volumeBt, store.volumeBt, true, true);
 }
 
 uint8_t Config::setVolume(uint8_t val) {
   store.volume = val;
+  // Keep per-output memory in sync with live volume.
+  if (store.outputDevice == 1) store.volumeBt = val;
+  else                         store.volumeSpeaker = val;
   display.putRequest(DRAWVOL);
   netserver.requestOnChange(VOLUME, 0);
   return store.volume;
@@ -1717,6 +1748,8 @@ void Config::setDspOn(bool dspon, bool saveval){
 }
 
 void Config::doSleep() {
+    // Best-effort: ensure the companion goes to deep sleep too.
+    btcompanion_setEnabled(false);
     battery_prepare_for_deepsleep();
     if (BRIGHTNESS_PIN != 255) { analogWrite(BRIGHTNESS_PIN, 0); }
     display.deepsleep();
@@ -1751,6 +1784,8 @@ void Config::doSleep() {
 }
 
 void Config::doSleepW() {
+    // Best-effort: ensure the companion goes to deep sleep too.
+    btcompanion_setEnabled(false);
     battery_prepare_for_deepsleep();
     if (BRIGHTNESS_PIN != 255) { analogWrite(BRIGHTNESS_PIN, 0); }
     display.deepsleep();

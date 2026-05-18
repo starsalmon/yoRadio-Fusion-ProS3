@@ -112,6 +112,13 @@ void setup() {
 
   display.init();
   player.init();
+
+  // Apply last output device selection (speaker vs BT companion) before any auto-play.
+#ifdef BT_COMPANION_ENABLE
+  player.setSpeakerForceMuted(config.store.outputDevice == 1);
+#else
+  player.setSpeakerForceMuted(false);
+#endif
   network.begin();
   if(SDC_CS!=255) {
     display.putRequest(WAITFORSD, 0);
@@ -123,6 +130,14 @@ void setup() {
   initControls();
   startControlsTask();
   btcompanion_init();
+  // If last output was BT, start the companion connect flow now.
+#ifdef BT_COMPANION_ENABLE
+  btcompanion_setEnabled(config.store.outputDevice == 1);
+  if (config.store.outputDevice != 1) {
+    // Ensure companion isn't left streaming if ProS3 rebooted.
+    btcompanion_forceSleep();
+  }
+#endif
   display.putRequest(DSP_START);
   while(!display.ready()) delay(10);
   #if USE_OTA

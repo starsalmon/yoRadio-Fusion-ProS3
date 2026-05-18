@@ -15,3 +15,17 @@ void btcompanion_setEnabled(bool enable);
 bool btcompanion_enabled();
 void btcompanion_toggle();
 
+// Best-effort: ask the companion to disconnect and deep sleep, even if our internal
+// enabled state is currently false (useful on boot/shutdown).
+void btcompanion_forceSleep();
+
+// Best-effort link state based on periodic STATUS polling.
+// Used for UI icon selection (idle/searching/connected).
+enum class BtCompanionLinkState : uint8_t {
+  OFF = 0,
+  SEARCHING = 1,
+  CONNECTED = 2,
+  AUDIO = 3,
+};
+BtCompanionLinkState btcompanion_linkState();
+

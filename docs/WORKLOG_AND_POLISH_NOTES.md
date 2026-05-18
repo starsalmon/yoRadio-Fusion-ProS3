@@ -89,6 +89,9 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
 - Made reconnect behavior more robust (especially after reboot mid-BT):
   - On enable, ProS3 asks the companion for `STATUS` first; if it’s already connected, it won’t tear down a stable link.
   - Gentle “kick” retry while SEARCHING (first at ~45s, then every 60s indefinitely) instead of aggressive spamming.
+- Added runtime control of the **target speaker name**:
+  - Home Assistant publishes a `text` entity (MQTT discovery) to set the BT sink name at runtime.
+  - ProS3 sends `CONNECT <name>` to the companion using the new target (without disrupting active audio).
 - Companion firmware work (separate PlatformIO project) hardened for real use:
   - Deep sleep made reliable (task shutdown ordering)
   - Logging made optional/quiet by default

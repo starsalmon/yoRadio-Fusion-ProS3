@@ -104,6 +104,8 @@ MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes
   - `availability`: `online|offline` (LWT is `offline`)
   - `status`: JSON including playback + station + mode + brightness
   - `mode`: `Web Streaming|SD Card|DLNA`
+  - `output_device`: `Speaker|Bluetooth` (only meaningful when `BT_COMPANION_ENABLE != 0`)
+  - `bt_sink_name`: current BT target speaker name (only when `BT_COMPANION_ENABLE != 0`)
   - `volume`: `0..100`
   - `brightness`: `0..100`
   - `playlist`: `http://<ip>/playlist`
@@ -117,6 +119,7 @@ MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes
   - `cmd/brightness`: `0..100`
   - `cmd/playback_mode`: `Web Streaming|SD Card|DLNA` (Home Assistant “select”)
   - `cmd/output_device`: `Speaker|Bluetooth` (Home Assistant “select”, only when `BT_COMPANION_ENABLE != 0`)
+  - `cmd/bt_sink_name`: set BT target speaker name (Home Assistant “text”, only when `BT_COMPANION_ENABLE != 0`)
 
 - **Home Assistant discovery (retained)**:
   - Published under `homeassistant/<component>/<nodeId>/<objectId>/config`

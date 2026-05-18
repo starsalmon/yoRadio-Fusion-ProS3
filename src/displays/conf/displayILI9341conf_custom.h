@@ -85,7 +85,7 @@ const WidgetConfig bitrateConf  PROGMEM = { 70, 191, 1, WA_LEFT };
 #define VOL_TEXT_LEFT      (VOL_ICON_LEFT + VOL_ICON_W + TEXT_ICON_SPACING)
 
 // Optional BT output indicator icon (left of the speaker icon)
-#define BT_ICON_TOP        (ICON_BOTTOM_Y - BT_ICON_H - 1)
+#define BT_ICON_TOP        (ICON_BOTTOM_Y - BT_ICON_H - 2)
 #define BT_ICON_LEFT       (VOL_ICON_LEFT - BT_ICON_W - TEXT_ICON_SPACING)
 
 // Battery icon is the fourth icon in the cluster, so it is anchored to the right side of the screen but leaving room for the RSSI icon

@@ -41,6 +41,7 @@ static uint32_t s_lastBlinkReqMs = 0;
 static int s_conn = -1;
 static int s_audio = -1;
 static BtCompanionLinkState s_link = BtCompanionLinkState::OFF;
+static char s_sinkName[64] = BT_COMPANION_SINK_NAME;
 
 static void maybeUpdateLinkState() {
   BtCompanionLinkState next = BtCompanionLinkState::OFF;
@@ -126,7 +127,7 @@ static void sendLine(const char *s) {
 
 static void sendConnectDefault() {
   char buf[96];
-  snprintf(buf, sizeof(buf), "CONNECT %s", BT_COMPANION_SINK_NAME);
+  snprintf(buf, sizeof(buf), "CONNECT %s", s_sinkName);
   sendLine(buf);
 }
 
@@ -167,7 +168,7 @@ void btcompanion_init() {
                 (int)BT_COMPANION_UART_RX,
                 (int)BT_COMPANION_UART_TX,
                 (int)BT_COMPANION_WAKE_PIN,
-                BT_COMPANION_SINK_NAME);
+                s_sinkName);
   // Don't immediately force SLEEP here: on reboot while BT is active, we want
   // to bring the companion back up and reconnect deterministically.
   s_enabled = false;
@@ -180,6 +181,41 @@ void btcompanion_init() {
   s_nextKickMs = 0;
   s_kickBackoffMs = 0;
   s_lastBlinkReqMs = 0;
+}
+
+void btcompanion_setSinkName(const char* name) {
+  if (!name) return;
+  while (*name == ' ' || *name == '\t' || *name == '\r' || *name == '\n') name++;
+  if (*name == '\0') return;
+
+  // Keep it ASCII-printable to avoid UART/control issues.
+  char tmp[sizeof(s_sinkName)];
+  size_t j = 0;
+  for (size_t i = 0; name[i] && j < sizeof(tmp) - 1; i++) {
+    const unsigned char c = (unsigned char)name[i];
+    if (c < 0x20 || c >= 0x7F) continue;
+    tmp[j++] = (char)c;
+  }
+  tmp[j] = '\0';
+  while (j > 0 && tmp[j - 1] == ' ') tmp[--j] = '\0';
+  if (j == 0) return;
+
+  if (strncmp(tmp, s_sinkName, sizeof(s_sinkName)) == 0) return;
+  strlcpy(s_sinkName, tmp, sizeof(s_sinkName));
+  Serial.printf("[BT2] sink='%s'\n", s_sinkName);
+}
+
+const char* btcompanion_sinkName() { return s_sinkName; }
+
+void btcompanion_requestConnect() {
+  if (!s_enabled) return;
+  if (s_link == BtCompanionLinkState::AUDIO) return; // don't disrupt active audio
+  s_conn = -1;
+  s_audio = -1;
+  s_link = BtCompanionLinkState::SEARCHING;
+  display.putRequest(DRAWVOL);
+  sendConnectDefault();
+  sendLine("STATUS");
 }
 
 void btcompanion_setEnabled(bool enable) {
@@ -297,6 +333,9 @@ void btcompanion_setEnabled(bool) {}
 bool btcompanion_enabled() { return false; }
 void btcompanion_toggle() {}
 void btcompanion_forceSleep() {}
+void btcompanion_setSinkName(const char*) {}
+const char* btcompanion_sinkName() { return ""; }
+void btcompanion_requestConnect() {}
 BtCompanionLinkState btcompanion_linkState() { return BtCompanionLinkState::OFF; }
 
 #endif

@@ -15,6 +15,7 @@
     - While waiting for BT connect: slow blue pulse
   - Speed up BT connect (currently can take ~30s depending on speaker)
   - Consider a cleaner “connected/disconnected” status message from the companion (optional; ProS3 currently polls `STATUS`)
+  - Implement **BT AVRCP controls** (if supported): play/pause, skip, volume via the speaker/headphones buttons
 - **Recently completed (BT companion basics)**:
   - Change speaker icon to BT icon when in BT mode (with searching/connected state)
   - Switch to last output device on boot

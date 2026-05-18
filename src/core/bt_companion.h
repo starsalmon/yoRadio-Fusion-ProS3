@@ -19,6 +19,16 @@ void btcompanion_toggle();
 // enabled state is currently false (useful on boot/shutdown).
 void btcompanion_forceSleep();
 
+// Set/get the target sink name used for CONNECT.
+// - Default is BT_COMPANION_SINK_NAME (from myoptions.h).
+// - This is runtime-only (not persisted) unless you also change BT_COMPANION_SINK_NAME.
+void btcompanion_setSinkName(const char* name);
+const char* btcompanion_sinkName();
+
+// Ask the companion to (re)connect to the current sink name.
+// If audio is already started, this is a no-op to avoid disrupting playback.
+void btcompanion_requestConnect();
+
 // Best-effort link state based on periodic STATUS polling.
 // Used for UI icon selection (idle/searching/connected).
 enum class BtCompanionLinkState : uint8_t {

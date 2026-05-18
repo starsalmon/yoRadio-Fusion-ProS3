@@ -84,6 +84,28 @@ static void mqttPublishOutputDevice(bool force = false) {
 #endif
 }
 
+static void mqttPublishBtSinkName(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  static char s_last[64] = {0};
+  const char* cur = btcompanion_sinkName();
+  if (!cur) cur = "";
+  if (!force && strncmp(cur, s_last, sizeof(s_last)) == 0) return;
+  strlcpy(s_last, cur, sizeof(s_last));
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "bt_sink_name");
+  mqttClient.publish(t2, 0, true, cur);
+#else
+  (void)force;
+#endif
+}
+
 static void mqttPublishHADiscovery() {
   if (!mqttClient.connected()) return;
 
@@ -304,6 +326,21 @@ static void mqttPublishHADiscovery() {
              nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
     pubCfg("select", "output_device", cfg);
   }
+
+  // Bluetooth sink name as a text input (combined state + control).
+  {
+    char cfg[700];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"BT Sink Name\",\"unique_id\":\"%s_bt_sink_name_text\","
+             "\"state_topic\":\"%sbt_sink_name\","
+             "\"command_topic\":\"%scmd/bt_sink_name\","
+             "\"max\":63,"
+             "\"icon\":\"mdi:bluetooth-audio\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("text", "bt_sink_name", cfg);
+  }
 #endif
 
   // --- Buttons ---
@@ -461,6 +498,9 @@ void onMqttConnect(bool sessionPresent) {
   zeroBuffer();
   sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/output_device");
   mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/bt_sink_name");
+  mqttClient.subscribe(topic, 2);
 #endif
   mqttPublishAvailability(true);
   if (!s_haDiscoveryPublished && mqttHADiscoveryTaskHandle == nullptr) {
@@ -471,6 +511,7 @@ void onMqttConnect(bool sessionPresent) {
   mqttPublishPlaylist();
   mqttPublishBattery();
   mqttPublishOutputDevice(true);
+  mqttPublishBtSinkName(true);
   // Ensure HA gets an initial value immediately on connect.
   mqttPublishTrackTime(true);
 }
@@ -525,6 +566,7 @@ void mqttPublishStatus() {
       mqttClient.publish(t2, 0, true, mode);
     }
     mqttPublishOutputDevice(false);
+    mqttPublishBtSinkName(false);
   }
 }
 
@@ -564,6 +606,7 @@ static void mqttPublishTrackTime(bool force) {
 void mqttLoop() {
   mqttPublishTrackTime(false);
   mqttPublishOutputDevice(false);
+  mqttPublishBtSinkName(false);
 }
 
 void mqttPublishPlaylist() {
@@ -636,6 +679,33 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
   if (len == 0) return;
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  // Dedicated command topic: <root>cmd/bt_sink_name (HA text)
+  {
+    char snTopic[160];
+    snprintf(snTopic, sizeof(snTopic), "%s%s", MQTT_ROOT_TOPIC, "cmd/bt_sink_name");
+    if (strcmp(topic, snTopic) == 0) {
+      const size_t n = (len < 120) ? len : 120;
+      char buf[121];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim leading whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+      if (*s == '\0') return;
+
+      btcompanion_setSinkName(s);
+      mqttPublishBtSinkName(true);
+
+      // If BT output is enabled but not in AUDIO yet, re-issue CONNECT to apply immediately.
+      if (btcompanion_enabled() && btcompanion_linkState() != BtCompanionLinkState::AUDIO) {
+        btcompanion_requestConnect();
+      }
+      return;
+    }
+  }
+#endif
 
   // Dedicated command topic: <root>cmd/output_device (HA select)
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)

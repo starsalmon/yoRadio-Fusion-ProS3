@@ -20,6 +20,8 @@
 #include "../myoptions.h"
 #include "sdmanager.h"
 #include "bt_companion.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 
 Display display;
 #ifdef USE_NEXTION
@@ -61,6 +63,8 @@ Nextion nextion;
 #endif
 
 QueueHandle_t displayQueue;
+static StaticQueue_t s_displayQueueStruct;
+static uint8_t s_displayQueueStorage[5 * sizeof(requestParams_t)];
 
 static char batteryIconGlyph(float pct, bool charging) {
   // 8 dedicated classic glyph slots in fonts/glcdfont_EN.c
@@ -221,9 +225,8 @@ void Display::init() {
 #endif
   _bootStep = 0;
   dsp.initDisplay();
-  displayQueue=NULL;
-  displayQueue = xQueueCreate( 5, sizeof( requestParams_t ) );
-  while(displayQueue==NULL){;}
+  // Use a static queue so we never busy-wait on heap allocation failure.
+  displayQueue = xQueueCreateStatic(5, sizeof(requestParams_t), s_displayQueueStorage, &s_displayQueueStruct);
   _createDspTask();
   while(_bootStep != 0) { delay(10); }
   //_pager.begin();

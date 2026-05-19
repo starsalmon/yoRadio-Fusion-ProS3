@@ -69,9 +69,9 @@ static void dlna_worker_task(void* ) {
     bool ok = false;
     //int err = 0;
 
-    esp_task_wdt_reset();  // reset mielőtt a hosszú HTTP munka elkezdődik
+    esp_task_wdt_reset();  // reset before starting long HTTP work
 
-    // !!! FONTOS: itt semmilyen AsyncWebServerRequest nincs, csak paraméterek
+    // Important: there is no AsyncWebServerRequest here, only parameters.
     if (j.type == DJ_BUILD) {
       dlna_status_setBusy(j, "build");
 
@@ -92,7 +92,7 @@ static void dlna_worker_task(void* ) {
       }
 
       if (!hasItems) { 
-       // van konténer, de track nincs közvetlenül -> UI-nak jelezzük szépen
+       // container exists but no track items directly -> tell the UI clearly
        dlna_status_setDone(j, false, 422, hasContainers ? "No tracks in this container (only subfolders)" : "Empty container");
        continue;
       } 
@@ -107,7 +107,7 @@ static void dlna_worker_task(void* ) {
              g_dlnaControlUrl,
              j.objectId,
              depth,
-             limit    // ha nincs: add meg defaultnak
+             limit    // if absent: default it
            );
 
       if (!ok) {
@@ -156,7 +156,7 @@ static void dlna_worker_task(void* ) {
       }
 
       if (!hasItems) { 
-       // van konténer, de track nincs közvetlenül -> UI-nak jelezzük szépen
+       // container exists but no track items directly -> tell the UI clearly
        dlna_status_setDone(j, false, 422, hasContainers ? "No tracks in this container (only subfolders)" : "Empty container");
        continue;
       } 

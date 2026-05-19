@@ -360,7 +360,7 @@ void Config::toggleMode() {
 
 #else
 
-    // DLNA nincs → sima toggle
+    // No DLNA -> simple toggle
     changeMode(getMode() == PM_SDCARD ? PM_WEB : PM_SDCARD);
 
 #endif
@@ -369,13 +369,13 @@ void Config::toggleMode() {
 void Config::changeMode(int newmode) { // DLNA mod
     // Serial.printf("Config.cpp-->changeMode() newmode: %d", newmode);
 #ifdef USE_SD
-    // Encoder dupla klikk (paraméter nélküli hívás)
+    // Encoder double-click (call without explicit parameter)
     if (newmode == -1) {
-        // DLNA nem választható encoderről
+        // DLNA cannot be selected from the encoder toggle.
         newmode = (getMode() == PM_SDCARD) ? PM_WEB : PM_SDCARD;
     }
 
-    // 🔒 biztonsági ellenőrzés
+    // Safety check
     if (newmode < 0 || newmode >= 2) { // 0 --> radio; 1 --> SD; 2 --> DLNA
         Serial.printf("##[ERROR]# changeMode invalid newmode: %d\n", newmode);
         return;
@@ -525,8 +525,19 @@ void Config::waitConnection(){
 #if I2S_DOUT==255
   return;
 #endif
-  while(!player.connproc) vTaskDelay(50);
-  vTaskDelay(500);
+  bool waited = false;
+  const uint32_t startMs = millis();
+  while(!player.connproc && (uint32_t)(millis() - startMs) < 15000u) {
+    waited = true;
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+  // Only add the extra settle delay if we actually had to wait.
+  if (waited) {
+    if (!player.connproc) {
+      Serial.println("[CFG] waitConnection timeout; continuing");
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
 }
 
 char * Config::ipToStr(IPAddress ip){
@@ -544,7 +555,7 @@ bool Config::prepareForPlaying(uint16_t stationId){
   
   if(!loadStation(stationId)) return false;
   //setTitle(getMode()==PM_WEB?LANG::const_PlConnect:"[next track]");
-  setTitle(LANG::const_PlConnect); //ittvan
+  setTitle(LANG::const_PlConnect);
   station.bitrate=0;
   setBitrateFormat(BF_UNKNOWN);
   display.putRequest(DBITRATE);
@@ -1417,14 +1428,14 @@ void Config::indexDLNAPlaylist() {
   while (playlist.available()) {
     uint32_t pos = playlist.position();
 
-    // readBytesUntil nem allokál, stabil
+    // readBytesUntil doesn't allocate; it's stable.
     size_t n = playlist.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
     lineBuf[n] = 0;
 
-    // CRLF kezelés
+    // CRLF handling
     if (n > 0 && lineBuf[n - 1] == '\r') lineBuf[n - 1] = 0;
 
-    // üres sor skip
+    // skip empty lines
     if (lineBuf[0] == 0) {
       lines++;
       continue;
@@ -1720,7 +1731,7 @@ void Config::setBrightnessRaw(uint8_t percent) {
   // clamp
   if (percent > 100) percent = 100;
 
-  // csak a hardver: NEM store, NEM save
+  // Hardware only: do not persist to config/store.
   analogWrite(BRIGHTNESS_PIN, map(percent, 0, 100, 0, 255));
 #endif
 }

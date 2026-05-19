@@ -84,8 +84,8 @@ bool NetServer::begin(bool quiet) {
   importRequest = IMDONE;
   irRecordEnable = false;
   playerBufMax = psramInit()?300000:1600 * config.store.abuff;
-  nsQueue = xQueueCreate( 20, sizeof( nsRequestParams_t ) );
-  while(nsQueue==NULL){;}
+  // Use a static queue so we never busy-wait on heap allocation failure.
+  nsQueue = xQueueCreateStatic(20, sizeof(nsRequestParams_t), nsQueueStorage, &nsQueueStruct);
 
   webserver.on("/", HTTP_ANY, handleIndex);
   webserver.onNotFound(handleNotFound);
@@ -295,7 +295,7 @@ webserver.on("/playlist/web", HTTP_GET, [](AsyncWebServerRequest *request) {
   if (config.getMode() != PM_WEB) {
     config.changeMode(PM_WEB);
   } else {
-    // nincs mode reset → csak visszatöltjük az indexet
+    // No mode change -> just reload the index.
     config.loadStation(config.lastStation());
 
     if (player_on_station_change) player_on_station_change();
@@ -1127,7 +1127,15 @@ void handleNotFound(AsyncWebServerRequest * request) {
 #endif
        ) {
 #ifdef MQTT_ROOT_TOPIC
-      if (strcmp(request->url().c_str(), PLAYLIST_PATH) == 0) while (mqttplaylistblock) vTaskDelay(5);
+      if (strcmp(request->url().c_str(), PLAYLIST_PATH) == 0 && mqttplaylistblock) {
+        const uint32_t startMs = millis();
+        while (mqttplaylistblock && (uint32_t)(millis() - startMs) < 2000u) {
+          vTaskDelay(pdMS_TO_TICKS(5));
+        }
+        if (mqttplaylistblock) {
+          Serial.println("[NET] playlist busy (MQTT publish) >2s; serving anyway");
+        }
+      }
 #endif
      /* if(strcmp(request->url().c_str(), PLAYLIST_PATH) == 0 && config.getMode()==PM_SDCARD){
         netserver.chunkedHtmlPage("application/octet-stream", request, PLAYLIST_SD_PATH);

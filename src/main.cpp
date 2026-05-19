@@ -153,7 +153,6 @@ void setup() {
       player.sendCommand({PR_PLAY, config.lastStation()});
     }
   }
-  clock_tts_setup();
   Audio::audio_info_callback =  my_audio_info;   // "audio_change" audiohandlers.h ban kezelve.
   pm.on_end_setup();
 }

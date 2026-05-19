@@ -1,4 +1,4 @@
-// Módosítva. "vol_step"
+// Modified ("vol_step")
 #include "Arduino.h"
 #include "options.h"
 #include "config.h"
@@ -385,7 +385,7 @@ void irBackspace() {
         display.putRequest(NEXTSTATION, 0);
     }
 }
-/*----- IR wake-up, SETUP() hívja, ha nem POWER kód, akkor visszaaltat. -----*/
+/*----- IR wake-up: called from setup(); if not a POWER code, go back to sleep. -----*/
 void irWakeup() {
     auto wake = esp_sleep_get_wakeup_cause();
     if (wake == ESP_SLEEP_WAKEUP_EXT1) {
@@ -397,17 +397,17 @@ void irWakeup() {
             irrecv.enableIRIn();
             bool          valid = false;
             unsigned long start = millis();
-            unsigned long timeout = 800; // alap ablak
+            unsigned long timeout = 800; // initial window
             while (millis() - start < timeout) {
                 if (irrecv.decode(&irResults)) {
                     uint32_t code = irResults.value;
-                    // repeat → csak idő hosszabbítás
+                    // repeat -> extend timeout window only
                     if (code == 0xFFFFFFFF) {
                         timeout = 800;
                         irrecv.resume();
                         continue;
                     }
-                    // csak valódi kódokat vizsgálunk
+                    // only evaluate real codes (non-repeat)
                     if (isIrPowerCode(code)) {
                         Serial.printf("POWER: 0x%X\n", (unsigned)code);
                         valid = true;
@@ -696,7 +696,7 @@ void controlsEvent(bool toRight, int8_t volDelta) {
       int nv = config.store.volume + volDelta * config.store.volsteps;
       if (nv < 0)
         nv = 0;
-      if (nv > 100)            // Módosítva. "vol_step"
+      if (nv > 100)            // Modified ("vol_step")
         nv = 100; 
       player.setVol((uint8_t)nv);
     } else {

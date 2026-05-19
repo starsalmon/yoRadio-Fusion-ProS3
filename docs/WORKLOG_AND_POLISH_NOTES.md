@@ -106,6 +106,14 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
   - Bolt is shown when \(rate \ge -1\%\!/\!h\) (charging or near-full drift)
   - Bolt is hidden when \(rate < -1\%\!/\!h\) (clearly discharging)
 
+### Stability hardening (FreeRTOS + web handler)
+
+- Removed boot-time **busy-wait starvation** risks by switching `displayQueue` and `nsQueue` to **static FreeRTOS queues** (`xQueueCreateStatic`) instead of heap allocation loops.
+- Prevented a web request hang: the playlist GET path no longer waits forever on `mqttplaylistblock` (bounded 2s wait + yields, then serves anyway).
+- Made `Config::waitConnection()` meaningful again by fixing `player.connproc` semantics (true = idle / not connecting; false = connect in progress) and adding a timeout.
+- Removed duplicate `clock_tts_setup()` call (now called once in `setup()`).
+- Fixed a `dspcore.h` preprocessor shadowing issue so the `DSP_ST7789_76` branch is reachable again.
+
 ### Station list management (Moode import automation)
 
 - Added `tools/moode/export_moode_radio_to_yoradio_csv.py` to scrape Moode’s station table and merge into `data/data/playlist.csv` (URL de-dupe, don’t clobber custom names).

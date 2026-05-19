@@ -1,4 +1,4 @@
-//Módosítva! v0.9.710  "weather" ; "direct_channel_change"
+// Modified in v0.9.710 ("weather"; "direct_channel_change")
 #include "options.h"
 #include "Arduino.h"
 #include "timekeeper.h"
@@ -27,7 +27,7 @@
 
 #define SYNC_STACK_SIZE    1024 * 4
 #define SYNC_TASK_CORE     0
-#define SYNC_TASK_PRIORITY 1   // volt: 3
+#define SYNC_TASK_PRIORITY 1   // was: 3
 #define WEATHER_STRING_L   254
 
 #ifdef HEAP_DBG
@@ -166,7 +166,7 @@ bool TimeKeeper::loop1() {  // core1 (player)
     if (!eligible) {
       _stallSince       = 0;
       _restartBackoffMs = 5000;
-      return true; // csak ebből a blokkból "lépünk ki" gondolatban; a függvény megy tovább
+      return true; // exits this watchdog block only; the function continues
     }
 
     uint32_t buf = player.inBufferFilled();
@@ -236,7 +236,7 @@ if (config.store.directChannelChange) {
     int st = display.currentPlItem;
     config.lastStation(st);
 
-    // csak kérjük a PLAY-t, NEM indítjuk azonnal
+    // Request PLAY, but don't start immediately.
     player.pendingPlayStation = st;
     player.pendingPlayAt = millis() + 400;   // 250ms: kijelző "lecseng"
   }
@@ -284,7 +284,7 @@ void TimeKeeper::_upClock() {
   localtime_r(&now, &network.timeinfo);
   #endif
 
-  if (network.timeinfo.tm_year < 120) return;  // 2020-nál korábbi = nem szinkronizált idő
+  if (network.timeinfo.tm_year < 120) return;  // earlier than 2020 -> time not synced
 
   if (display.ready()) {
     display.putRequest(CLOCK);

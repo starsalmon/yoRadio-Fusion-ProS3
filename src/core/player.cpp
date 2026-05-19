@@ -1,4 +1,4 @@
-// Módosítva "vol_step" by Tamás Várai
+// Modified ("vol_step") by Tamás Várai
 #include "options.h"
 #include "player.h"
 #include "config.h"
@@ -520,13 +520,15 @@ void Player::_play(uint16_t stationId) {
   if(!config.prepareForPlaying(stationId)) return;
   _loadVol(config.store.volume);
   
+  // Mark "connection in progress" so other network users can optionally wait.
+  connproc = false;
   bool isConnected = false;
   if (config.getMode() == PM_SDCARD && SDC_CS != 255) {
-    // A connecttoFS NEM támogat start offsetet SD-n → -1, indítás pozícionálás nélkül.
+    // connecttoFS doesn't support start offsets for SD -> use -1 and start from the beginning.
     isConnected = connecttoFS(sdman, config.station.url, -1);
   } else {
 #ifdef USE_DLNA //DLNA mod
-  // DLNA is WEB engine, de nem írjuk felül a mode-ot
+  // DLNA uses the web engine, but we must not overwrite the persisted mode.
     if (config.store.playlistSource != PL_SRC_DLNA)
 #endif
     {
@@ -572,6 +574,7 @@ void Player::browseUrl(){
   display.putRequest(PSTOP);
   setOutputPins(false);
   config.setTitle(LANG::const_PlConnect);
+  connproc = false;
   if (connecttohost(burl)){
     _status = PLAYING;
     config.setTitle("");
@@ -585,6 +588,7 @@ void Player::browseUrl(){
     snprintf(config.tmpBuf, sizeof(config.tmpBuf), "Error connecting to %.128s", burl); setError();
     _stop(true);
   }
+  connproc = true;
   //memset(burl, 0, MQTT_BURL_SIZE);
 }
 #endif

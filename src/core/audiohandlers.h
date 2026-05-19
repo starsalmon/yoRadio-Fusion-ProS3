@@ -47,20 +47,19 @@ static void safeStrCopy(char *dst, const char *src, size_t dstSize) {
   if (!dst || !src || dstSize == 0) {
     return;
   }
-  strlcpy(dst, src, dstSize);  // biztos null-terminált tesz
+  strlcpy(dst, src, dstSize);  // always null-terminates
 }
 
 /* 
- * Ha van esemény, ezt futtatja a Schreibfaul1 audio könyvtár.
- * Profi, event-alapú verzió: elsődlegesen m.e (event_t) alapján dolgozik,
- * m.s csak debugra / kompatra használjuk.
+ * Called by the Schreibfaul1 audio library when it emits an event.
+ * We primarily dispatch on m.e (event type); m.s is only used for debug/compat.
  */
 void my_audio_info(Audio::msg_t m) {
   // SD resume: "stream ready" can arrive before Audio-Data-Start/Audio-Length.
   // Defer the seek until we have bounds to avoid invalid seeks causing reboots.
   static bool sdSeekPending = false;
 
-  // Biztonságos stringek a kiíráshoz
+  // Safe strings for logging / parsing
   const char *s = (m.s != nullptr) ? m.s : "";
   const char *msg = (m.msg != nullptr) ? m.msg : "";
 
@@ -73,19 +72,18 @@ void my_audio_info(Audio::msg_t m) {
     Serial.printf("##AUDIO -> e:%d  m.s:'%s'  m.msg:'%s'\n", static_cast<int>(m.e), s, msg);
   #endif
 
-  // Ha a kimenet zárolva, semmit nem frissítünk
+  // If output is locked, don't update UI/state from audio events.
   if (player.lockOutput) {
     return;
   }
 
-  // Ha nincs értelmes üzenet, nincs mit feldolgozni
+  // If there's no usable message, there's nothing to process.
   if (!msg) {
     return;
   }
 
-  // META letiltás: ha a csatorna neve ponttal kezdődik,
-  // akkor a title mindig a listában tárolt név lesz,
-  // és nem használunk stream metaadatot.
+  // META disable (legacy idea): if station name starts with '.', keep the list title
+  // and ignore stream metadata.
   /*if (config.station.name[0] == '.') {
     config.setTitle(config.station.name + 1);
     metaOff = true;
@@ -93,24 +91,24 @@ void my_audio_info(Audio::msg_t m) {
     metaOff = false;
   }*/
 
-  // META StationName SKIP: csak az állomásnév meta frissítést tiltjuk.
-  // Title meta (title1/title2) továbbra is jöhet.
+  // META StationName SKIP: only suppress station-name updates from metadata.
+  // Title metadata (title1/title2) can still update.
   const bool skipStationName = (config.store.metaStNameSkip != 0);
 
-  // Általános hibák, amiket bármi eseményben figyelhetünk
+  // Generic errors we can detect in any event text.
   if (strstr(msg, "Account already in use") != nullptr || strstr(msg, "HTTP/1.0 401") != nullptr) {
     player.setError(msg);
   }
 
   // --------------------------------------------------------------------
-  // EVENT-ALAPÚ FELDOLGOZÁS (m.e alapján)
+  // Event-driven processing (based on m.e)
   // --------------------------------------------------------------------
   switch (m.e) {
 
-    // ----- Általános információk, formátum, SD hossz stb. -----
+    // ----- General info: format, SD length, etc. -----
     case Audio::evt_info:
     {
-      // Formátum felismerés
+      // Format detection
       if (strstr(msg, "MPEG-1 Layer III") != nullptr) {
         config.setBitrateFormat(BF_MP3);
         display.putRequest(DBITRATE);
@@ -224,7 +222,7 @@ void my_audio_info(Audio::msg_t m) {
     // ----- ICY URL -----
     case Audio::evt_icyurl:
     {
-      // Jelenleg nincs külön feldolgozás, de ha kell, itt bővíthető
+      // No special handling right now; extend here if needed.
       // if (config.store.audioinfo) { ... }
     } break;
 
@@ -233,7 +231,7 @@ void my_audio_info(Audio::msg_t m) {
     {
       // A msg általában pl.: "APIC found at pos 446"
       // Ha egyszer cover art feldolgozás lesz, az ide kerül.
-      // Jelenleg csak logoljuk:
+      // For now, we don't act on it (optional logging only).
       // telnet.printf("##AUDIO.IMG#: %s\r\n", msg);
     } break;
 
@@ -259,16 +257,15 @@ void my_audio_info(Audio::msg_t m) {
     case Audio::evt_icylogo:
     case Audio::evt_lyrics:
     default:
-      // Jelenleg nincs külön kezelés, de a debug logban látszik
+      // No special handling; visible in verbose debug logs.
       break;
   }
 
   // --------------------------------------------------------------------
-  // 2) EXTRA SZÖVEG ALAPÚ ÉRTELMEZÉS (m.msg tartalma alapján),
-  //    ami nem szorosan event-típushoz kötött.
+  // 2) Extra text parsing (based on m.msg content), not tied to a specific event.
   // --------------------------------------------------------------------
 
-  // icy-name: ... → sok rádió ilyen formában küldi a nevet
+  // icy-name: ... -> many stations send the name like this
   if (!skipStationName) {
     const char *ici = strstr(msg, "icy-name: ");
     if (ici != nullptr) {
@@ -284,11 +281,10 @@ void my_audio_info(Audio::msg_t m) {
   }
 }
 
-/* 
- * Ha megállítottuk a zene lejátszását SD módban és újraindítjuk, 
- * akkor a lejátszás az elejéről kezdődne. 
- * Ha megérkezik a "stream ready" üzenet, akkor vissza kell ugrani
- * a mentett stop pozícióra.
+/*
+ * SD resume: if we stop playback in SD mode and then restart, playback would
+ * normally begin from the start. When the "stream ready" event arrives, we can
+ * seek back to the saved stop position.
  */
 void seekSD() {
   // TEMP: hard-disable SD resume seeking while we stabilize SD playback.
@@ -561,8 +557,8 @@ void audio_progress(uint32_t startpos, uint32_t endpos) {
   player.sd_max = endpos;
   netserver.requestOnChange(SDLEN, 0);
 }
-// Az audiohelpers.h fájlban van deklarálva.
-// Hexadecimális kiiratás debug használatra.
+// Declared in audiohelpers.h
+// Hex dump for debugging.
 void hexDump(const char *label, const char *s) {
   Serial.printf("%s (len=%u): %s --> ", label, strlen(s), s);
   const unsigned char *p = (const unsigned char *)s;
@@ -590,13 +586,13 @@ bool cleanMeta(const char *src, char *dst, size_t dstSize) {
   if (!src || !dst || dstSize == 0) {
     return false;
   }
-  // bemásoljuk lokális bufferbe
+  // Copy into a local buffer.
   strlcpy(dst, src, dstSize);
-  // BOM eltávolítás
+  // Remove BOM.
   removeBOM(dst);
-  // UTF-8 takarítás
+  // UTF-8 cleanup.
   _utf8_clean(dst);
-  // csak ellenőrzés (nem módosít):
+  // validation only (no mutation beyond cleanup):
   if (!printable(dst)) {
     return false;
   }
@@ -608,7 +604,7 @@ void _utf8_clean(char *s) {
   char *out = s;
   while (*in) {
     unsigned char c = (unsigned char)*in;
-    // --- ZERO-WIDTH karakterek kiszűrése ---
+    // --- Filter zero-width characters ---
     if (c == 0xE2 && (unsigned char)in[1] == 0x80 && ((unsigned char)in[2] == 0x8B || (unsigned char)in[2] == 0x8C || (unsigned char)in[2] == 0x8D)) {
       in += 3;
       continue;
@@ -618,8 +614,7 @@ void _utf8_clean(char *s) {
       in += 2;
       continue;
     }
-    // --- MINDEN UTF-8 maradjon érintetlen ---
-    // Csak másoljuk byte-onként
+    // Leave UTF-8 intact; copy byte-for-byte.
     *out++ = *in++;
   }
   *out = '\0';

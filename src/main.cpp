@@ -4,6 +4,9 @@
 #include "pluginsManager/pluginsManager.h"
 #include "plugins/backlight/backlight.h" // backlight plugin
 #include "plugins/ledstrip/ledstrip.h" // ledstrip plugin
+#ifdef USE_NEOSTATUS_PLUGIN
+  #include "plugins/neostatus/neostatus.h"
+#endif
 #include "core/telnet.h"
 #include "core/player.h"
 #include "core/display.h"
@@ -99,6 +102,9 @@ void setup() {
 #endif
 #ifdef USE_LEDSTRIP_PLUGIN
   ledstripPluginInit();
+#endif
+#ifdef USE_NEOSTATUS_PLUGIN
+  neostatusPluginInit();
 #endif
 #if (BRIGHTNESS_PIN!=255)
   backlightPluginInit();
@@ -237,6 +243,7 @@ void loop() {
 
   static uint32_t s_lastPlayingMs = 0;
   static uint32_t s_lastPowerCheckMs = 0;
+  static uint32_t s_lastLowBattWarnMs = 0;
   const uint32_t now = millis();
 
   if (s_lastPlayingMs == 0) s_lastPlayingMs = now;
@@ -248,12 +255,29 @@ void loop() {
 
     if (battery_is_ready()) {
       const float pct = battery_get_percent();
+      if (!battery_usb_present()) {
+        const float warnPct = (float)AUTO_DEEPSLEEP_BATT_PCT + 2.0f;
+        if (pct > 0.1f && pct <= warnPct && pct > (float)AUTO_DEEPSLEEP_BATT_PCT) {
+          if (s_lastLowBattWarnMs == 0 || (uint32_t)(now - s_lastLowBattWarnMs) >= 60000u) {
+            s_lastLowBattWarnMs = now;
+          #ifdef USE_NEOSTATUS_PLUGIN
+            neostatusPulseLowBattery();
+          #endif
+          }
+        }
+      }
+
       if (pct > 0.1f && pct <= (float)AUTO_DEEPSLEEP_BATT_PCT && !battery_usb_present()) {
         Serial.printf("Auto deep sleep: battery low (%.1f%%) and no 5V.\n", pct);
         display.putRequest(NEWMODE, SLEEPING);
         player.sendCommand({PR_STOP, 0});
         delay(150);
         Serial.flush();
+      #ifdef USE_NEOSTATUS_PLUGIN
+        // Low battery warning right before forced sleep.
+        neostatusPulseLowBattery();
+        delay(1600);
+      #endif
         config.doSleepW();
       }
     }

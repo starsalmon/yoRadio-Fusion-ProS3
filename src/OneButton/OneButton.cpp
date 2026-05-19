@@ -48,6 +48,13 @@ OneButton::OneButton(const int pin, const boolean activeLow, const bool pullupAc
     _buttonPressed = HIGH;
   } // if
 
+  // Some projects use 255 as a sentinel for "disabled pin". Avoid calling pinMode()
+  // with an invalid pin number, which triggers boot-time warnings on ESP32.
+  if (pin < 0 || pin >= 255) {
+    _pin = -1;
+    return;
+  }
+
   if (pullupActive) {
     // use the given pin as input and activate internal PULLUP resistor.
     pinMode(pin, INPUT_PULLUP);

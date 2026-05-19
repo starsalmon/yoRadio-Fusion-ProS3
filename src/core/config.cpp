@@ -11,6 +11,9 @@
 #include "rtcsupport.h"
 #include "bt_companion.h"
 #include "../battery.h"
+#ifdef USE_NEOSTATUS_PLUGIN
+  #include "../plugins/neostatus/neostatus.h"
+#endif
 #include "../displays/defaults.h" 
 #include "../displays/tools/l10n.h"
 #ifdef USE_SD
@@ -1795,6 +1798,11 @@ void Config::doSleep() {
 }
 
 void Config::doSleepW() {
+#ifdef USE_NEOSTATUS_PLUGIN
+    // Cosmetic cue: pulse before entering deep sleep.
+    neostatusPulseSleep();
+    delay(1100);
+#endif
     // Best-effort: ensure the companion goes to deep sleep too.
     btcompanion_setEnabled(false);
     battery_prepare_for_deepsleep();

@@ -1,6 +1,6 @@
 ## TODO / Roadmap
 
-- **Fix up invalid pin warnings at boot**: find what is generating `__pinMode(): Invalid IO 255 selected`
+- **Fixed invalid pin warnings at boot**: `OneButton` now treats pin `255` as “disabled” and skips `pinMode()` (prevents `__pinMode(): Invalid IO 255 selected`)
 - **Fix SD → WEB → HLS AAC stall properly** (not just workarounds)
 - **More controls via MQTT**: add other controls that only exist in the web UI (tone, smart start, auto dimming, screensaver), and include some fork-only features too
 - **Test/refine low battery cutoff**: not properly tested
@@ -11,8 +11,8 @@
 - **SD playback resume**: track resume is implemented; resume *position* still WIP
 - **Album art**: revisit later (needs stable decoder/task model)
 - **Bluetooth output UX polish** (Companion ESP32 A2DP TX):
-  - NeoLED statuses: booting, network connect, SD card indexing, BT connecting/disconnecting
-    - While waiting for BT connect: slow blue pulse
+  - **NeoLED statuses**: booting, network connect, SD card indexing, BT connecting/disconnecting (**DONE**)
+    - While waiting for BT connect: **slow blue pulse** (smooth “breathing” pulse, not a flash)
   - Speed up BT connect (currently can take ~30s depending on speaker)
   - Consider a cleaner “connected/disconnected” status message from the companion (optional; ProS3 currently polls `STATUS`)
   - Implement **BT AVRCP controls** (if supported): play/pause, skip, volume via the speaker/headphones buttons

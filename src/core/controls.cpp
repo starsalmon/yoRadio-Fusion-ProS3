@@ -851,7 +851,7 @@ void onBtnDoubleClick(int id) {
           // volume has time to propagate through the audio pipeline before unmuting.
           btcompanion_setEnabled(false);
           player.setSpeakerForceMuted(true);
-          player.scheduleSpeakerUnmute(500u);
+          player.scheduleSpeakerUnmute(SPEAKER_UNMUTE_DELAY_MS);
         }
 #else
         // Companion feature not compiled in: ignore output toggles.

@@ -405,6 +405,22 @@ static void mqttPublishHADiscovery() {
     pubCfg("number", "brightness", cfg);
   }
 
+  // Station number as a numeric input (1..N).
+  // Keep max generous so we don't need to republish discovery when playlists change.
+  {
+    char cfg[650];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Station #\",\"unique_id\":\"%s_station_number\","
+             "\"state_topic\":\"%sstation_number\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/station_number\","
+             "\"min\":1,\"max\":9999,\"step\":1,\"mode\":\"box\","
+             "\"icon\":\"mdi:numeric\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "station_number", cfg);
+  }
+
   // --- Cleanup old entities (publish empty retained config to remove) ---
   {
     // Old toggle-mode button (replaced by select)
@@ -442,6 +458,7 @@ static void mqttHADiscoveryTask(void*) {
 } // namespace
 
 static void mqttPublishTrackTime(bool force = false);
+static void mqttPublishStationNumber(bool force = false);
 
 void connectToMqtt() {
   #if defined(MQTT_DISABLE) && MQTT_DISABLE
@@ -494,6 +511,9 @@ void onMqttConnect(bool sessionPresent) {
   zeroBuffer();
   sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/playback_mode");
   mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/station_number");
+  mqttClient.subscribe(topic, 2);
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   zeroBuffer();
   sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/output_device");
@@ -514,6 +534,7 @@ void onMqttConnect(bool sessionPresent) {
   mqttPublishBtSinkName(true);
   // Ensure HA gets an initial value immediately on connect.
   mqttPublishTrackTime(true);
+  mqttPublishStationNumber(true);
 }
 
 void mqttPublishStatus() {
@@ -565,6 +586,7 @@ void mqttPublishStatus() {
       snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "mode");
       mqttClient.publish(t2, 0, true, mode);
     }
+    mqttPublishStationNumber(false);
     mqttPublishOutputDevice(false);
     mqttPublishBtSinkName(false);
   }
@@ -603,8 +625,28 @@ static void mqttPublishTrackTime(bool force) {
   mqttClient.publish(t2, 0, true, buf);
 }
 
+static void mqttPublishStationNumber(bool force) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+  static int s_last = -1;
+  const int cur = (int)config.lastStation();
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  char buf[16];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "station_number");
+  snprintf(buf, sizeof(buf), "%d", cur);
+  mqttClient.publish(t2, 0, true, buf);
+}
+
 void mqttLoop() {
   mqttPublishTrackTime(false);
+  mqttPublishStationNumber(false);
   mqttPublishOutputDevice(false);
   mqttPublishBtSinkName(false);
 }
@@ -679,6 +721,34 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
   if (len == 0) return;
+
+  // Dedicated command topic: <root>cmd/station_number (HA number)
+  {
+    char stTopic[160];
+    snprintf(stTopic, sizeof(stTopic), "%s%s", MQTT_ROOT_TOPIC, "cmd/station_number");
+    if (strcmp(topic, stTopic) == 0) {
+      const size_t n = (len < 15) ? len : 15;
+      char buf[16];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+      int sb = atoi(s);
+      uint16_t cs = config.playlistLength();
+      if (cs == 0) return;
+      if (sb < 1) sb = 1;
+      if ((uint16_t)sb > cs) sb = (int)cs;
+
+      // Persist immediately so HA reflects the selection right away.
+      config.lastStation((uint16_t)sb);
+      mqttPublishStationNumber(true);
+      mqttPublishStatus();
+
+      player.sendCommand({PR_PLAY, (uint16_t)sb});
+      return;
+    }
+  }
 
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   // Dedicated command topic: <root>cmd/bt_sink_name (HA text)
@@ -757,7 +827,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       } else {
         btcompanion_setEnabled(false);
         player.setSpeakerForceMuted(true);
-        player.scheduleSpeakerUnmute(500u);
+        player.scheduleSpeakerUnmute(SPEAKER_UNMUTE_DELAY_MS);
       }
 
       mqttPublishOutputDevice(true);

@@ -62,14 +62,16 @@ void yoradio_on_setup() {
       #endif
     #endif
 
-#if defined(BUILTIN_NEOPIXEL_PIN) && (BUILTIN_NEOPIXEL_PIN != 255)
+#if defined(BUILTIN_NEOPIXEL_PIN) && (BUILTIN_NEOPIXEL_PIN != 255) && !defined(USE_NEOSTATUS_PLUGIN)
     // Ensure the onboard NeoPixel is off (WS2812 can latch random colors if its
-    // data line floats during boot). Keep this minimal; future behavior can be
-    // implemented separately.
+    // data line floats during boot).
+    //
+    // When the NeoStatus plugin is enabled, it owns the NeoPixel; avoid creating
+    // a second Adafruit_NeoPixel instance on the same pin.
     {
         static Adafruit_NeoPixel s_px(1, BUILTIN_NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
         s_px.begin();
-        s_px.setBrightness(BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS); // low brightness even if something sets a color later
+        s_px.setBrightness(BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS);
         s_px.clear();
         s_px.show();
         delay(1);

@@ -51,7 +51,20 @@
 // prevent it latching random colors from boot-time pin noise.
 #define BUILTIN_NEOPIXEL_PIN 18
 // Brightness used only while clearing the onboard NeoPixel at boot.
-#define BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS 100
+#define BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS 50
+
+#define NEO_STATUS_ENABLE 1 // Enable the NeoStatus plugin
+#define BUILTIN_NEOPIXEL_BOOT_DELAY_MS 2800 // Delay the boot pulses so they align with the splash/logo drawing.
+#define BUILTIN_NEOPIXEL_BOOT_RGB 128, 0, 255
+#define BUILTIN_NEOPIXEL_NET_RGB 0, 255, 80
+#define BUILTIN_NEOPIXEL_SD_RGB 255, 180, 0
+#define BUILTIN_NEOPIXEL_BT_SEARCH_RGB 0, 0, 255
+#define BUILTIN_NEOPIXEL_BT_CONN_RGB 0, 0, 255
+#define BUILTIN_NEOPIXEL_RADIO_START_RGB 255, 255, 255
+#define BUILTIN_NEOPIXEL_SPK_SELECT_RGB 0, 255, 160
+#define BUILTIN_NEOPIXEL_WIFI_LOST_RGB 255, 140, 0
+#define BUILTIN_NEOPIXEL_SLEEP_RGB 128, 0, 255
+#define BUILTIN_NEOPIXEL_LOW_BATT_RGB 255, 0, 0
 
 // Optional cap for the ledstrip plugin (separate from LEDSTRIP_BRIGHTNESS).
 // Uncomment if you ever enable `USE_LEDSTRIP_PLUGIN`.
@@ -59,6 +72,7 @@
 //#define USE_LEDSTRIP_PLUGIN
 //#define LEDSTRIP_PIN    48      // GPIO pin connected to LED data line
 //#define LEDSTRIP_COUNT  144     // total number of LEDs (must be even)
+
 /*****************************************/
 //#define DSP_MODEL DSP_ILI9486
 //#define DSP_MODEL DSP_ILI9488

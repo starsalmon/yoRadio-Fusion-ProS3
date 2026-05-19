@@ -96,6 +96,18 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
   - Deep sleep made reliable (task shutdown ordering)
   - Logging made optional/quiet by default
   - Corrected BT target matching so `CONNECT <name>` works deterministically
+- Added built-in **NeoPixel status LED** animations (ProS3 onboard WS2812):
+  - Boot: purple **3-pulse** sequence (optionally delayed via `NEO_BOOT_DELAY_MS`)
+  - Network connect: green **3-pulse** sequence
+  - Wi‑Fi lost / reconnecting: amber **2‑pulse** sequence on CONNECTED → not connected
+  - SD playback start: yellow **2-pulse** sequence
+  - Radio (web) start: white **2-pulse** sequence
+  - Speaker select: greener aqua **2‑pulse** sequence (red reserved for low battery)
+  - Deep sleep entering: purple **2‑pulse** sequence, then off
+  - Low battery warning: red **3‑pulse** sequence (rate-limited to ~once/min when near cutoff; also shown immediately before forced sleep)
+  - BT SEARCHING: slow **pure blue** “breathing” pulse (smooth pulse, not a flash)
+  - BT CONNECTED (waiting for audio): **fast pure blue** pulse (continuous) until AUDIO arrives
+  - BT AUDIO: quick pure blue pulse (event), no constant pulse
 - Current user-observed behavior:
   - BT audio is stable once connected
   - Switching to BT can take ~30s (ongoing UX improvement area: status LED + connection-state feedback + faster connect path)

@@ -58,6 +58,9 @@ platformio device monitor -b 115200
   - Wake pins: `WAKE_PIN1` + optional `WAKE_PIN2` (RTC GPIO only) via ext1 wake
   - Auto deep sleep (when wake pins are configured): `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT`
 - **5V present sense**: `CHARGE_SENSE_PIN` + charging icon in footer when 5V is present
+- **Built-in NeoPixel status LED (ProS3 WS2812)**:
+  - Enabled when `BUILTIN_NEOPIXEL_PIN` is set (ProS3: GPIO18) and `NEO_STATUS_ENABLE 1`
+  - All colors/timing/pulse counts are easy to fine-tune from `myoptions.h` (see “NeoPixel status tuning knobs” below)
 - **Offline SD playback + footer connectivity UX**:
   - Switch into SD mode without needing Wi‑Fi (avoid unnecessary reboots)
   - Footer IP shows `no IP` when disconnected instead of `0.0.0.0`
@@ -103,6 +106,7 @@ MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes
 - **State topics (retained)** (assuming `MQTT_ROOT_TOPIC` already ends with `/`):
   - `availability`: `online|offline` (LWT is `offline`)
   - `status`: JSON including playback + station + mode + brightness
+  - `station_number`: `1..N` (current station number for the active playlist/source)
   - `mode`: `Web Streaming|SD Card|DLNA`
   - `output_device`: `Speaker|Bluetooth` (only meaningful when `BT_COMPANION_ENABLE != 0`)
   - `bt_sink_name`: current BT target speaker name (only when `BT_COMPANION_ENABLE != 0`)
@@ -117,6 +121,7 @@ MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes
   - `cmd/sleep`: enter deep sleep (recommended vs `command`)
   - `cmd/volume`: `0..100`
   - `cmd/brightness`: `0..100`
+  - `cmd/station_number`: `1..N` (start playing station number)
   - `cmd/playback_mode`: `Web Streaming|SD Card|DLNA` (Home Assistant “select”)
   - `cmd/output_device`: `Speaker|Bluetooth` (Home Assistant “select”, only when `BT_COMPANION_ENABLE != 0`)
   - `cmd/bt_sink_name`: set BT target speaker name (Home Assistant “text”, only when `BT_COMPANION_ENABLE != 0`)
@@ -194,6 +199,31 @@ All the usual “turn on logging” knobs live in `myoptions.h` under `/* DIAGNO
 - **Controls polling task (optional)**:
   - Defaults to “poll on every Arduino loop”
   - You can experiment with a separate polling task via `CONTROLS_TASK_ENABLE`
+
+## NeoPixel status tuning knobs (ProS3)
+
+If you have `BUILTIN_NEOPIXEL_PIN` defined (ProS3: GPIO18), this fork can run a small “NeoStatus” animation engine for a single WS2812 pixel.
+
+- **Enable/disable**
+  - `NEO_STATUS_ENABLE 1` (set `0` to disable)
+  - `BUILTIN_NEOPIXEL_STATUS_BRIGHTNESS` (0..255) controls overall brightness (defaults to `BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS` if present)
+
+- **Colors** (override in `myoptions.h`)
+  - Preferred “easy to find” names:
+    - `BUILTIN_NEOPIXEL_BOOT_RGB`
+    - `BUILTIN_NEOPIXEL_NET_RGB`
+    - `BUILTIN_NEOPIXEL_SD_RGB`
+    - `BUILTIN_NEOPIXEL_RADIO_START_RGB`
+    - `BUILTIN_NEOPIXEL_SPK_SELECT_RGB`
+    - `BUILTIN_NEOPIXEL_WIFI_LOST_RGB`
+    - `BUILTIN_NEOPIXEL_SLEEP_RGB`
+    - `BUILTIN_NEOPIXEL_LOW_BATT_RGB`
+    - `BUILTIN_NEOPIXEL_BT_SEARCH_RGB`
+    - `BUILTIN_NEOPIXEL_BT_CONN_RGB`
+  - Internal equivalent names (also supported): `NEO_*_RGB`
+
+- **Timing**
+  - Preferred: `BUILTIN_NEOPIXEL_BOOT_DELAY_MS` (alias of `NEO_BOOT_DELAY_MS`)
 
 ## Known issues
 

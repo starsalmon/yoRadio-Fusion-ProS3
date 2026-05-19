@@ -159,6 +159,16 @@ static void formatUtf8AsAsciiLabel(const char* in, char* out, size_t outSz) {
       continue;
     }
 
+    // Special-case: render SSID 👾 (U+1F47E) as a custom classic-font glyph.
+    // This keeps the boot screen readable while still "showing the emoji".
+    if (cp == 0x1F47Eu) {
+      if ((o + 1) >= outSz) break;
+      out[o++] = (char)0x0C; // custom glyph slot in patched glcdfont_EN.c
+      out[o] = '\0';
+      p += adv;
+      continue;
+    }
+
     // Non-ASCII: represent as U+XXXX / U+1F47E so classic fonts don't render garbage.
     char tmp[16];
     if (cp <= 0xFFFFu) snprintf(tmp, sizeof(tmp), "U+%04lX", (unsigned long)cp);

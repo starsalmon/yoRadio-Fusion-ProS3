@@ -68,7 +68,8 @@ platformio device monitor -b 115200
 - **Display tuning**:
   - `TFT_SPI_FREQ` is used by the ILI9341 driver and logged at boot as `##[BOOT]# TFT_SPI_FREQ <value>`
 - **Unicode SSIDs on boot screen**:
-  - The classic boot font can’t render emoji; non‑ASCII SSID characters are shown as `U+XXXX` (e.g. 👾 → `U+1F47E`) to avoid garbled glyphs.
+  - The classic boot font can’t render arbitrary emoji; non‑ASCII SSID characters are shown as `U+XXXX` to avoid garbled glyphs.
+  - Special case: 👾 (U+1F47E) is rendered as a built-in custom glyph, so `"Connecting to 👾"` looks right.
 - **Date format mapping fixed (web UI + TFT)**: `dateFormat` is now consistent (see below)
 - **Station logos (SPIFFS `.ylg`)**:
   - Logos are generated from `images_src/station_logos/` into `data/logos/*.ylg`

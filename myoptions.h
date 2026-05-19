@@ -190,7 +190,7 @@
 
 // SD resume: when switching into SD mode, auto-play the last SD track.
 // Set to 0 to disable.
-#define SD_AUTORESUME_ON_MODE_SWITCH 1
+#define SD_AUTORESUME_ON_MODE_SWITCH 0
 
 // Station logos + album art (runtime toggle default).
 // Set to 0 if you want them hidden by default after flashing.

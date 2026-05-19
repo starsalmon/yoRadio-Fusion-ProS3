@@ -1,0 +1,365 @@
+#include "podcasts.h"
+
+#include "config.h"
+#include "display.h"
+#include "network.h"
+#include "player.h"
+
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+
+namespace {
+
+static TaskHandle_t s_podTask = nullptr;
+static bool s_forceBuild = false;
+
+static void sanitizeTsvField(const char* in, char* out, size_t outSz) {
+  if (!out || outSz == 0) return;
+  out[0] = '\0';
+  if (!in) return;
+  size_t o = 0;
+  for (size_t i = 0; in[i] && (o + 1) < outSz; i++) {
+    const char c = in[i];
+    if (c == '\t' || c == '\r' || c == '\n') {
+      out[o++] = ' ';
+    } else {
+      out[o++] = c;
+    }
+  }
+  out[o] = '\0';
+  // trim right
+  while (o > 0 && out[o - 1] == ' ') out[--o] = '\0';
+}
+
+static void decodeBasicXmlEntities(char* s) {
+  if (!s) return;
+  // Minimal in-place decoding for common entities in titles.
+  struct Ent { const char* from; const char* to; };
+  static const Ent ents[] = {
+    {"&amp;", "&"},
+    {"&lt;", "<"},
+    {"&gt;", ">"},
+    {"&quot;", "\""},
+    {"&apos;", "'"},
+  };
+
+  for (const auto& e : ents) {
+    for (;;) {
+      char* p = strstr(s, e.from);
+      if (!p) break;
+      const size_t fromLen = strlen(e.from);
+      const size_t toLen = strlen(e.to);
+      // move tail left/right as needed
+      if (toLen <= fromLen) {
+        memcpy(p, e.to, toLen);
+        memmove(p + toLen, p + fromLen, strlen(p + fromLen) + 1);
+      } else {
+        // Expand only if space; otherwise just stop decoding this instance.
+        const size_t tailLen = strlen(p + fromLen);
+        const size_t curLen = strlen(s);
+        if (curLen + (toLen - fromLen) + 1 >= BUFLEN * 3) return;
+        memmove(p + toLen, p + fromLen, tailLen + 1);
+        memcpy(p, e.to, toLen);
+      }
+    }
+  }
+}
+
+static bool extractTagText(const String& item, const char* tag, char* out, size_t outSz) {
+  if (!out || outSz == 0) return false;
+  out[0] = '\0';
+  const String open = String("<") + tag + ">";
+  const String close = String("</") + tag + ">";
+  int s = item.indexOf(open);
+  if (s < 0) return false;
+  s += open.length();
+  int e = item.indexOf(close, s);
+  if (e < 0) return false;
+  String t = item.substring(s, e);
+  t.trim();
+  // CDATA
+  if (t.startsWith("<![CDATA[")) {
+    const int end = t.indexOf("]]>");
+    if (end > 0) t = t.substring(9, end);
+  }
+  sanitizeTsvField(t.c_str(), out, outSz);
+  decodeBasicXmlEntities(out);
+  return out[0] != '\0';
+}
+
+static bool extractAttrUrl(const String& item, const char* tag, const char* attr, char* out, size_t outSz) {
+  if (!out || outSz == 0) return false;
+  out[0] = '\0';
+  int t = item.indexOf(String("<") + tag);
+  if (t < 0) return false;
+  int end = item.indexOf(">", t);
+  if (end < 0) return false;
+  String head = item.substring(t, end);
+  const String needle = String(attr) + "=\"";
+  int a = head.indexOf(needle);
+  if (a < 0) return false;
+  a += needle.length();
+  int q = head.indexOf("\"", a);
+  if (q < 0) return false;
+  String u = head.substring(a, q);
+  u.trim();
+  sanitizeTsvField(u.c_str(), out, outSz);
+  return out[0] != '\0';
+}
+
+static bool parsePodcastLine(const char* line, char* name, size_t nameSz, char* url, size_t urlSz, uint16_t& limit) {
+  if (!line) return false;
+  // Robust format:
+  //   <show name><ws><http(s)://...><ws><episodes_to_list?>
+  // Supports TAB or spaces between fields; show name can contain spaces.
+  const char* s = line;
+  while (*s == ' ' || *s == '\t') s++;
+  if (*s == '\0' || *s == '#') return false;
+
+  const char* h = strstr(s, "https://");
+  if (!h) h = strstr(s, "http://");
+  if (!h) return false;
+
+  // Name is everything before the URL.
+  char n[96];
+  size_t nlen = (size_t)(h - s);
+  if (nlen >= sizeof(n)) nlen = sizeof(n) - 1;
+  memcpy(n, s, nlen);
+  n[nlen] = '\0';
+
+  // URL is contiguous until whitespace.
+  const char* u0 = h;
+  const char* u1 = u0;
+  while (*u1 && *u1 != ' ' && *u1 != '\t' && *u1 != '\r' && *u1 != '\n') u1++;
+  char u[256];
+  size_t ulen = (size_t)(u1 - u0);
+  if (ulen >= sizeof(u)) ulen = sizeof(u) - 1;
+  memcpy(u, u0, ulen);
+  u[ulen] = '\0';
+
+  // Optional limit after URL.
+  const char* p2 = u1;
+  while (*p2 == ' ' || *p2 == '\t') p2++;
+
+  sanitizeTsvField(n, name, nameSz);
+  sanitizeTsvField(u, url, urlSz);
+
+  limit = (*p2) ? (uint16_t)atoi(p2) : 5;
+  if (limit == 0) limit = 5;
+
+  return (name[0] != '\0' && url[0] != '\0');
+}
+
+static bool httpBeginForUrl(HTTPClient& http, const char* url) {
+  if (!url) return false;
+  if (strncmp(url, "https://", 8) == 0) {
+    static WiFiClientSecure s_client;
+    s_client.setInsecure();
+    return http.begin(s_client, url);
+  }
+  return http.begin(url);
+}
+
+} // namespace
+
+uint32_t podcasts_buildEpisodesPlaylist() {
+  if (network.status != CONNECTED) return 0;
+
+  File f = SPIFFS.open(PODCASTS_PATH, "r");
+  if (!f) {
+    Serial.printf("[POD] missing %s\n", PODCASTS_PATH);
+    return 0;
+  }
+
+  // Build to a temp file first, then atomically swap in.
+  // This avoids the UI trying to open a file we just deleted mid-draw.
+  SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+  File out = SPIFFS.open(PLAYLIST_PODCAST_TMP_PATH, "w");
+  if (!out) {
+    f.close();
+    Serial.printf("[POD] cannot create %s\n", PLAYLIST_PODCAST_TMP_PATH);
+    return 0;
+  }
+
+  uint32_t written = 0;
+  uint32_t sources = 0;
+
+  char line[384];
+  while (f.available()) {
+    size_t n = f.readBytesUntil('\n', line, sizeof(line) - 1);
+    line[n] = '\0';
+    if (n > 0 && line[n - 1] == '\r') line[n - 1] = '\0';
+    if (line[0] == '\0' || line[0] == '#') continue;
+
+    char show[96];
+    char feedUrl[256];
+    uint16_t lim = 0;
+    if (!parsePodcastLine(line, show, sizeof(show), feedUrl, sizeof(feedUrl), lim)) continue;
+    sources++;
+
+    HTTPClient http;
+    if (!httpBeginForUrl(http, feedUrl)) continue;
+    // Keep mode switching responsive; we can retry on next refresh.
+    http.setTimeout(4000);
+    const int code = http.GET();
+    if (code <= 0 || code >= 300) {
+      http.end();
+      delay(0);
+      continue;
+    }
+
+    WiFiClient* s = http.getStreamPtr();
+    if (!s) { http.end(); continue; }
+
+    uint16_t got = 0;
+    String buf;
+    buf.reserve(4096);
+    uint32_t lastRxMs = millis();
+
+    while (s->connected() && got < lim) {
+      if (!s->available()) {
+        if ((uint32_t)(millis() - lastRxMs) > 3000u) break;
+        delay(1);
+        continue;
+      }
+
+      while (s->available() && got < lim) {
+        const char c = (char)s->read();
+        lastRxMs = millis();
+        buf += c;
+        // Keep buffer bounded
+        if (buf.length() > 16384) {
+          buf.remove(0, buf.length() - 8192);
+        }
+
+        // Extract items
+        for (;;) {
+          int is = buf.indexOf("<item");
+          if (is < 0) break;
+          int ie = buf.indexOf("</item>", is);
+          if (ie < 0) break;
+          const int end = ie + 7;
+          String item = buf.substring(is, end);
+          buf.remove(0, end);
+
+          char title[192];
+          char url[320];
+          bool okTitle = extractTagText(item, "title", title, sizeof(title));
+
+          // Prefer HTTPS enclosure URLs when available (e.g. BBC provides both).
+          bool okUrl = extractAttrUrl(item, "ppg:enclosureSecure", "url", url, sizeof(url));
+          if (!okUrl) okUrl = extractAttrUrl(item, "enclosure", "url", url, sizeof(url));
+          if (!okUrl) okUrl = extractAttrUrl(item, "media:content", "url", url, sizeof(url));
+          if (!okTitle || !okUrl) continue;
+
+          char fullTitle[300];
+          snprintf(fullTitle, sizeof(fullTitle), "%s - %s", show, title);
+          // Don't sanitize in-place: sanitizeTsvField() clears the output first.
+          char safeTitle[300];
+          sanitizeTsvField(fullTitle, safeTitle, sizeof(safeTitle));
+
+          out.print(safeTitle);
+          out.print('\t');
+          out.print(url);
+          out.print('\t');
+          out.println('0');
+          written++;
+          got++;
+
+          if (got >= lim) break;
+        }
+      }
+      delay(0);
+    }
+
+    http.end();
+    delay(0);
+  }
+
+  out.flush();
+  out.close();
+  f.close();
+
+  if (written > 0) {
+    // Swap without a "missing file" window (avoids UI briefly seeing playlistLength()==0).
+    SPIFFS.remove(PLAYLIST_PODCAST_PATH ".bak");
+    const bool hadOld = SPIFFS.exists(PLAYLIST_PODCAST_PATH);
+    if (hadOld) {
+      if (!SPIFFS.rename(PLAYLIST_PODCAST_PATH, PLAYLIST_PODCAST_PATH ".bak")) {
+        Serial.println("[POD] rename old->bak failed; aborting update");
+        SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+        return 0;
+      }
+    }
+
+    if (!SPIFFS.rename(PLAYLIST_PODCAST_TMP_PATH, PLAYLIST_PODCAST_PATH)) {
+      Serial.println("[POD] rename tmp->final failed; restoring previous list");
+      SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+      if (hadOld) {
+        SPIFFS.remove(PLAYLIST_PODCAST_PATH);
+        (void)SPIFFS.rename(PLAYLIST_PODCAST_PATH ".bak", PLAYLIST_PODCAST_PATH);
+      }
+      return 0;
+    }
+
+    if (hadOld) {
+      SPIFFS.remove(PLAYLIST_PODCAST_PATH ".bak");
+    }
+  } else {
+    // Keep the last good list if refresh failed.
+    SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+  }
+
+  Serial.printf("[POD] built episodes: %lu (sources=%lu)\n",
+                (unsigned long)written, (unsigned long)sources);
+  return written;
+}
+
+static void podcastBuildTask(void*) {
+  const bool force = s_forceBuild;
+  s_forceBuild = false;
+
+  // Only build if it makes sense (or forced).
+  if (!force) {
+    if (network.status != CONNECTED) {
+      Serial.println("[POD] build skipped: not connected");
+      s_podTask = nullptr;
+      vTaskDelete(nullptr);
+      return;
+    }
+  }
+
+  Serial.println("[POD] build start");
+  const uint32_t wrote = podcasts_buildEpisodesPlaylist();
+  if (wrote > 0) {
+    config.indexPodcastPlaylist();
+    config.initPodcastPlaylist();
+    if (display.ready() && config.getMode() == PM_PODCAST && display.mode() == STATIONS) {
+      display.putRequest(DRAWPLAYLIST);
+    }
+  }
+  Serial.println("[POD] build done");
+  s_podTask = nullptr;
+  vTaskDelete(nullptr);
+}
+
+void podcasts_requestBuild(bool force) {
+  if (force) s_forceBuild = true;
+  if (s_podTask) return;
+
+  if (!force) {
+    // Keep this low-impact: only refresh while you're in Podcast mode and not playing.
+    if (config.getMode() != PM_PODCAST) return;
+    if (WiFi.status() != WL_CONNECTED) return;
+    if (!display.ready()) return;
+    if (player.isRunning()) return;
+  }
+
+  // Run on the app side, but separate from MQTT callbacks / UI loop.
+  xTaskCreatePinnedToCore(podcastBuildTask, "podBuild", 8192, nullptr, 1, &s_podTask, 0);
+}
+
+bool podcasts_buildInProgress() {
+  return s_podTask != nullptr;
+}
+

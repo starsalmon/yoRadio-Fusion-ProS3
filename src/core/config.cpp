@@ -10,6 +10,7 @@
 #include "telnet.h"
 #include "rtcsupport.h"
 #include "bt_companion.h"
+#include "podcasts.h"
 #include "../battery.h"
 #ifdef USE_NEOSTATUS_PLUGIN
   #include "../plugins/neostatus/neostatus.h"
@@ -170,13 +171,9 @@ void Config::init() {
   }
   EEPROM.commit();
 
+  // Clamp play mode (fork adds PM_PODCAST=2; DLNA is handled via playlistSource).
   store.play_mode = store.play_mode & 0b11;
-//DLNA modplus
-#ifdef USE_DLNA 
-#else
-  if(store.play_mode>1) store.play_mode=PM_WEB;
-#endif
-//DLNA modplus
+  if (store.play_mode > MAX_PLAY_MODE) store.play_mode = PM_WEB;
   _initHW();
   if (!SPIFFS.begin(true)) {
     Serial.println("##[ERROR]#\tSPIFFS Mount Failed");
@@ -317,56 +314,39 @@ void Config::_setupVersion(){
       saveValue(&store.volumeBt, (uint8_t)store.volume, false);
       break;
     }
+    case 18: {
+      // Add persisted podcast last-episode index (separate from radio lastStation).
+      saveValue(&store.lastPodcastStation, (uint16_t)1, false);
+      break;
+    }
   }
   currentVersion++;
   saveValue(&store.version, currentVersion);
 }
 
 void Config::toggleMode() {
+  // Physical mode button cycles only the 3 main playback modes:
+  // Web → SD → Podcast → Web ...
+  // DLNA selection remains separate (HA/Web UI).
 
-#ifdef USE_DLNA
-
-    // --- WEB módban vagyunk ---
-    if (getMode() == PM_WEB) {
-
-        if (store.playlistSource == PL_SRC_WEB) {
-
-            // WEB → DLNA
-            uint8_t oldSrc = store.playlistSource;
-            store.playlistSource = (uint8_t)PL_SRC_DLNA;
-
-            if (playlistLength() == 0) {
-              store.playlistSource = oldSrc;
-              changeMode(PM_SDCARD);
-              return;
-             }
-
-            saveValue(&store.playlistSource, (uint8_t)PL_SRC_DLNA, true, true);
-
-            initPlaylistMode();
-            display.resetQueue();
-            display.putRequest(NEWMODE, PLAYER);
-            display.putRequest(NEWSTATION);
-            return;
-        }
-        else {
-            // DLNA → SD
-            changeMode(PM_SDCARD);
-            return;
-        }
+  // Leaving WEB: always go back to the regular web playlist (not DLNA view).
+  if (getMode() == PM_WEB) {
+    if (store.playlistSource != PL_SRC_WEB) {
+      store.playlistSource = PL_SRC_WEB;
+      saveValue(&store.playlistSource, (uint8_t)PL_SRC_WEB, true, true);
     }
+    if (SDC_CS != 255 && sdman.cardPresent()) changeMode(PM_SDCARD);
+    else changeMode(PM_PODCAST);
+    return;
+  }
 
-    // --- SD → WEB ---
-    store.playlistSource = PL_SRC_WEB;
-    saveValue(&store.playlistSource, (uint8_t)PL_SRC_WEB, true, true);
-    changeMode(PM_WEB);
+  if (getMode() == PM_SDCARD) {
+    changeMode(PM_PODCAST);
+    return;
+  }
 
-#else
-
-    // No DLNA -> simple toggle
-    changeMode(getMode() == PM_SDCARD ? PM_WEB : PM_SDCARD);
-
-#endif
+  // Podcast (and unknown)
+  changeMode(PM_WEB);
 }
 
 void Config::changeMode(int newmode) { // DLNA mod
@@ -375,11 +355,17 @@ void Config::changeMode(int newmode) { // DLNA mod
     // Encoder double-click (call without explicit parameter)
     if (newmode == -1) {
         // DLNA cannot be selected from the encoder toggle.
-        newmode = (getMode() == PM_SDCARD) ? PM_WEB : PM_SDCARD;
+        if (getMode() == PM_WEB) {
+            newmode = (SDC_CS != 255) ? PM_SDCARD : PM_PODCAST;
+        } else if (getMode() == PM_SDCARD) {
+            newmode = PM_PODCAST;
+        } else { // Podcast (and unknown)
+            newmode = PM_WEB;
+        }
     }
 
     // Safety check
-    if (newmode < 0 || newmode >= 2) { // 0 --> radio; 1 --> SD; 2 --> DLNA
+    if (newmode < 0 || newmode > MAX_PLAY_MODE) { // 0 web, 1 SD, 2 podcast
         Serial.printf("##[ERROR]# changeMode invalid newmode: %d\n", newmode);
         return;
     }
@@ -388,6 +374,10 @@ void Config::changeMode(int newmode) { // DLNA mod
     bool pir = player.isRunning();
 
     if (SDC_CS == 255 && newmode == PM_SDCARD) { return; }
+    if (newmode == PM_PODCAST && WiFi.status() != WL_CONNECTED) {
+        Serial.println("##[ERROR]# Podcast mode requires Wi-Fi");
+        return;
+    }
 
     // If we're not connected (SoftAP / LOST), switching into SD mode should NOT reboot.
     // Rebooting here also "locks" the device into SD mode on subsequent boots.
@@ -397,9 +387,8 @@ void Config::changeMode(int newmode) { // DLNA mod
     }
 
     // IMPORTANT: if we're leaving SD while SD playback is active, stop first *before*
-    // unmounting the card. Without this, WEB playback (especially high bitrate AAC)
-    // can fail on the first attempt right after the mode switch.
-    if (oldMode == PM_SDCARD && newmode == PM_WEB) {
+    // unmounting the card. Without this, subsequent mode playback can fail.
+    if (oldMode == PM_SDCARD && newmode != PM_SDCARD) {
         player.lockOutput = true; // don't call stopInfo() (keeps SmartStart intact)
         player.sendCommand({PR_STOP, 0});
         uint32_t stopStart = millis();
@@ -408,10 +397,37 @@ void Config::changeMode(int newmode) { // DLNA mod
             delay(10);
         }
         if (player.isRunning()) {
-            Serial.println("##[WARN]# SD->WEB: forcing audio stop before SD unmount");
+            Serial.println("##[WARN]# SD->*: forcing audio stop before SD unmount");
             player.stopSong();
         }
         player.lockOutput = false;
+        delay(30);
+
+        // If we're leaving SD into a mode that won't immediately start something new,
+        // clear the old SD track metadata so the player screen doesn't look "stuck".
+        if (newmode == PM_PODCAST) {
+          setStation("yoRadio");
+          setTitle(LANG::const_PlStopped);
+        }
+    }
+
+    // If we're switching into Podcast mode from WEB/DLNA while something is playing,
+    // stop first so we don't keep streaming audio in the background.
+    if (oldMode != PM_SDCARD && newmode == PM_PODCAST && pir) {
+        player.lockOutput = true;
+        player.sendCommand({PR_STOP, 0});
+        uint32_t stopStart = millis();
+        while (player.isRunning() && (millis() - stopStart) < 2500) {
+            player.loop();
+            delay(10);
+        }
+        if (player.isRunning()) {
+            Serial.println("##[WARN]# WEB->POD: forcing audio stop");
+            player.stopSong();
+        }
+        player.lockOutput = false;
+        setStation("yoRadio");
+        setTitle(LANG::const_PlStopped);
         delay(30);
     }
 
@@ -431,7 +447,13 @@ void Config::changeMode(int newmode) { // DLNA mod
             if (!sdman.start()) {
                 Serial.println("##[ERROR]# SD Not Found");
                 netserver.requestOnChange(GETPLAYERMODE, 0);
-                return;
+                // Mode button should not feel "stuck" if the SD card is missing.
+                // Fall back to Podcast mode when Wi-Fi is available.
+                if (WiFi.status() == WL_CONNECTED) {
+                  newmode = PM_PODCAST;
+                } else {
+                  return;
+                }
             }
         }
     }
@@ -462,6 +484,12 @@ void Config::changeMode(int newmode) { // DLNA mod
 
     initPlaylistMode();
 
+    // Always clear the 2nd line when switching into non-podcast modes,
+    // so we never show a stale episode title on SD/WEB.
+    if (getMode() != PM_PODCAST) {
+      setTitle("");
+    }
+
     // SD: optionally resume last SD track on entering SD mode (even if we weren't playing).
     #if defined(SD_AUTORESUME_ON_MODE_SWITCH) && SD_AUTORESUME_ON_MODE_SWITCH
     if (enteringSD) {
@@ -475,7 +503,9 @@ void Config::changeMode(int newmode) { // DLNA mod
         }
     }
     #endif
-    if (pir) {
+    // When entering Podcast mode, do not auto-resume old playback.
+    // (Podcast mode is list-driven; also avoids keeping SD audio alive.)
+    if (pir && getMode() != PM_PODCAST) {
       #ifdef USE_DLNA
         uint16_t st = (getMode() == PM_SDCARD) ? store.lastSdStation
                                                : (store.playlistSource == PL_SRC_DLNA ? store.lastDlnaStation : store.lastStation);
@@ -492,6 +522,7 @@ void Config::changeMode(int newmode) { // DLNA mod
     display.resetQueue();
     display.putRequest(NEWMODE, PLAYER);
     display.putRequest(NEWSTATION);
+    display.putRequest(NEWTITLE); // queue reset can drop stop-time title updates
 #endif
 }
 
@@ -628,33 +659,53 @@ void Config::initPlaylistMode() {
   } else
 #endif
   {
+    if (getMode() == PM_PODCAST) {
+      // Use any previously generated list immediately, then refresh in background.
+      initPodcastPlaylist();
+      uint16_t cs = playlistLength();
+      _lastStation = store.lastPodcastStation;
+      if (_lastStation == 0 && cs > 0) _lastStation = 1;
+      if (_lastStation > cs) _lastStation = (cs > 0) ? 1 : 0;
+
+      // Always refresh on entry (feeds can update multiple times per day).
+      // Uses background task; list will update when ready.
+      podcasts_requestBuild(true);
+      if (cs == 0) {
+        // Avoid showing stale SD/Web metadata when the podcast list is empty.
+        setStation("yoRadio");
+        setTitle(LANG::const_PlStopped);
+      }
+    } else {
 
 #ifdef USE_DLNA
-    if (store.playlistSource == PL_SRC_DLNA) {
+      if (store.playlistSource == PL_SRC_DLNA) {
 
-      if (SPIFFS.exists(PLAYLIST_DLNA_PATH)) {
-        initDLNAPlaylist();
-      }
+        if (SPIFFS.exists(PLAYLIST_DLNA_PATH)) {
+          initDLNAPlaylist();
+        }
 
-      uint16_t cs = playlistLength();
+        uint16_t cs = playlistLength();
 
-      // ⬇️ DLNA indexet CSAK innen vesszük
-      _lastStation = store.lastDlnaStation;
-      if (_lastStation == 0 && cs > 0) _lastStation = 1;
+        // ⬇️ DLNA indexet CSAK innen vesszük
+        _lastStation = store.lastDlnaStation;
+        if (_lastStation == 0 && cs > 0) _lastStation = 1;
 
-    } else
+      } else
 #endif
-    {
-      initPlaylist();
-      uint16_t cs = playlistLength();
-      _lastStation = store.lastStation;
-      if (_lastStation == 0 && cs > 0) _lastStation = 1;
+      {
+        initPlaylist();
+        uint16_t cs = playlistLength();
+        _lastStation = store.lastStation;
+        if (_lastStation == 0 && cs > 0) _lastStation = 1;
+      }
     }
   }
 
   // ⬇️ EGYSZER
-  lastStation(_lastStation);
-  loadStation(_lastStation);
+  if (_lastStation > 0) {
+    lastStation(_lastStation);
+    loadStation(_lastStation);
+  }
 
   _bootDone = true;
 }
@@ -1355,6 +1406,10 @@ uint8_t Config::setLastStation(uint16_t val) {
     saveValue(&store.lastSdStation, val);
     return store.lastSdStation;
   }
+  if (getMode() == PM_PODCAST) {
+    saveValue(&store.lastPodcastStation, val);
+    return (uint8_t)store.lastPodcastStation;
+  }
 #ifdef USE_DLNA
   if (store.playlistSource == PL_SRC_DLNA) {
     saveValue(&store.lastDlnaStation, val);
@@ -1382,7 +1437,11 @@ void Config::setTitle(const char* title) {
   u8fix(config.station.title);
   netserver.requestOnChange(TITLE, 0);
   netserver.loop();
-  display.putRequest(NEWTITLE);
+  // During early boot, the display task may not have created widgets/framebuffers yet.
+  // Posting NEWTITLE too early can crash in widget draw paths.
+  if (display.ready()) {
+    display.putRequest(NEWTITLE);
+  }
 }
 
 void Config::setStation(const char* station) {
@@ -1406,6 +1465,50 @@ void Config::indexPlaylist() {
   }
   index.close();
   playlist.close();
+}
+
+void Config::indexPodcastPlaylist() {
+  File playlist = SPIFFS.open(PLAYLIST_PODCAST_PATH, "r");
+  if (!playlist) return;
+
+  SPIFFS.remove(INDEX_PODCAST_TMP_PATH);
+  File index = SPIFFS.open(INDEX_PODCAST_TMP_PATH, "w");
+  if (!index) {
+    playlist.close();
+    return;
+  }
+
+  int sOvol = 0;
+  while (playlist.available()) {
+    const uint32_t pos = playlist.position();
+    if (parseCSV(playlist.readStringUntil('\n').c_str(), tmpBuf, tmpBuf2, sOvol)) {
+      index.write((uint8_t*)&pos, 4);
+    }
+    // keep watchdog happy on large feeds
+    if ((pos & 0x3FFu) == 0) delay(0);
+  }
+
+  index.close();
+  playlist.close();
+
+  // Swap without a "missing index" window (avoids playlistLength()==0 glitches).
+  SPIFFS.remove(INDEX_PODCAST_PATH ".bak");
+  const bool hadOld = SPIFFS.exists(INDEX_PODCAST_PATH);
+  if (hadOld) {
+    if (!SPIFFS.rename(INDEX_PODCAST_PATH, INDEX_PODCAST_PATH ".bak")) {
+      SPIFFS.remove(INDEX_PODCAST_TMP_PATH);
+      return;
+    }
+  }
+  if (!SPIFFS.rename(INDEX_PODCAST_TMP_PATH, INDEX_PODCAST_PATH)) {
+    SPIFFS.remove(INDEX_PODCAST_TMP_PATH);
+    if (hadOld) {
+      SPIFFS.remove(INDEX_PODCAST_PATH);
+      (void)SPIFFS.rename(INDEX_PODCAST_PATH ".bak", INDEX_PODCAST_PATH);
+    }
+    return;
+  }
+  if (hadOld) SPIFFS.remove(INDEX_PODCAST_PATH ".bak");
 }
 //DLNA mod
 #ifdef USE_DLNA
@@ -1478,6 +1581,11 @@ void Config::initPlaylist() {
   }*/
 }
 
+void Config::initPodcastPlaylist() {
+  if (!SPIFFS.exists(PLAYLIST_PODCAST_PATH)) return;
+  if (!SPIFFS.exists(INDEX_PODCAST_PATH)) indexPodcastPlaylist();
+}
+
 #ifdef USE_DLNA //DLNA mod
 void Config::initDLNAPlaylist() {
   indexDLNAPlaylist();
@@ -1527,10 +1635,45 @@ bool Config::loadStation(uint16_t ls) {
     memset(station.url, 0, BUFLEN);
     memset(station.name, 0, BUFLEN);
     memset(station.playlistName, 0, BUFLEN);
-    strncpy(station.name, tmpBuf, BUFLEN);
+    // Keep the playlist entry text intact for list rendering and logo matching.
     strncpy(station.playlistName, tmpBuf, BUFLEN);
+
+    // Podcast UX: show name on top line, episode title on 2nd line.
+    if (getMode() == PM_PODCAST) {
+      const char* sep = strstr(tmpBuf, " - ");
+      if (sep && sep > tmpBuf) {
+        char show[BUFLEN];
+        char ep[BUFLEN];
+        const size_t showLen = (size_t)(sep - tmpBuf);
+        const char* epStart = sep + 3;
+
+        memset(show, 0, sizeof(show));
+        memset(ep, 0, sizeof(ep));
+
+        strlcpy(show, tmpBuf, (showLen + 1) < sizeof(show) ? (showLen + 1) : sizeof(show));
+        strlcpy(ep, epStart, sizeof(ep));
+
+        // Trim whitespace
+        while (show[0] == ' ') memmove(show, show + 1, strlen(show));
+        while (ep[0] == ' ') memmove(ep, ep + 1, strlen(ep));
+
+        strncpy(station.name, show, BUFLEN);
+        if (ep[0] != 0) {
+          setTitle(ep);
+        } else {
+          setTitle("");
+        }
+      } else {
+        // Fallback: no delimiter, treat entire label as the show name.
+        strncpy(station.name, tmpBuf, BUFLEN);
+        setTitle("");
+      }
+    } else {
+      strncpy(station.name, tmpBuf, BUFLEN);
+    }
     strncpy(station.url, tmpBuf2, BUFLEN);
     station.ovol = sOvol;
+    // Track current item per mode (podcast uses RAM-only slot).
     setLastStation(ls);
   }
   playlist.close();

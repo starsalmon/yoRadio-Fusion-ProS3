@@ -7,6 +7,7 @@
 #include "sdmanager.h"
 #include "netserver.h"
 #include "timekeeper.h"
+#include "podcasts.h"
 #include <time.h> /* ----- Auto On-Off Timer ----- */
 #include "../displays/tools/l10n.h"
 #include "../pluginsManager/pluginsManager.h"
@@ -216,6 +217,12 @@ void Player::_stop(bool alreadyStopped){
   if(!lockOutput) stopInfo();
   if (player_on_stop_play) player_on_stop_play();
   pm.on_stop_play();
+
+  // If we're in Podcast mode and stopped (e.g. error), it's a good time to refresh
+  // the episode list without fighting for sockets with active playback.
+  if (config.getMode() == PM_PODCAST) {
+    podcasts_requestBuild(false);
+  }
 }
 
 void Player::initHeaders(const char *file) {

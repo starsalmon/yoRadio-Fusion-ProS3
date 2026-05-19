@@ -713,6 +713,9 @@ void NetServer::processQueue(){
           sprintf(wsBuf, "{\"playermode\": \"modedlna\"}");
       } else
 #endif
+      if (config.getMode() == PM_PODCAST) {
+          sprintf(wsBuf, "{\"playermode\": \"modepodcast\"}");
+      } else
       if (config.getMode() == PM_SDCARD) {
           sprintf(wsBuf, "{\"playermode\": \"modesd\"}");
         } else {
@@ -1023,7 +1026,7 @@ void handleUpload(AsyncWebServerRequest *request, String filename, size_t index,
     if (!index) {
       player.sendCommand({PR_STOP, 0});
       String spath = "/www/";
-      if(filename=="playlist.csv" || filename=="wifi.csv" || filename=="ircodes.csv") spath = "/data/";
+      if(filename=="playlist.csv" || filename=="wifi.csv" || filename=="ircodes.csv" || filename=="podcasts.csv") spath = "/data/";
       request->_tempFile = SPIFFS.open(spath + filename , "w");
     }
     if (len) {
@@ -1032,6 +1035,11 @@ void handleUpload(AsyncWebServerRequest *request, String filename, size_t index,
     if (final) {
       request->_tempFile.close();
       if(filename=="playlist.csv") config.indexPlaylist();
+      if(filename=="podcasts.csv") {
+        // Force a refresh next time Podcast mode is entered.
+        SPIFFS.remove(PLAYLIST_PODCAST_PATH);
+        SPIFFS.remove(INDEX_PODCAST_PATH);
+      }
       #if IR_PIN!=255
       if(filename=="ircodes.csv") {
         if(config.importIR()) {

@@ -54,8 +54,10 @@ That could leave audio-info hooks unwired for the whole run.
 
 ### Low (tidy / future maintainability)
 
-- Lots of serial noise in some paths (IR/control)
-- Mixed-language logs/comments in a few hot paths
-- Duplicated debounce helper (`checklpdelay` vs touchscreen)
-- A couple of brittle `sprintf` patterns
+**Status: FIXED in this fork.**
+
+- **Reduced serial noise** in IR/control hot paths by guarding diagnostic logs behind option macros (e.g. `IR_WAKE_DIAG_LOG`, `IR_RECORD_DIAG_LOG`, `BT2_DIAG_LOG`).
+- **Translated mixed-language logs/comments** in hot paths to keep maintenance readable.
+- **Deduplicated debounce helpers** by using the shared timing utility (`yoEveryMs`) instead of local `checklpdelay` variants.
+- **Hardened brittle `sprintf` patterns** by switching to `snprintf` and sizing buffers defensively.
 

@@ -516,7 +516,7 @@ void Display::_buildPager(){
         // - full battery (100%)
         const float rate = battery_is_ready() ? battery_get_charge_rate() : 0.0f;
         const float pct = battery_is_ready() ? battery_get_percent() : 0.0f;
-        const bool show = battery_usb_present() || (rate >= -1.0f) || (pct >= 99.5f);
+        const bool show = battery_usb_present() || (rate >= -5.0f) || (pct >= 99.5f);
         const uint8_t* bbmp = show ? ICON_BOLT_9x12 : nullptr;
         _batChgIcon = new BitmapWidget(batchgConf, bbmp, ICON_BOLT_W, ICON_BOLT_H, config.theme.rssi, config.theme.background, BitmapFormat::GFX_MSB);
       }
@@ -815,7 +815,7 @@ if (newmode == _mode ||
     if (_playMode) {
       uint8_t _pm = config.getMode();
       #ifdef USE_DLNA
-      if (_pm == PM_WEB && config.store.playlistSource == PL_SRC_DLNA) _pm = 2;
+      if (_pm == PM_WEB && config.store.playlistSource == PL_SRC_DLNA) _pm = 3;
       #endif
       _playMode->setMode(_pm);
     }
@@ -880,6 +880,7 @@ if (newmode == _mode ||
     // When audio is playing, prefer the "moving cursor" playlist renderer:
     // it avoids per-step SD/SPIFFS reads + full list redraws that can starve audio.
     if (_plwidget) _plwidget->setForceMovingCursor(player.isRunning());
+    if (_plwidget) _plwidget->invalidateCache();
     _drawPlaylist();
   }
   
@@ -1110,10 +1111,29 @@ void Display::loop() {
         case PSTART:
           if (config.getMode() == PM_SDCARD) _sdPstartAt = millis();
           _layoutChange(true);
+          // Keep play-mode icon in sync even when station doesn't change.
+          #if STATION_WIDGETS
+          if (_playMode) {
+            uint8_t _pm = config.getMode();
+            #ifdef USE_DLNA
+            if (_pm == PM_WEB && config.store.playlistSource == PL_SRC_DLNA) _pm = 3;
+            #endif
+            _playMode->setMode(_pm);
+          }
+          #endif
           break;
         case PSTOP:
           if (config.getMode() == PM_SDCARD) _sdPstartAt = 0;
           _layoutChange(false);
+          #if STATION_WIDGETS
+          if (_playMode) {
+            uint8_t _pm = config.getMode();
+            #ifdef USE_DLNA
+            if (_pm == PM_WEB && config.store.playlistSource == PL_SRC_DLNA) _pm = 3;
+            #endif
+            _playMode->setMode(_pm);
+          }
+          #endif
           break;
         case DSP_START: _start();  break;
         case NEWIP: {
@@ -1335,7 +1355,7 @@ void Display::_station() {
   if (_playMode) {
       uint8_t _pm = config.getMode();
       #ifdef USE_DLNA
-      if (_pm == PM_WEB && config.store.playlistSource == PL_SRC_DLNA) _pm = 2;
+      if (_pm == PM_WEB && config.store.playlistSource == PL_SRC_DLNA) _pm = 3;
       #endif
       _playMode->setMode(_pm);
     }

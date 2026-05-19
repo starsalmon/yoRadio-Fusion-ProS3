@@ -366,6 +366,7 @@ class PlayListWidget: public Widget {
     void init(ScrollWidget* current);
     void drawPlaylist(uint16_t currentItem);
     void setForceMovingCursor(bool v) { _forceMovingCursor = v; }
+    void invalidateCache();
     inline uint16_t itemHeight(){ return _plItemHeight; }
     inline uint16_t currentTop(){ return _plYStart+_plCurrentPos*_plItemHeight; }
 
@@ -382,6 +383,7 @@ class PlayListWidget: public Widget {
     int16_t  _plLoadedPage = -1;
     int16_t  _plLastGlobalPos = -1;
     uint32_t _plLastDrawTime = 0;
+    uint16_t _plIdentity = 0xFFFF;
 
     // ===== common =====
     uint8_t _fillPlMenu(int from, uint8_t count);

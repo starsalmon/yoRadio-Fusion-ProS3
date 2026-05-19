@@ -2170,6 +2170,27 @@ void PlayListWidget::_loadPlaylistPage(int pageIndex, int itemsPerPage) {
 
 void PlayListWidget::drawPlaylist(uint16_t currentItem) {
 
+  // If the active playlist source changed (mode switch, DLNA<->WEB, podcast refresh),
+  // clear cached page data so we don't show stale items from the previous list.
+  uint16_t ident = (uint16_t)((uint8_t)config.getMode()) << 8;
+#ifdef USE_DLNA
+  if (config.getMode() == PM_WEB) ident |= (uint8_t)config.store.playlistSource;
+#endif
+  if (ident != _plIdentity) {
+    _plIdentity = ident;
+    invalidateCache();
+  }
+
+  // If playlist is empty (or index missing mid-refresh), clear the list area so we
+  // don't leave stale items from the previous mode on screen.
+  if (config.playlistLength() == 0) {
+    dsp.fillRect(0, _plYStart,
+                 dsp.width(),
+                 _plTtemsCount * _plItemHeight,
+                 config.theme.background);
+    return;
+  }
+
 #ifndef DSP_LCD
   if (_forceMovingCursor || config.store.playlistMode == 1) {
     _drawMovingCursor(currentItem);
@@ -2182,6 +2203,13 @@ void PlayListWidget::drawPlaylist(uint16_t currentItem) {
   dsp.setCursor(0, 1);
   dsp.write(uint8_t(126));
 #endif
+}
+
+void PlayListWidget::invalidateCache() {
+  for (int i = 0; i < MAX_PL_PAGE_ITEMS; i++) _plCache[i] = "";
+  _plLoadedPage = -1;
+  _plLastGlobalPos = -1;
+  _plLastDrawTime = 0;
 }
 
 void PlayListWidget::_drawMovingCursor(uint16_t currentItem) {
@@ -2328,7 +2356,14 @@ uint8_t PlayListWidget::_fillPlMenu(int from, uint8_t count) {
     int     ls = from;
     uint8_t c = 0;
     bool    finded = false;
-    if (config.playlistLength() == 0) { return 0; }
+    if (config.playlistLength() == 0) {
+      // Clear list area to avoid showing stale content.
+      dsp.fillRect(0, _plYStart,
+                   dsp.width(),
+                   _plTtemsCount * _plItemHeight,
+                   config.theme.background);
+      return 0;
+    }
     File playlist = config.SDPLFS()->open(REAL_PLAYL, "r");
     File index = config.SDPLFS()->open(REAL_INDEX, "r");
     while (true) {
@@ -2669,7 +2704,11 @@ void PlayModeWidget::_draw() {
       icon = ICON_MODE_SD_13x17;
       iconW = ICON_MODE_SD_W;
       iconH = ICON_MODE_SD_H;
-    } else if (_mode == 2) {  // DLNA
+    } else if (_mode == 2) {  // Podcast
+      icon = ICON_MODE_PODCAST_17x17;
+      iconW = ICON_MODE_PODCAST_W;
+      iconH = ICON_MODE_PODCAST_H;
+    } else if (_mode == 3) {  // DLNA
       icon = ICON_MODE_DLNA_24x17;
       iconW = ICON_MODE_DLNA_W;
       iconH = ICON_MODE_DLNA_H;

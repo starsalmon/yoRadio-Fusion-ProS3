@@ -293,9 +293,9 @@ static void mqttPublishHADiscovery() {
     char opts[96] = {0};
     // Options must be a JSON array; keep this deterministic and small.
 #ifdef USE_DLNA
-    strlcpy(opts, "[\"Web Streaming\",\"SD Card\",\"DLNA\"]", sizeof(opts));
+    strlcpy(opts, "[\"Web Streaming\",\"SD Card\",\"Podcast\",\"DLNA\"]", sizeof(opts));
 #else
-    strlcpy(opts, "[\"Web Streaming\",\"SD Card\"]", sizeof(opts));
+    strlcpy(opts, "[\"Web Streaming\",\"SD Card\",\"Podcast\"]", sizeof(opts));
 #endif
 
     char cfg[700];
@@ -549,6 +549,7 @@ void mqttPublishStatus() {
 #ifdef USE_SD
     if (config.getMode() == PM_SDCARD) mode = "SD Card";
 #endif
+    if (config.getMode() == PM_PODCAST) mode = "Podcast";
 #ifdef USE_DLNA
     if (config.getMode() != PM_SDCARD && config.store.playlistSource == PL_SRC_DLNA) mode = "DLNA";
 #endif
@@ -655,7 +656,7 @@ void mqttPublishPlaylist() {
   if(mqttClient.connected()){
     zeroBuffer();
     snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "playlist");
-    snprintf(status, sizeof(status), "http://%s%s", config.ipToStr(WiFi.localIP()), PLAYLIST_PATH);
+    snprintf(status, sizeof(status), "http://%s%s", config.ipToStr(WiFi.localIP()), REAL_PLAYL);
     mqttClient.publish(topic, 0, true, status);
   }
 }
@@ -857,6 +858,11 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         return;
       }
 #endif
+      if (strcasecmp(s, "podcast") == 0 || strcasecmp(s, "podcasts") == 0) {
+        config.changeMode(PM_PODCAST);
+        mqttPublishStatus();
+        return;
+      }
       if (strcasecmp(s, "sd card") == 0 || strcasecmp(s, "sd") == 0) {
         config.changeMode(PM_SDCARD);
         mqttPublishStatus();
@@ -980,7 +986,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 
 #ifdef USE_SD
     // Mode switch: "mode -1" toggles WEB<->SD (matches encoder double-click behavior),
-    // "mode 0" forces WEB, "mode 1" forces SD.
+    // "mode 0" forces WEB, "mode 1" forces SD, "mode 2" forces Podcast.
     int newMode;
     if (sscanf(buf, "mode %d", &newMode) == 1) {
       config.changeMode(newMode);

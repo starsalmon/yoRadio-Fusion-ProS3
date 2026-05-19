@@ -536,7 +536,7 @@ void audio_id3data(const char *info) {
 }
 
 void audio_eof() {
-  //Serial.printf("mode=%d (PM_WEB=0, PM_SDCARD=1)\n", config.getMode());
+  //Serial.printf("mode=%d (PM_WEB=0, PM_SDCARD=1, PM_PODCAST=2)\n", config.getMode());
   if (config.getMode() == PM_SDCARD && !g_ttsActive) {
     config.sdResumePos = 0;
     Serial.println("EOF: SD -> player.next()");

@@ -138,6 +138,16 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
 - Rebuilt `README.md` as a hub with links to focused docs (`docs/*.md`, `images_src/station_logos/README.md`, plugin docs).
 - Moved the upstream “Controls” block into `docs/CONTROLS.md` so it stays intact and easy to find.
 
+### Podcast playback (Option A: flat episodes list)
+
+- Added a new playback mode `PM_PODCAST` ("Podcast") that generates a flat episode list from RSS feeds and reuses the existing station browser/player.
+- Input list: `data/data/podcasts.csv` (`show<TAB>rss_url<TAB>episodes_to_list`).
+- On entering Podcast mode, the firmware fetches RSS feeds, generates `SPIFFS:/data/podcast_episodes.csv`, and indexes it so station navigation works like normal playlists.
+- Display split: in Podcast mode, the **show name** is the station name (top line) and the **episode title** is shown on the second line.
+- Persistence: the last selected podcast episode is stored separately from radio/SD last-station so rebooting/switching modes doesn’t cross-contaminate selections.
+- Build robustness: episode generation runs in a background task with guards (Wi‑Fi connected, display ready, and no active playback) and uses atomic file swaps to avoid “missing file” windows during refresh.
+- MQTT / Home Assistant "Mode" select now includes `Podcast`.
+
 ### Where to look for the “full” change list
 
 - **Upstream diff summary**: `docs/CHANGES_SINCE_UPSTREAM.md` (includes repro commands)

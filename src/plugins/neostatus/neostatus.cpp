@@ -226,7 +226,7 @@ public:
   void on_start_play() override {
     // Requested: white pulse when a radio (web streaming) station starts.
     // SD playback also triggers on_start_play(), so gate on mode.
-    if (config.getMode() == PM_WEB) {
+    if (config.getMode() == PM_WEB || config.getMode() == PM_PODCAST) {
       startSeq({NEO_RADIO_START_RGB}, NEO_RADIO_START_PULSES, NEO_SEQ_PULSE_MS, NEO_SEQ_GAP_MS);
     } else if (config.getMode() == PM_SDCARD) {
       // Requested: SD indication should trigger on SD playback start (not indexing).

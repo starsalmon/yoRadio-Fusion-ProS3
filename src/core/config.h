@@ -15,10 +15,15 @@
   #define BUFLEN            170
 #endif
 #define PLAYLIST_PATH     "/data/playlist.csv"
+#define PODCASTS_PATH     "/data/podcasts.csv"
+#define PLAYLIST_PODCAST_PATH "/data/podcast_episodes.csv"
+#define PLAYLIST_PODCAST_TMP_PATH "/data/podcast_episodes.tmp"
 #define SSIDS_PATH        "/data/wifi.csv"
 #define IR_CSV_PATH       "/data/ircodes.csv"
 #define TMP_PATH          "/data/tmpfile.txt"
 #define INDEX_PATH        "/data/index.dat"
+#define INDEX_PODCAST_PATH "/data/index_podcast.dat"
+#define INDEX_PODCAST_TMP_PATH "/data/index_podcast.tmp"
 
 #define PLAYLIST_SD_PATH     "/data/playlistsd.csv"
 #define INDEX_SD_PATH        "/data/indexsd.dat"
@@ -28,19 +33,21 @@
 
   #define REAL_PLAYL \
    (config.getMode()==PM_SDCARD ? PLAYLIST_SD_PATH : \
+    config.getMode()==PM_PODCAST ? PLAYLIST_PODCAST_PATH : \
     config.store.playlistSource==PL_SRC_DLNA ? PLAYLIST_DLNA_PATH : \
     PLAYLIST_PATH)
 
   #define REAL_INDEX \
    (config.getMode()==PM_SDCARD ? INDEX_SD_PATH : \
+    config.getMode()==PM_PODCAST ? INDEX_PODCAST_PATH : \
     config.store.playlistSource==PL_SRC_DLNA ? INDEX_DLNA_PATH : \
     INDEX_PATH)
 #else
-  #define REAL_PLAYL (config.getMode()==PM_WEB?PLAYLIST_PATH:PLAYLIST_SD_PATH)
-  #define REAL_INDEX (config.getMode()==PM_WEB?INDEX_PATH:INDEX_SD_PATH)
+  #define REAL_PLAYL (config.getMode()==PM_WEB?PLAYLIST_PATH:(config.getMode()==PM_PODCAST?PLAYLIST_PODCAST_PATH:PLAYLIST_SD_PATH))
+  #define REAL_INDEX (config.getMode()==PM_WEB?INDEX_PATH:(config.getMode()==PM_PODCAST?INDEX_PODCAST_PATH:INDEX_SD_PATH))
 #endif
 
-#define MAX_PLAY_MODE   1
+#define MAX_PLAY_MODE   2
 #define WEATHERKEY_LENGTH 58
 #define MDNS_LENGTH 24
 
@@ -48,11 +55,12 @@
   #define ESP_ARDUINO_3 1
 #endif
 
-#define CONFIG_VERSION  18
+#define CONFIG_VERSION  19
 
 enum playMode_e : uint8_t {  //DLNA mod
   PM_WEB    = 0,
   PM_SDCARD = 1,
+  PM_PODCAST = 2,
 };
 
 
@@ -249,6 +257,10 @@ struct config_t
   // Remember last volume per output so switching feels instant.
   uint8_t   volumeSpeaker;
   uint8_t   volumeBt;
+
+  // Podcast mode: remember the last selected episode index.
+  // Kept separate from `lastStation` so podcast browsing doesn't clobber radio.
+  uint16_t  lastPodcastStation;
 };
 
 #if IR_PIN != 255
@@ -328,6 +340,7 @@ class Config {
     char     tmpBuf2[BUFLEN];
     char       ipBuf[16];
     char _stationBuf[BUFLEN/2];
+    // (podcast selection is now persisted in store.lastPodcastStation)
   public:
     Config() {};
     //void save();
@@ -363,6 +376,8 @@ class Config {
     void setBitrateFormat(BitrateFormat fmt) { configFmt = fmt; }
     void initPlaylist();
     void indexPlaylist();
+    void initPodcastPlaylist();
+    void indexPodcastPlaylist();
 #ifdef USE_DLNA //DLNA mod
     void indexDLNAPlaylist();
     void initDLNAPlaylist();
@@ -377,6 +392,7 @@ class Config {
 #ifdef USE_SD
       if (getMode() == PM_SDCARD) return store.lastSdStation;
 #endif
+      if (getMode() == PM_PODCAST) return store.lastPodcastStation;
 #ifdef USE_DLNA
       if (store.playlistSource == PL_SRC_DLNA) return store.lastDlnaStation;
 #endif
@@ -389,6 +405,10 @@ class Config {
         return;
       }
 #endif
+      if (getMode() == PM_PODCAST) {
+        saveValue(&store.lastPodcastStation, newstation);
+        return;
+      }
 #ifdef USE_DLNA
       if (store.playlistSource == PL_SRC_DLNA) {
         saveValue(&store.lastDlnaStation, newstation);

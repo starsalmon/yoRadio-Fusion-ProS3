@@ -111,7 +111,7 @@ MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes
   - `availability`: `online|offline` (LWT is `offline`)
   - `status`: JSON including playback + station + mode + brightness
   - `station_number`: `1..N` (current station number for the active playlist/source)
-  - `mode`: `Web Streaming|SD Card|DLNA`
+  - `mode`: `Web Streaming|SD Card|Podcast|DLNA`
   - `output_device`: `Speaker|Bluetooth` (only meaningful when `BT_COMPANION_ENABLE != 0`)
   - `bt_sink_name`: current BT target speaker name (only when `BT_COMPANION_ENABLE != 0`)
   - `volume`: `0..100`
@@ -126,7 +126,7 @@ MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes
   - `cmd/volume`: `0..100`
   - `cmd/brightness`: `0..100`
   - `cmd/station_number`: `1..N` (start playing station number)
-  - `cmd/playback_mode`: `Web Streaming|SD Card|DLNA` (Home Assistant “select”)
+  - `cmd/playback_mode`: `Web Streaming|SD Card|Podcast|DLNA` (Home Assistant “select”)
   - `cmd/output_device`: `Speaker|Bluetooth` (Home Assistant “select”, only when `BT_COMPANION_ENABLE != 0`)
   - `cmd/bt_sink_name`: set BT target speaker name (Home Assistant “text”, only when `BT_COMPANION_ENABLE != 0`)
 
@@ -153,6 +153,29 @@ Your `platformio.ini` runs these:
 ```
 Station Name<TAB>https://example/stream<TAB>0
 ```
+
+### Podcast mode (Option A / flat episodes list)
+
+Podcast sources live in `data/data/podcasts.csv` (tab-delimited):
+
+```
+Show Name<TAB>https://example/show.rss<TAB>5
+```
+
+When you switch to **Podcast** mode, the firmware fetches each RSS feed, extracts the most recent N episodes, and writes a generated episode playlist to:
+
+- `SPIFFS:/data/podcast_episodes.csv` (tab-delimited, same format as `playlist.csv`)
+
+Notes:
+
+- The generated playlist is designed to reuse the existing station browser:
+  - **Top line** (station name) shows the **podcast/show name**
+  - **Second line** (title) shows the **episode title**
+- Episode list generation runs in a **background task** and is guarded to reduce watchdog/network contention:
+  - It refreshes on entering Podcast mode, and can refresh again after playback stops while still in Podcast mode.
+  - It avoids rebuilding while audio is actively playing.
+- Uploading a new `podcasts.csv` via the web UI will remove the generated playlist/index so it rebuilds next time you enter Podcast mode.
+
 
 ### Import stations from Moode (fast)
 

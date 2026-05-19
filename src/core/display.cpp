@@ -100,6 +100,80 @@ static uint16_t batteryPctColor565(float pct) {
   else                  return rgb565(0xAD, 0xFF, 0x2F);
 }
 
+static size_t decodeUtf8Codepoint(const uint8_t* s, uint32_t& cp) {
+  if (!s || *s == 0) { cp = 0; return 0; }
+  const uint8_t b0 = s[0];
+  if (b0 < 0x80) { cp = b0; return 1; }
+
+  auto cont = [](uint8_t b) -> bool { return (b & 0xC0) == 0x80; };
+
+  if ((b0 & 0xE0) == 0xC0) {
+    const uint8_t b1 = s[1];
+    if (!cont(b1)) { cp = 0xFFFD; return 1; }
+    const uint32_t v = ((uint32_t)(b0 & 0x1Fu) << 6) | (uint32_t)(b1 & 0x3Fu);
+    if (v < 0x80) { cp = 0xFFFD; return 1; } // overlong
+    cp = v;
+    return 2;
+  }
+
+  if ((b0 & 0xF0) == 0xE0) {
+    const uint8_t b1 = s[1], b2 = s[2];
+    if (!cont(b1) || !cont(b2)) { cp = 0xFFFD; return 1; }
+    const uint32_t v = ((uint32_t)(b0 & 0x0Fu) << 12) | ((uint32_t)(b1 & 0x3Fu) << 6) | (uint32_t)(b2 & 0x3Fu);
+    if (v < 0x800) { cp = 0xFFFD; return 1; } // overlong
+    if (v >= 0xD800 && v <= 0xDFFF) { cp = 0xFFFD; return 1; } // surrogate
+    cp = v;
+    return 3;
+  }
+
+  if ((b0 & 0xF8) == 0xF0) {
+    const uint8_t b1 = s[1], b2 = s[2], b3 = s[3];
+    if (!cont(b1) || !cont(b2) || !cont(b3)) { cp = 0xFFFD; return 1; }
+    const uint32_t v = ((uint32_t)(b0 & 0x07u) << 18) | ((uint32_t)(b1 & 0x3Fu) << 12) |
+                       ((uint32_t)(b2 & 0x3Fu) << 6) | (uint32_t)(b3 & 0x3Fu);
+    if (v < 0x10000 || v > 0x10FFFF) { cp = 0xFFFD; return 1; } // overlong / out of range
+    cp = v;
+    return 4;
+  }
+
+  cp = 0xFFFD;
+  return 1;
+}
+
+static void formatUtf8AsAsciiLabel(const char* in, char* out, size_t outSz) {
+  if (!out || outSz == 0) return;
+  out[0] = '\0';
+  if (!in || in[0] == '\0') return;
+
+  size_t o = 0;
+  const uint8_t* p = (const uint8_t*)in;
+  while (*p && (o + 1) < outSz) {
+    uint32_t cp = 0;
+    const size_t adv = decodeUtf8Codepoint(p, cp);
+    if (adv == 0) break;
+
+    if (cp >= 0x20 && cp <= 0x7Eu) {
+      out[o++] = (char)cp;
+      out[o] = '\0';
+      p += adv;
+      continue;
+    }
+
+    // Non-ASCII: represent as U+XXXX / U+1F47E so classic fonts don't render garbage.
+    char tmp[16];
+    if (cp <= 0xFFFFu) snprintf(tmp, sizeof(tmp), "U+%04lX", (unsigned long)cp);
+    else snprintf(tmp, sizeof(tmp), "U+%lX", (unsigned long)cp);
+
+    const size_t need = strlen(tmp) + ((o > 0 && out[o - 1] != ' ') ? 1u : 0u);
+    if (o + need >= outSz) break;
+    if (o > 0 && out[o - 1] != ' ') out[o++] = ' ';
+    for (const char* t = tmp; *t && (o + 1) < outSz; ++t) out[o++] = *t;
+    out[o] = '\0';
+    p += adv;
+  }
+  out[o] = '\0';
+}
+
 static void loopDspTask(void * pvParameters){
   // Optional: log which core the display task is running on.
   #ifdef DSP_DIAG_LOG
@@ -994,7 +1068,13 @@ void Display::loop() {
           break;
         }
         case BOOTSTRING: {
-          if(_bootstring) _bootstring->setText(config.ssids[request.payload].ssid, LANG::bootstrFmt);
+          if (_bootstring) {
+            char safeSsid[96];
+            char line[160];
+            formatUtf8AsAsciiLabel(config.ssids[request.payload].ssid, safeSsid, sizeof(safeSsid));
+            snprintf(line, sizeof(line), LANG::bootstrFmt, safeSsid);
+            _bootstring->setText(line);
+          }
           /*#ifdef USE_NEXTION
             char buf[50];
             snprintf(buf, 50, bootstrFmt, config.ssids[request.payload].ssid);

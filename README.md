@@ -67,6 +67,8 @@ platformio device monitor -b 115200
   - Wi‑Fi icon logic improved (5-step RSSI + explicit “not connected” icons)
 - **Display tuning**:
   - `TFT_SPI_FREQ` is used by the ILI9341 driver and logged at boot as `##[BOOT]# TFT_SPI_FREQ <value>`
+- **Unicode SSIDs on boot screen**:
+  - The classic boot font can’t render emoji; non‑ASCII SSID characters are shown as `U+XXXX` (e.g. 👾 → `U+1F47E`) to avoid garbled glyphs.
 - **Date format mapping fixed (web UI + TFT)**: `dateFormat` is now consistent (see below)
 - **Station logos (SPIFFS `.ylg`)**:
   - Logos are generated from `images_src/station_logos/` into `data/logos/*.ylg`

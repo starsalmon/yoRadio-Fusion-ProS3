@@ -551,7 +551,7 @@ void mqttPublishStatus() {
 #endif
     if (config.getMode() == PM_PODCAST) mode = "Podcast";
 #ifdef USE_DLNA
-    if (config.getMode() != PM_SDCARD && config.store.playlistSource == PL_SRC_DLNA) mode = "DLNA";
+    if (config.getMode() == PM_WEB && config.store.playlistSource == PL_SRC_DLNA) mode = "DLNA";
 #endif
     int brightness = (int)config.store.brightness;
     if (brightness < 0) brightness = 0;

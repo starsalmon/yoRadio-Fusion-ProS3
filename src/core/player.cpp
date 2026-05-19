@@ -264,7 +264,9 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
         uint16_t st = (uint16_t)abs(requestP.payload);
 
 #ifdef USE_DLNA
-        if (config.store.playlistSource == PL_SRC_DLNA) {
+        // DLNA is a WEB-mode playlist source, not a playback mode.
+        // Do not let a stale playlistSource override Podcast/SD behavior.
+        if (config.getMode() == PM_WEB && config.store.playlistSource == PL_SRC_DLNA) {
           config.store.lastDlnaStation = st;
           config.saveValue(&config.store.lastDlnaStation, (uint16_t)st);
           config.sdResumePos = 0;
@@ -535,15 +537,14 @@ void Player::_play(uint16_t stationId) {
     isConnected = connecttoFS(sdman, config.station.url, -1);
   } else {
 #ifdef USE_DLNA //DLNA mod
-  // DLNA uses the web engine, but we must not overwrite the persisted mode.
-    if (config.store.playlistSource != PL_SRC_DLNA)
-#endif
-    {
-      config.saveValue(&config.store.play_mode,
-                       static_cast<uint8_t>(PM_WEB));
+    // Historically the web player path forced PM_WEB here. With PM_PODCAST added,
+    // we must not clobber the active playback mode during connect/play.
+    if (config.getMode() == PM_WEB) {
+      config.saveValue(&config.store.play_mode, static_cast<uint8_t>(PM_WEB));
     }
+#endif
   }
-  if (config.getMode() == PM_WEB) {
+  if (config.getMode() == PM_WEB || config.getMode() == PM_PODCAST) {
     isConnected = connecttohost(config.station.url);
   }
 
@@ -559,7 +560,7 @@ void Player::_play(uint16_t stationId) {
     snprintf(config.tmpBuf, sizeof(config.tmpBuf), "Error connecting to %.128s", config.station.url); setError();
 #ifdef USE_DLNA
     // If DLNA connection failed, fall back to web playlist (similar to SD card behavior)
-    if (config.store.playlistSource == PL_SRC_DLNA) {
+    if (config.getMode() == PM_WEB && config.store.playlistSource == PL_SRC_DLNA) {
       telnet.print("##INFO#:\tDLNA failed, switching to web playlist\n");
       config.store.playlistSource = PL_SRC_WEB;
       config.saveValue(&config.store.playlistSource, (uint8_t)PL_SRC_WEB);

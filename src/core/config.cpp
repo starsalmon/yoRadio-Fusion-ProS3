@@ -614,8 +614,11 @@ void Config::configPostPlaying(uint16_t stationId){ //DLNA mod
     }
     saveValue(&store.lastSdStation, stationId);
   }
+  else if (getMode() == PM_PODCAST) {
+    saveValue(&store.lastPodcastStation, stationId);
+  }
 #ifdef USE_DLNA
-  else if (store.playlistSource == PL_SRC_DLNA) {
+  else if (getMode() == PM_WEB && store.playlistSource == PL_SRC_DLNA) {
     saveValue(&store.lastDlnaStation, stationId);
   }
 #endif

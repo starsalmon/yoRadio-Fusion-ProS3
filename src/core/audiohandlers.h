@@ -544,7 +544,7 @@ void audio_eof() {
   }
 
 #ifdef USE_DLNA  //DLNA mod
-  if (config.store.playlistSource == PL_SRC_DLNA) {
+  if (config.getMode() == PM_WEB && config.store.playlistSource == PL_SRC_DLNA) {
     Serial.println("EOF: DLNA -> player.next()");
     player.next();
     return;

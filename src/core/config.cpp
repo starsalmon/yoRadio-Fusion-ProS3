@@ -335,7 +335,10 @@ void Config::toggleMode() {
       store.playlistSource = PL_SRC_WEB;
       saveValue(&store.playlistSource, (uint8_t)PL_SRC_WEB, true, true);
     }
-    if (SDC_CS != 255 && sdman.cardPresent()) changeMode(PM_SDCARD);
+    // Don't rely on sdman.cardPresent() here: before SD is started it can report false
+    // even when a card is inserted. Always *try* SD first when SD is wired in; if it
+    // fails, changeMode() will fall back to Podcast (when Wi-Fi is available).
+    if (SDC_CS != 255) changeMode(PM_SDCARD);
     else changeMode(PM_PODCAST);
     return;
   }
@@ -589,8 +592,12 @@ bool Config::prepareForPlaying(uint16_t stationId){
   }
   
   if(!loadStation(stationId)) return false;
-  //setTitle(getMode()==PM_WEB?LANG::const_PlConnect:"[next track]");
-  setTitle(LANG::const_PlConnect);
+  // For web streams, show a transient "Connecting" status on the 2nd line.
+  // For podcasts, `loadStation()` already populated line 2 with the episode title;
+  // overwriting it here makes the UI look broken (no metadata arrives later to restore it).
+  if (getMode() == PM_WEB) {
+    setTitle(LANG::const_PlConnect);
+  }
   station.bitrate=0;
   setBitrateFormat(BF_UNKNOWN);
   display.putRequest(DBITRATE);
@@ -1629,9 +1636,18 @@ bool Config::loadStation(uint16_t ls) {
   }
   File playlist = SDPLFS()->open(REAL_PLAYL, "r");
   File index = SDPLFS()->open(REAL_INDEX, "r");
+  if (!playlist || !index) {
+    if (playlist) playlist.close();
+    if (index) index.close();
+    return false;
+  }
   index.seek((ls - 1) * 4, SeekSet);
   uint32_t pos;
-  index.readBytes((char *) &pos, 4);
+  if (index.readBytes((char *) &pos, 4) != 4) {
+    index.close();
+    playlist.close();
+    return false;
+  }
   index.close();
   playlist.seek(pos, SeekSet);
   if (parseCSV(playlist.readStringUntil('\n').c_str(), tmpBuf, tmpBuf2, sOvol)) {
@@ -1684,13 +1700,28 @@ bool Config::loadStation(uint16_t ls) {
 }
 
 char * Config::stationByNum(uint16_t num){
+  memset(_stationBuf, 0, sizeof(_stationBuf));
+  const uint16_t cs = playlistLength();
+  if (num < 1 || cs == 0 || num > cs) {
+    return _stationBuf;
+  }
+
   File playlist = SDPLFS()->open(REAL_PLAYL, "r");
   File index = SDPLFS()->open(REAL_INDEX, "r");
+  if (!playlist || !index) {
+    if (playlist) playlist.close();
+    if (index) index.close();
+    return _stationBuf;
+  }
+
   index.seek((num - 1) * 4, SeekSet);
   uint32_t pos;
-  memset(_stationBuf, 0, sizeof(_stationBuf));
-  index.readBytes((char *) &pos, 4);
+  const size_t got = index.readBytes((char *) &pos, 4);
   index.close();
+  if (got != 4) {
+    playlist.close();
+    return _stationBuf;
+  }
   playlist.seek(pos, SeekSet);
   strncpy(_stationBuf, playlist.readStringUntil('\t').c_str(), sizeof(_stationBuf));
   playlist.close();

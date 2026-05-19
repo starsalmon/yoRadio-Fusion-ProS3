@@ -13,6 +13,13 @@ namespace {
 static TaskHandle_t s_podTask = nullptr;
 static bool s_forceBuild = false;
 
+static inline bool shouldAbortBuild() {
+  // Abort if the user left Podcast mode or playback started (avoid contention and UI races).
+  if (config.getMode() != PM_PODCAST) return true;
+  if (player.isRunning()) return true;
+  return false;
+}
+
 static void sanitizeTsvField(const char* in, char* out, size_t outSz) {
   if (!out || outSz == 0) return;
   out[0] = '\0';
@@ -164,6 +171,7 @@ static bool httpBeginForUrl(HTTPClient& http, const char* url) {
 
 uint32_t podcasts_buildEpisodesPlaylist() {
   if (network.status != CONNECTED) return 0;
+  if (shouldAbortBuild()) return 0;
 
   File f = SPIFFS.open(PODCASTS_PATH, "r");
   if (!f) {
@@ -186,6 +194,13 @@ uint32_t podcasts_buildEpisodesPlaylist() {
 
   char line[384];
   while (f.available()) {
+    if (shouldAbortBuild()) {
+      out.close();
+      f.close();
+      SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+      return 0;
+    }
+
     size_t n = f.readBytesUntil('\n', line, sizeof(line) - 1);
     line[n] = '\0';
     if (n > 0 && line[n - 1] == '\r') line[n - 1] = '\0';
@@ -217,6 +232,14 @@ uint32_t podcasts_buildEpisodesPlaylist() {
     uint32_t lastRxMs = millis();
 
     while (s->connected() && got < lim) {
+      if (shouldAbortBuild()) {
+        http.end();
+        out.close();
+        f.close();
+        SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+        return 0;
+      }
+
       if (!s->available()) {
         if ((uint32_t)(millis() - lastRxMs) > 3000u) break;
         delay(1);
@@ -224,6 +247,14 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       }
 
       while (s->available() && got < lim) {
+        if (shouldAbortBuild()) {
+          http.end();
+          out.close();
+          f.close();
+          SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+          return 0;
+        }
+
         const char c = (char)s->read();
         lastRxMs = millis();
         buf += c;
@@ -327,6 +358,14 @@ static void podcastBuildTask(void*) {
       vTaskDelete(nullptr);
       return;
     }
+  }
+
+  // Even on forced builds, do not fight active playback or mode switches.
+  if (shouldAbortBuild()) {
+    Serial.println("[POD] build aborted (mode changed or playback started)");
+    s_podTask = nullptr;
+    vTaskDelete(nullptr);
+    return;
   }
 
   Serial.println("[POD] build start");

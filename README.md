@@ -173,7 +173,7 @@ Notes:
   - **Second line** (title) shows the **episode title**
 - Episode list generation runs in a **background task** and is guarded to reduce watchdog/network contention:
   - It refreshes on entering Podcast mode, and can refresh again after playback stops while still in Podcast mode.
-  - It avoids rebuilding while audio is actively playing.
+  - It avoids rebuilding while audio is actively playing, and aborts early if you leave Podcast mode mid-refresh.
 - Uploading a new `podcasts.csv` via the web UI will remove the generated playlist/index so it rebuilds next time you enter Podcast mode.
 
 

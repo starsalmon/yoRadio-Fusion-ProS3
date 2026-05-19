@@ -55,7 +55,7 @@ bool Config::_isFSempty() {
   if(SPIFFS.exists("/www/elogo.png")) SPIFFS.remove("/www/elogo.png");
   if(SPIFFS.exists("/www/elogo84.png")) SPIFFS.remove("/www/elogo84.png");
   for (uint8_t i=0; i<reqiredFilesSize; i++){
-    sprintf(fullpath, "/www/%s", reqiredFiles[i]);
+    snprintf(fullpath, sizeof(fullpath), "/www/%s", reqiredFiles[i]);
     if(!SPIFFS.exists(fullpath)) {
       Serial.println(fullpath);
       return true;
@@ -112,15 +112,15 @@ void Config::init() {
 #endif
   eepromRead(EEPROM_START, store);
 // ---- Playlist source normalization ----
-if (store.playlistSource > PL_SRC_DLNA)
+  if (store.playlistSource > PL_SRC_DLNA)
     store.playlistSource = PL_SRC_WEB;
 
-if (store.lastPlayedSource > PL_SRC_DLNA)
+  if (store.lastPlayedSource > PL_SRC_DLNA)
     store.lastPlayedSource = PL_SRC_WEB;
 
 #ifndef USE_DLNA
-    store.playlistSource   = PL_SRC_WEB;
-    store.lastPlayedSource = PL_SRC_WEB;
+  store.playlistSource   = PL_SRC_WEB;
+  store.lastPlayedSource = PL_SRC_WEB;
 #endif
   bootInfo(); // https://github.com/e2002/yoradio/pull/149
   if (store.config_set != 4262) {
@@ -473,16 +473,17 @@ void Config::changeMode(int newmode) { // DLNA mod
           // Negative payload => play station without overwriting WEB lastStation.
           player.sendCommand({PR_PLAY, -(int)st});
         }
-    } else
+    }
     #endif
     if (pir) {
-    #ifdef USE_DLNA
-        uint16_t st = (getMode() == PM_SDCARD) ? store.lastSdStation : (store.playlistSource == PL_SRC_DLNA ? store.lastDlnaStation : store.lastStation);
+      #ifdef USE_DLNA
+        uint16_t st = (getMode() == PM_SDCARD) ? store.lastSdStation
+                                               : (store.playlistSource == PL_SRC_DLNA ? store.lastDlnaStation : store.lastStation);
         player.sendCommand({PR_PLAY, st});
-    #else
+      #else
         uint16_t st = (getMode() == PM_SDCARD) ? store.lastSdStation : store.lastStation;
         player.sendCommand({PR_PLAY, st});
-    #endif
+      #endif
     }
 
     netserver.resetQueue();
@@ -1601,8 +1602,8 @@ bool Config::parseJSON(const char* line, char* name, char* url, int &ovol) {
   strlcpy(host, tmps + 3, tmpe - tmps - 3 + 1);
   if (strlen(host) == 0) return false;
   if (strstr(host, "http://") == NULL && strstr(host, "https://") == NULL) {
-    sprintf(file, "http://%s", host);
-    strlcpy(host, file, strlen(file) + 1);
+    snprintf(file, sizeof(file), "http://%s", host);
+    strlcpy(host, file, sizeof(host));
   }
   cursor = tmpe + 3;
   tmps = strstr(cursor, "\":\"");
@@ -1618,9 +1619,10 @@ bool Config::parseJSON(const char* line, char* name, char* url, int &ovol) {
   strlcpy(port, tmps + 3, tmpe - tmps - 3 + 1);
   int p = atoi(port);
   if (p > 0) {
-    sprintf(url, "%s:%d%s", host, p, file);
+    // `url` is typically a BUFLEN-sized buffer (see NetServer playlist import).
+    snprintf(url, BUFLEN, "%s:%d%s", host, p, file);
   } else {
-    sprintf(url, "%s%s", host, file);
+    snprintf(url, BUFLEN, "%s%s", host, file);
   }
   cursor = tmpe + 3;
   tmps = strstr(cursor, "\":\"");
@@ -1851,7 +1853,7 @@ void Config::sleepForAfter(uint16_t sf, uint16_t sa) {
 const char* fmtThousands(uint32_t v) {
     static char buf[16];
     char        tmp[16];
-    sprintf(tmp, "%lu", v);
+    snprintf(tmp, sizeof(tmp), "%lu", (unsigned long)v);
 
     int len = strlen(tmp);
     int pos = len % 3;
@@ -1878,7 +1880,12 @@ void Config::bootInfo() {
   for(int i=0; i<17; i=i+8) {
     chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
   }
-  BOOTLOG("chip:\t\tmodel: %s | rev: %d | id: %lu | cores: %d | psram: %lu", ESP.getChipModel(), ESP.getChipRevision(), chipId, ESP.getChipCores(), ESP.getPsramSize());
+  BOOTLOG("chip:\t\tmodel: %s | rev: %d | id: %lu | cores: %d | psram: %lu",
+          ESP.getChipModel(),
+          ESP.getChipRevision(),
+          (unsigned long)chipId,
+          ESP.getChipCores(),
+          (unsigned long)ESP.getPsramSize());
   BOOTLOG("display:\t%d", DSP_MODEL);
   if(VS1053_CS==255) {
     BOOTLOG("audio:\t\t%s (%d, %d, %d)", "I2S", I2S_DOUT, I2S_BCLK, I2S_LRC);

@@ -12,7 +12,6 @@ class TouchScreen {
   private:
     uint16_t _oldTouchX, _oldTouchY, _width, _height;
     uint32_t _touchdelay;
-    bool _checklpdelay(int m, uint32_t &tstamp);
     tsDirection_e _tsDirection(uint16_t x, uint16_t y);
     bool _istouched();
 };

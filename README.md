@@ -57,7 +57,8 @@ platformio device monitor -b 115200
 - **Deep sleep power management**:
   - Wake pins: `WAKE_PIN1` + optional `WAKE_PIN2` (RTC GPIO only) via ext1 wake
   - Auto deep sleep (when wake pins are configured): `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT`
-- **5V present sense**: `CHARGE_SENSE_PIN` + charging icon in footer when 5V is present
+- **Charging bolt (footer)**:
+  - Uses **5V sense OR MAX17048 charge-rate OR full battery** to decide whether to show the bolt (more robust across different power-path wiring)
 - **Built-in NeoPixel status LED (ProS3 WS2812)**:
   - Enabled when `BUILTIN_NEOPIXEL_PIN` is set (ProS3: GPIO18) and `NEO_STATUS_ENABLE 1`
   - All colors/timing/pulse counts are easy to fine-tune from `myoptions.h` (see “NeoPixel status tuning knobs” below)
@@ -190,6 +191,12 @@ The full upstream-style controls reference (buttons/encoders/IR/touch) lives her
 ## Diagnostics / debug toggles
 
 All the usual “turn on logging” knobs live in `myoptions.h` under `/* DIAGNOSTICS */` (append-only section).
+
+- **IR / controls (reduce Serial noise)**:
+  - `IR_WAKE_DIAG_LOG`: set to `1` to log the IR wake “waiting for POWER code” flow
+  - `IR_RECORD_DIAG_LOG`: set to `1` for verbose IR record/learn logs
+- **BT companion UART debug**:
+  - `BT2_DIAG_LOG`: set to `1` to log BT companion UART commands/responses + state transitions
 
 - **Display**:
   - `DSP_DIAG_LOG`: prints `DspTask.core` and `[DSP] …` loop timing

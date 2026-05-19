@@ -497,29 +497,29 @@ void zeroBuffer(){ memset(topic, 0, sizeof(topic)); memset(status, 0, sizeof(sta
 
 void onMqttConnect(bool sessionPresent) {
   zeroBuffer();
-  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "command");
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "command");
   mqttClient.subscribe(topic, 2);
   zeroBuffer();
-  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/sleep");
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/sleep");
   mqttClient.subscribe(topic, 2);
   zeroBuffer();
-  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/volume");
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/volume");
   mqttClient.subscribe(topic, 2);
   zeroBuffer();
-  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/brightness");
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/brightness");
   mqttClient.subscribe(topic, 2);
   zeroBuffer();
-  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/playback_mode");
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/playback_mode");
   mqttClient.subscribe(topic, 2);
   zeroBuffer();
-  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/station_number");
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/station_number");
   mqttClient.subscribe(topic, 2);
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   zeroBuffer();
-  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/output_device");
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/output_device");
   mqttClient.subscribe(topic, 2);
   zeroBuffer();
-  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "cmd/bt_sink_name");
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/bt_sink_name");
   mqttClient.subscribe(topic, 2);
 #endif
   mqttPublishAvailability(true);
@@ -540,7 +540,7 @@ void onMqttConnect(bool sessionPresent) {
 void mqttPublishStatus() {
   if(mqttClient.connected()){
     zeroBuffer();
-    sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "status");
+    snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "status");
     char name[BUFLEN/2];
     char title[BUFLEN/2];
     config.escapeQuotes(config.station.name, name, sizeof(name)-10);
@@ -654,8 +654,8 @@ void mqttLoop() {
 void mqttPublishPlaylist() {
   if(mqttClient.connected()){
     zeroBuffer();
-    sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "playlist");
-    sprintf(status, "http://%s%s", config.ipToStr(WiFi.localIP()), PLAYLIST_PATH);
+    snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "playlist");
+    snprintf(status, sizeof(status), "http://%s%s", config.ipToStr(WiFi.localIP()), PLAYLIST_PATH);
     mqttClient.publish(topic, 0, true, status);
   }
 }
@@ -665,11 +665,11 @@ void mqttPublishVolume(){
     zeroBuffer();
     char vol[5];
     memset(vol, 0, 5);
-    sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "volume");
+    snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "volume");
     int v = config.store.volume;
     if (v < 0) v = 0;
     if (v > 100) v = 100;
-    sprintf(vol, "%d", v);
+    snprintf(vol, sizeof(vol), "%d", v);
     mqttClient.publish(topic, 0, true, vol);
   }
 }
@@ -680,7 +680,7 @@ void mqttPublishBattery() {
   // Publish a single retained JSON payload so automations have one place to read from.
   // Keep it short to fit into the existing buffers.
   zeroBuffer();
-  sprintf(topic, "%s%s", MQTT_ROOT_TOPIC, "battery");
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "battery");
 
   const bool ready = battery_is_ready();
   const bool usb = battery_usb_present();

@@ -3,7 +3,7 @@
 #include <WiFi.h>
 
 #define MAX_TLN_CLIENTS 5
-#define BOOTLOG( ... ) { char buf[120]; sprintf( buf, __VA_ARGS__ ) ; telnet.printf("##[BOOT]#\t%s\n",buf); }
+#define BOOTLOG( ... ) { char buf[120]; snprintf(buf, sizeof(buf), __VA_ARGS__); telnet.printf("##[BOOT]#\t%s\n",buf); }
 
 class Telnet {
   public:

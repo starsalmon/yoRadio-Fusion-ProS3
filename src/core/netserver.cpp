@@ -42,7 +42,7 @@
 #endif
 
 #ifdef DEBUG_V
-#define DBGVB( ... ) { char buf[200]; sprintf( buf, __VA_ARGS__ ) ; Serial.print("[DEBUG]\t"); Serial.println(buf); }
+#define DBGVB( ... ) { char buf[200]; snprintf(buf, sizeof(buf), __VA_ARGS__); Serial.print("[DEBUG]\t"); Serial.println(buf); }
 #else
 #define DBGVB( ... )
 #endif
@@ -74,7 +74,7 @@ void mqttplaylistSend() {
 #endif
 
 char* updateError() {
-  sprintf(netserver.nsBuf, "Update failed with error (%d)<br /> %s", (int)Update.getError(), Update.errorString());
+  snprintf(netserver.nsBuf, sizeof(netserver.nsBuf), "Update failed with error (%d)<br /> %s", (int)Update.getError(), Update.errorString());
   return netserver.nsBuf;
 }
 
@@ -695,12 +695,12 @@ void NetServer::processQueue(){
       case VOLUME:        sprintf (wsBuf, "{\"payload\":[{\"id\":\"volume\", \"value\": %d}]}", config.store.volume); telnet.printf("##CLI.VOL#: %d\n", config.store.volume); break;
       case NRSSI:         sprintf (wsBuf, "{\"payload\":[{\"id\":\"rssi\", \"value\": %d}, {\"id\":\"heap\", \"value\": %d}]}", rssi, (player.isRunning() && config.store.audioinfo)?(int)(100*player.inBufferFilled()/playerBufMax):0); /*rssi = 255;*/ break;
       case SDPOS:         sprintf (wsBuf, "{\"sdpos\": %lu,\"sdend\": %lu,\"sdtpos\": %lu,\"sdtend\": %lu}", 
-                                  player.getAudioFilePosition(), 
-                                  player.getFileSize(), 
-                                  player.getAudioCurrentTime(), 
-                                  player.getAudioFileDuration()); 
+                                  (unsigned long)player.getAudioFilePosition(), 
+                                  (unsigned long)player.getFileSize(), 
+                                  (unsigned long)player.getAudioCurrentTime(), 
+                                  (unsigned long)player.getAudioFileDuration()); 
                                   break;
-      case SDLEN:         sprintf (wsBuf, "{\"sdmin\": %lu,\"sdmax\": %lu}", player.sd_min, player.sd_max); break;
+      case SDLEN:         sprintf (wsBuf, "{\"sdmin\": %lu,\"sdmax\": %lu}", (unsigned long)player.sd_min, (unsigned long)player.sd_max); break;
       case SDSNUFFLE:     sprintf (wsBuf, "{\"snuffle\": %d}", config.store.sdsnuffle); break;
       case BITRATE:       sprintf (wsBuf, "{\"payload\":[{\"id\":\"bitrate\", \"value\": %d}, {\"id\":\"fmt\", \"value\": \"%s\"}]}", config.station.bitrate, getFormat(config.configFmt)); break;
       case MODE:          sprintf (wsBuf, "{\"payload\":[{\"id\":\"playerwrap\", \"value\": \"%s\"}]}", player.status() == PLAYING ? "playing" : "stopped"); telnet.info(); break;
@@ -904,7 +904,7 @@ void NetServer::onWsMessage(void *arg, uint8_t *data, size_t len, uint8_t client
 
 void NetServer::getPlaylist(uint8_t clientId) {
   //sprintf(nsBuf, "{\"file\": \"http://%s%s\"}", config.ipToStr(WiFi.localIP()), PLAYLIST_PATH);
-  sprintf(nsBuf, "{\"file\": \"http://%s%s\"}", config.ipToStr(WiFi.localIP()), REAL_PLAYL);  //DLNA mod
+  snprintf(nsBuf, sizeof(nsBuf), "{\"file\": \"http://%s%s\"}", config.ipToStr(WiFi.localIP()), REAL_PLAYL);  //DLNA mod
   if (clientId == 0) { websocket.textAll(nsBuf); } else { websocket.text(clientId, nsBuf); }
 }
 
@@ -1056,10 +1056,10 @@ void handleMyThemeUpload(AsyncWebServerRequest *request, String filename, size_t
   }
   if (fsUploadFile) {
     fsUploadFile.write(data, len);
-    Serial.printf("Írtam %u bájtot\n", len);
+    Serial.printf("Wrote %u bytes\n", (unsigned)len);
     if (final) {
       fsUploadFile.close();
-      Serial.println("Theme upload kész, fájl lezárva!");
+      Serial.println("Theme upload complete; file closed.");
       request->send(200, "text/plain", "MyTheme uploaded successfully. Applying...");
       config.loadTheme();
       display.putRequest(DSP_RECONF, 0);
@@ -1071,8 +1071,8 @@ void handleMyThemeUpload(AsyncWebServerRequest *request, String filename, size_t
 
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
   switch (type) {
-    case WS_EVT_CONNECT: /*netserver.requestOnChange(STARTUP, client->id()); */if (config.store.audioinfo) Serial.printf("[WEBSOCKET] client #%lu connected from %s\n", client->id(), config.ipToStr(client->remoteIP())); break;
-    case WS_EVT_DISCONNECT: if (config.store.audioinfo) Serial.printf("[WEBSOCKET] client #%lu disconnected\n", client->id()); break;
+    case WS_EVT_CONNECT: /*netserver.requestOnChange(STARTUP, client->id()); */if (config.store.audioinfo) Serial.printf("[WEBSOCKET] client #%lu connected from %s\n", (unsigned long)client->id(), config.ipToStr(client->remoteIP())); break;
+    case WS_EVT_DISCONNECT: if (config.store.audioinfo) Serial.printf("[WEBSOCKET] client #%lu disconnected\n", (unsigned long)client->id()); break;
     case WS_EVT_DATA: netserver.onWsMessage(arg, data, len, client->id()); break;
     case WS_EVT_PONG:
     case WS_EVT_ERROR:

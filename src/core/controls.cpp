@@ -11,6 +11,7 @@
 #include "bt_companion.h"
 #include "driver/rtc_io.h"
 #include "../pluginsManager/pluginsManager.h"
+#include "timing.h"
 
 // Run control polling (buttons/encoders/IR/touch) on a separate core so
 // Audio::loop() stalls on core 1 don't make input feel unresponsive.
@@ -223,9 +224,13 @@ void IRAM_ATTR readEncoder2ISR()
 #endif
 
 void initControls() {
-  Serial.printf("Wake cause: %d\n", esp_sleep_get_wakeup_cause());
+  #if defined(IR_WAKE_DIAG_LOG) && IR_WAKE_DIAG_LOG
+    Serial.printf("Wake cause: %d\n", esp_sleep_get_wakeup_cause());
+  #endif
   if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1) {
-    Serial.println("Wake from button/IR");
+    #if defined(IR_WAKE_DIAG_LOG) && IR_WAKE_DIAG_LOG
+      Serial.println("Wake from button/IR");
+    #endif
     waitingForWakeIr = true;
     wakeCheckUntil = millis() + 600;
   }
@@ -391,7 +396,9 @@ void irWakeup() {
     if (wake == ESP_SLEEP_WAKEUP_EXT1) {
         uint64_t mask = esp_sleep_get_ext1_wakeup_status();
         if (mask & (1ULL << IR_PIN)) {
-            Serial.println("IR wake → waiting for POWER code");
+          #if defined(IR_WAKE_DIAG_LOG) && IR_WAKE_DIAG_LOG
+            Serial.println("IR wake: waiting for POWER code");
+          #endif
             rtc_gpio_deinit((gpio_num_t)IR_PIN); // RTC to GPIO
             pinMode(IR_PIN, INPUT);
             irrecv.enableIRIn();
@@ -409,29 +416,39 @@ void irWakeup() {
                     }
                     // only evaluate real codes (non-repeat)
                     if (isIrPowerCode(code)) {
+                      #if defined(IR_WAKE_DIAG_LOG) && IR_WAKE_DIAG_LOG
                         Serial.printf("POWER: 0x%X\n", (unsigned)code);
+                      #endif
                         valid = true;
                         break;
                     } else {
+                      #if defined(IR_WAKE_DIAG_LOG) && IR_WAKE_DIAG_LOG
                         Serial.printf("Not POWER: 0x%X\n", (unsigned)code);
+                      #endif
                     }
                 }
             }
             if (!valid) {
-                Serial.println("No POWER → sleep again");
+              #if defined(IR_WAKE_DIAG_LOG) && IR_WAKE_DIAG_LOG
+                Serial.println("No POWER: sleeping again");
+              #endif
                 Serial.flush();
                 delay(20);
                 config.doSleepW();
             }
-            Serial.println("POWER → starting up");
+          #if defined(IR_WAKE_DIAG_LOG) && IR_WAKE_DIAG_LOG
+            Serial.println("POWER: starting up");
+          #endif
         }
     }
 }
 
-/*----- Összehasonlít a 3 tárolt POWER kóddal -----*/
+/*----- Compare against the stored POWER codes -----*/
 bool isIrPowerCode(uint32_t code) {
     for (int i = 0; i < 3; i++) {
+      #if defined(IR_WAKE_DIAG_LOG) && IR_WAKE_DIAG_LOG
         Serial.printf("Stored[%d]: 0x%08X\n", i, (unsigned)(uint32_t)config.ircodes.irVals[IR_POWER][i]);
+      #endif
         if (config.ircodes.irVals[IR_POWER][i] == code) { return true; }
     }
     return false;
@@ -445,18 +462,26 @@ void irLoop() {
             while (xQueueReceive(irQueue, &ircmd, 0)) {
                 if (ircmd.hasBtnId) {
                     config.irBtnId = ircmd.irBtnId;
-                    Serial.printf("controls.cpp--> irLoop--> xQueueReceive: update config.irBtnId: %d \n", config.irBtnId);
+                  #if defined(IR_RECORD_DIAG_LOG) && IR_RECORD_DIAG_LOG
+                    Serial.printf("irLoop: update config.irBtnId=%d\n", config.irBtnId);
+                  #endif
                 }
                 if (ircmd.hasBank) {
                     config.irBankId = ircmd.irBankId;
-                    Serial.printf("controls.cpp--> irLoop--> xQueueReceive: update config.irBankId: %d \n", config.irBankId);
+                  #if defined(IR_RECORD_DIAG_LOG) && IR_RECORD_DIAG_LOG
+                    Serial.printf("irLoop: update config.irBankId=%d\n", config.irBankId);
+                  #endif
                 }
             }
+          #if defined(IR_RECORD_DIAG_LOG) && IR_RECORD_DIAG_LOG
             Serial.print(resultToHumanReadableBasic(&irResults));
             Serial.println("-------------------------------");
+          #endif
             config.ircodes.irVals[config.irBtnId][config.irBankId] = irResults.value;
             // Serial.printf("irLoop run on core: %d\n", xPortGetCoreID());
-            Serial.printf("controls.cpp-->irLoop--> irResults.value: %08llX, config.irBtnId: %d, config.irBankId: %d\n\n", irResults.value, config.irBtnId, config.irBankId);
+          #if defined(IR_RECORD_DIAG_LOG) && IR_RECORD_DIAG_LOG
+            Serial.printf("irLoop: value=%08llX btnId=%d bankId=%d\n\n", irResults.value, config.irBtnId, config.irBankId);
+          #endif
             netserver.irToWs(typeToString(irResults.decode_type, irResults.repeat).c_str(), irResults.value);
             return;
         }
@@ -482,7 +507,9 @@ void irLoop() {
                     }
                     switch (target) {
                         case IR_POWER: {
+                          #if defined(IR_WAKE_DIAG_LOG) && IR_WAKE_DIAG_LOG
                             Serial.println("IR POWER -> sleep");
+                          #endif
                             display.putRequest(NEWMODE, SLEEPING);
                             break;
                         }
@@ -645,19 +672,11 @@ void onBtnLongPressStop(int id) {
   }
 }
 
-unsigned long lpdelay;
-bool checklpdelay(int m, unsigned long &tstamp) {
-  if (millis() - tstamp > m) {
-    tstamp = millis();
-    return true;
-  } else {
-    return false;
-  }
-}
+uint32_t lpdelay;
 
 void onBtnDuringLongPress(int id) {
   if (network.status != CONNECTED && network.status!=SDREADY && config.getMode() != PM_SDCARD) return;
-  if (checklpdelay(BTN_LONGPRESS_LOOP_DELAY, lpdelay)) {
+  if (yoEveryMs((uint32_t)BTN_LONGPRESS_LOOP_DELAY, lpdelay)) {
     switch ((controlEvt_e)id) {
       case EVT_BTNLEFT: {
           controlsEvent(false);
@@ -690,7 +709,7 @@ void controlsEvent(bool toRight, int8_t volDelta) {
   }
   if (display.mode() != STATIONS) {
     #if !defined(DUMMYDISPLAY) || defined(USE_NEXTION)
-      display.putRequest(NEWMODE, VOL);          // Hangerő képernyőre vált.
+      display.putRequest(NEWMODE, VOL);          // Switch to volume screen.
     #endif
    if (volDelta != 0) {
       int nv = config.store.volume + volDelta * config.store.volsteps;
@@ -834,7 +853,9 @@ void onBtnDoubleClick(int id) {
         const bool nowBt = !wasBt;
         config.saveValue(&config.store.outputDevice, (uint8_t)(nowBt ? 1 : 0));
 
-        Serial.printf("[BT2] MODE double-click -> output=%s\n", nowBt ? "BT" : "SPK");
+        #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
+          Serial.printf("[BT2] MODE double-click -> output=%s\n", nowBt ? "BT" : "SPK");
+        #endif
 
         // Restore the last volume for the newly selected output *before* unmuting the speaker.
         // This prevents a brief loud burst when switching from BT (often louder) to speaker.

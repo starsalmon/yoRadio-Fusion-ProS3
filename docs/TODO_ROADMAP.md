@@ -22,6 +22,7 @@
   - Save last volume per output and restore when switching
   - Put BT companion into deep sleep when ProS3 enters deep sleep
 - **Podcast mode**: dedicated mode to stream recent episodes from podcast feeds
+  - Proposed input: `data/data/podcasts.csv` (`name<TAB>url<TAB>episodes_to_list>`)
 - **Load station logos from SD**: might be easier long-term; likely needs stable image decode first
 - **Configure new features from web**: allow setting options like `BATTERY_ENABLED`, `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT` from the web interface
 - **Reduce blocking patterns and busy-waits** (queue allocation loops, MQTT playlist block)

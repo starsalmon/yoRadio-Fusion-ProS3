@@ -57,7 +57,9 @@ static void maybeUpdateLinkState() {
   }
   if (next != s_link) {
     s_link = next;
+  #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
     Serial.printf("[BT2] state=%d (conn=%d audio=%d)\n", (int)s_link, s_conn, s_audio);
+  #endif
     // Reuse DRAWVOL to refresh the footer output icon.
     display.putRequest(DRAWVOL);
   }
@@ -118,8 +120,10 @@ static void sendLine(const char *s) {
   if (!s) return;
   // Avoid spamming Serial with periodic STATUS polling.
   if (strcmp(s, "STATUS") != 0) {
+  #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
     Serial.print("[BT2->] ");
     Serial.println(s);
+  #endif
   }
   s_btUart.print(s);
   s_btUart.print('\n');
@@ -162,13 +166,15 @@ void btcompanion_init() {
 
   // Default behavior: keep BT output disabled until user toggles it.
   // If the companion ESP32 is currently awake, ask it to sleep.
-  Serial.printf("[BT2] init uart=%d baud=%d rx=%d tx=%d wake=%d sink='%s'\n",
-                (int)BT_COMPANION_UART_PORT,
-                (int)BT_COMPANION_UART_BAUD,
-                (int)BT_COMPANION_UART_RX,
-                (int)BT_COMPANION_UART_TX,
-                (int)BT_COMPANION_WAKE_PIN,
-                s_sinkName);
+  #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
+    Serial.printf("[BT2] init uart=%d baud=%d rx=%d tx=%d wake=%d sink='%s'\n",
+                  (int)BT_COMPANION_UART_PORT,
+                  (int)BT_COMPANION_UART_BAUD,
+                  (int)BT_COMPANION_UART_RX,
+                  (int)BT_COMPANION_UART_TX,
+                  (int)BT_COMPANION_WAKE_PIN,
+                  s_sinkName);
+  #endif
   // Don't immediately force SLEEP here: on reboot while BT is active, we want
   // to bring the companion back up and reconnect deterministically.
   s_enabled = false;
@@ -202,7 +208,9 @@ void btcompanion_setSinkName(const char* name) {
 
   if (strncmp(tmp, s_sinkName, sizeof(s_sinkName)) == 0) return;
   strlcpy(s_sinkName, tmp, sizeof(s_sinkName));
-  Serial.printf("[BT2] sink='%s'\n", s_sinkName);
+  #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
+    Serial.printf("[BT2] sink='%s'\n", s_sinkName);
+  #endif
 }
 
 const char* btcompanion_sinkName() { return s_sinkName; }
@@ -221,7 +229,9 @@ void btcompanion_requestConnect() {
 void btcompanion_setEnabled(bool enable) {
   if (enable == s_enabled) return;
   s_enabled = enable;
-  Serial.printf("[BT2] enabled=%d\n", s_enabled ? 1 : 0);
+  #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
+    Serial.printf("[BT2] enabled=%d\n", s_enabled ? 1 : 0);
+  #endif
 
   if (s_enabled) {
     s_conn = -1;
@@ -253,7 +263,9 @@ void btcompanion_setEnabled(bool enable) {
 
     // If we learned we're already connected, keep it as-is and just continue polling.
     if (s_conn == 2) {
-      Serial.printf("[BT2] already connected (audio=%d), skipping CONNECT\n", s_audio);
+      #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
+        Serial.printf("[BT2] already connected (audio=%d), skipping CONNECT\n", s_audio);
+      #endif
       maybeUpdateLinkState();
       display.putRequest(DRAWVOL);
       return;
@@ -308,7 +320,9 @@ void btcompanion_loop() {
     // it from ever settling into CONNECTED/AUDIO.
     if (s_link == BtCompanionLinkState::SEARCHING) {
       if (s_nextKickMs != 0 && (int32_t)(now - s_nextKickMs) >= 0) {
-        Serial.println("[BT2] kick");
+        #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
+          Serial.println("[BT2] kick");
+        #endif
         // Best-effort clean disconnect, then CONNECT (restart scan).
         sendLine("DISCONNECT");
         delay(80);

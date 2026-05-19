@@ -112,11 +112,14 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
   - BT audio is stable once connected
   - Switching to BT can take ~30s (ongoing UX improvement area: status LED + connection-state feedback + faster connect path)
 
-### Charging indicator (footer bolt) without 5V sense
+### Charging indicator (footer bolt) robust across power paths
 
-- On this hardware/power-path, the PROS3 **5V sense** pin can be unreliable (or unused), so the footer **charging bolt** now uses the MAX17048 **charge rate** estimate instead:
-  - Bolt is shown when \(rate \ge -1\%\!/\!h\) (charging or near-full drift)
-  - Bolt is hidden when \(rate < -1\%\!/\!h\) (clearly discharging)
+- On this hardware/power-path, the PROS3 **5V sense** pin can be unreliable (or unused). The footer **charging bolt** now uses a combined heuristic:
+  - Bolt is shown when **any** is true:
+    - 5V sense indicates external power is present, **or**
+    - MAX17048 \(rate \ge -1\%\!/\!h\) (charging or near-full drift), **or**
+    - Battery is effectively full (≥ ~100%)
+  - Bolt is hidden only when we’re clearly discharging (no 5V sense, \(rate < -1\%\!/\!h\), not full)
 
 ### Stability hardening (FreeRTOS + web handler)
 

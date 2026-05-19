@@ -1,6 +1,7 @@
 #include "options.h"
 #if (TS_MODEL!=TS_MODEL_UNDEFINED) && (DSP_MODEL!=DSP_DUMMY)
 #include "Arduino.h"
+#include "timing.h"
 #include "touchscreen.h"
 #include "config.h"
 #include "controls.h"
@@ -42,7 +43,7 @@
    #include "../Touch/FT6X36/FT6X36.h"
 // Global Wire objektum I2C config.cpp --> Wire.begin(TS_SDA, TS_SCL)
 FT6X36 ts(&Wire, TS_INT);
-// A későbbi kódhoz egységes típusnév
+// Uniform type alias for downstream code.
 typedef TPoint           TSPoint;
 static volatile bool     g_ftTouched = false;
 static volatile uint16_t g_ftX = 0;
@@ -143,9 +144,9 @@ void TouchScreen::loop(){
   static uint32_t touchLongPress;
   static tsDirection_e direct;
   static uint16_t touchVol, touchStation;
-  if (!_checklpdelay(20, _touchdelay)) return;
+  if (!yoEveryMs(20, _touchdelay)) return;
 #if TS_MODEL == TS_MODEL_FT6X36
-  ts.loop(); // feldolgozza az IRQ-kat és meghívja a touch handlert
+  ts.loop(); // process IRQs and invoke the touch handler
 #endif
 #if TS_MODEL==TS_MODEL_GT911
   ts.read();
@@ -171,10 +172,10 @@ bool istouched = _istouched();
         uint16_t rawX = g_ftX;
         uint16_t rawY = g_ftY;
         // Serial.printf("touchscreen.cpp--> nyers X: %d, nyers Y: %d, store.fliptouch: %d\n", rawX, rawY, config.store.fliptouch);
-        if (config.store.fliptouch) { // 180 fokos tükrözés
+        if (config.store.fliptouch) { // 180-degree mirror/flip
             touchX = (_width - 1) - rawY;
             touchY = rawX;
-        } else { // Alap helyzet
+        } else { // default orientation
             touchX = rawY;
             touchY = (_height - 1) - rawX;
         }
@@ -261,15 +262,6 @@ bool istouched = _istouched();
   wastouched = istouched;
 }
 
-bool TouchScreen::_checklpdelay(int m, uint32_t &tstamp) {
-  if (millis() - tstamp > m) {
-    tstamp = millis();
-    return true;
-  } else {
-    return false;
-  }
-}
-
 bool TouchScreen::_istouched(){
 #if TS_MODEL==TS_MODEL_XPT2046
   return ts.touched();
@@ -278,8 +270,8 @@ bool TouchScreen::_istouched(){
 #elif TS_MODEL==TS_MODEL_CST816
   return ts.isTouched;
 #elif TS_MODEL == TS_MODEL_FT6X36
-    // “touched”-nek tekintjük, ha a handler szerint érintve van,
-    // vagy ha nagyon friss esemény volt (kis hiszterézis).
+    // Treat as "touched" if the handler says so, or if there was a very recent
+    // event (small hysteresis).
     if (g_ftTouched) return true;
     return ((uint32_t)(millis() - g_ftLastMs) < 50);
 #endif

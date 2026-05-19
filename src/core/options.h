@@ -20,6 +20,17 @@ STORE YOUR SETTINGS IN THE *** myoptions.h *** FILE.
   #include "../../mqttoptions.h"
 #endif
 
+// Serial logging knobs (set in `myoptions.h`).
+#ifndef IR_WAKE_DIAG_LOG
+  #define IR_WAKE_DIAG_LOG 0
+#endif
+#ifndef IR_RECORD_DIAG_LOG
+  #define IR_RECORD_DIAG_LOG 0
+#endif
+#ifndef BT2_DIAG_LOG
+  #define BT2_DIAG_LOG 0
+#endif
+
 // Delay before unmuting the internal speaker after switching from BT output.
 // Override in `myoptions.h` if you want a different value.
 #ifndef SPEAKER_UNMUTE_DELAY_MS

@@ -13,11 +13,25 @@ namespace {
 static TaskHandle_t s_podTask = nullptr;
 static bool s_forceBuild = false;
 
+static portMUX_TYPE s_progMux = portMUX_INITIALIZER_UNLOCKED;
+static uint16_t s_progCur = 0;
+static uint16_t s_progTotal = 0;
+static char s_progShow[96] = {0};
+
 static inline bool shouldAbortBuild() {
   // Abort if the user left Podcast mode or playback started (avoid contention and UI races).
   if (config.getMode() != PM_PODCAST) return true;
   if (player.isRunning()) return true;
   return false;
+}
+
+static void setProgress(uint16_t cur, uint16_t total, const char* show) {
+  portENTER_CRITICAL(&s_progMux);
+  s_progCur = cur;
+  s_progTotal = total;
+  if (show) strlcpy(s_progShow, show, sizeof(s_progShow));
+  else      s_progShow[0] = '\0';
+  portEXIT_CRITICAL(&s_progMux);
 }
 
 static void sanitizeTsvField(const char* in, char* out, size_t outSz) {
@@ -110,6 +124,12 @@ static bool extractAttrUrl(const String& item, const char* tag, const char* attr
   if (q < 0) return false;
   String u = head.substring(a, q);
   u.trim();
+  // BBC podcast feeds often use the "audio-nondrm-download-rss" mediaset, but the
+  // playable direct links use "audio-nondrm-download". Rewriting here keeps the
+  // playlist URLs compatible with the audio engine.
+  if (u.indexOf("open.live.bbc.co.uk/mediaselector/") >= 0) {
+    u.replace("audio-nondrm-download-rss", "audio-nondrm-download");
+  }
   sanitizeTsvField(u.c_str(), out, outSz);
   return out[0] != '\0';
 }
@@ -162,20 +182,125 @@ static bool httpBeginForUrl(HTTPClient& http, const char* url) {
   if (strncmp(url, "https://", 8) == 0) {
     static WiFiClientSecure s_client;
     s_client.setInsecure();
-    return http.begin(s_client, url);
+    if (!http.begin(s_client, url)) return false;
+  } else {
+    if (!http.begin(url)) return false;
   }
-  return http.begin(url);
+
+  // Many podcast endpoints behave better with a browser-ish UA.
+  http.setUserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36");
+  return true;
+}
+
+static bool resolveRedirectUrl(const String& baseUrl, const String& location, String& outUrl) {
+  outUrl = location;
+  outUrl.trim();
+  if (outUrl.length() == 0) return false;
+  if (outUrl.startsWith("//")) {
+    outUrl = String("http:") + outUrl;
+    return true;
+  }
+  if (outUrl.startsWith("http://") || outUrl.startsWith("https://")) {
+    return true;
+  }
+  if (outUrl.startsWith("/")) {
+    const int scheme = baseUrl.indexOf("://");
+    if (scheme < 0) return false;
+    const int hostStart = scheme + 3;
+    int slash = baseUrl.indexOf("/", hostStart);
+    if (slash < 0) slash = baseUrl.length();
+    outUrl = baseUrl.substring(0, slash) + outUrl;
+    return true;
+  }
+  // Relative path: append to directory of base URL.
+  int lastSlash = baseUrl.lastIndexOf('/');
+  if (lastSlash <= 0) return false;
+  outUrl = baseUrl.substring(0, lastSlash + 1) + outUrl;
+  return true;
+}
+
+static int httpGetWithRedirects(HTTPClient& http, String& url, uint8_t maxHops) {
+  for (uint8_t hop = 0; hop <= maxHops; hop++) {
+    if (!httpBeginForUrl(http, url.c_str())) return -1;
+    // Ensure we can read Location headers on redirect responses.
+    const char* hdrs[] = {"Location", "location"};
+    http.collectHeaders(hdrs, 2);
+    http.setTimeout(8000);
+    const int code = http.GET();
+    if (code > 0 && code < 300) {
+      return code;
+    }
+
+    // Manual redirects (some cores don't follow automatically).
+    if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+      String loc = http.getLocation();
+      if (loc.length() == 0) loc = http.header("Location");
+      if (loc.length() == 0) loc = http.header("location");
+      http.end();
+      String next;
+      if (!resolveRedirectUrl(url, loc, next)) {
+        Serial.printf("[POD] redirect %d but no Location for %s\n", code, url.c_str());
+        return code;
+      }
+      Serial.printf("[POD] redirect %d: %s -> %s\n", code, url.c_str(), next.c_str());
+      url = next;
+      continue;
+    }
+
+    http.end();
+    return code;
+  }
+  return -2;
+}
+
+static uint16_t countPodcastSources() {
+  File f = SPIFFS.open(PODCASTS_PATH, "r");
+  if (!f) return 0;
+  uint16_t count = 0;
+  char line[384];
+  while (f.available()) {
+    size_t n = f.readBytesUntil('\n', line, sizeof(line) - 1);
+    line[n] = '\0';
+    if (n > 0 && line[n - 1] == '\r') line[n - 1] = '\0';
+    if (line[0] == '\0' || line[0] == '#') continue;
+    char show[96];
+    char feedUrl[256];
+    uint16_t lim = 0;
+    if (parsePodcastLine(line, show, sizeof(show), feedUrl, sizeof(feedUrl), lim)) count++;
+  }
+  f.close();
+  return count;
 }
 
 } // namespace
+
+void podcasts_getProgress(uint16_t* cur, uint16_t* total, char* showOut, uint16_t showOutSz) {
+  if (cur) *cur = 0;
+  if (total) *total = 0;
+  if (showOut && showOutSz) showOut[0] = '\0';
+
+  portENTER_CRITICAL(&s_progMux);
+  const uint16_t c = s_progCur;
+  const uint16_t t = s_progTotal;
+  const char* s = s_progShow;
+  portEXIT_CRITICAL(&s_progMux);
+
+  if (cur) *cur = c;
+  if (total) *total = t;
+  if (showOut && showOutSz) strlcpy(showOut, s ? s : "", (size_t)showOutSz);
+}
 
 uint32_t podcasts_buildEpisodesPlaylist() {
   if (network.status != CONNECTED) return 0;
   if (shouldAbortBuild()) return 0;
 
+  const uint16_t totalSources = countPodcastSources();
+  setProgress(0, totalSources, "");
+
   File f = SPIFFS.open(PODCASTS_PATH, "r");
   if (!f) {
     Serial.printf("[POD] missing %s\n", PODCASTS_PATH);
+    setProgress(0, 0, "");
     return 0;
   }
 
@@ -186,11 +311,13 @@ uint32_t podcasts_buildEpisodesPlaylist() {
   if (!out) {
     f.close();
     Serial.printf("[POD] cannot create %s\n", PLAYLIST_PODCAST_TMP_PATH);
+    setProgress(0, 0, "");
     return 0;
   }
 
   uint32_t written = 0;
   uint32_t sources = 0;
+  uint16_t progressCur = 0;
 
   char line[384];
   while (f.available()) {
@@ -198,6 +325,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       out.close();
       f.close();
       SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+      setProgress(0, 0, "");
       return 0;
     }
 
@@ -211,14 +339,19 @@ uint32_t podcasts_buildEpisodesPlaylist() {
     uint16_t lim = 0;
     if (!parsePodcastLine(line, show, sizeof(show), feedUrl, sizeof(feedUrl), lim)) continue;
     sources++;
+    progressCur++;
+    setProgress(progressCur, totalSources, show);
+    if (show[0]) {
+      Serial.printf("[POD] source %u/%u: %s\n", (unsigned)progressCur, (unsigned)totalSources, show);
+    } else {
+      Serial.printf("[POD] source %u/%u\n", (unsigned)progressCur, (unsigned)totalSources);
+    }
 
     HTTPClient http;
-    if (!httpBeginForUrl(http, feedUrl)) continue;
-    // Keep mode switching responsive; we can retry on next refresh.
-    http.setTimeout(4000);
-    const int code = http.GET();
+    String effectiveUrl(feedUrl);
+    const int code = httpGetWithRedirects(http, effectiveUrl, 5);
     if (code <= 0 || code >= 300) {
-      http.end();
+      Serial.printf("[POD] feed HTTP %d for %s\n", code, effectiveUrl.c_str());
       delay(0);
       continue;
     }
@@ -230,6 +363,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
     String buf;
     buf.reserve(4096);
     uint32_t lastRxMs = millis();
+    bool sawAnyItem = false;
 
     while (s->connected() && got < lim) {
       if (shouldAbortBuild()) {
@@ -237,11 +371,12 @@ uint32_t podcasts_buildEpisodesPlaylist() {
         out.close();
         f.close();
         SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+        setProgress(0, 0, "");
         return 0;
       }
 
       if (!s->available()) {
-        if ((uint32_t)(millis() - lastRxMs) > 3000u) break;
+        if ((uint32_t)(millis() - lastRxMs) > 6000u) break;
         delay(1);
         continue;
       }
@@ -252,6 +387,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
           out.close();
           f.close();
           SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+          setProgress(0, 0, "");
           return 0;
         }
 
@@ -272,6 +408,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
           const int end = ie + 7;
           String item = buf.substring(is, end);
           buf.remove(0, end);
+          sawAnyItem = true;
 
           char title[192];
           char url[320];
@@ -304,6 +441,9 @@ uint32_t podcasts_buildEpisodesPlaylist() {
     }
 
     http.end();
+    if (!sawAnyItem) {
+      Serial.printf("[POD] no <item> parsed for %s (%s)\n", show, effectiveUrl.c_str());
+    }
     delay(0);
   }
 
@@ -343,6 +483,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
 
   Serial.printf("[POD] built episodes: %lu (sources=%lu)\n",
                 (unsigned long)written, (unsigned long)sources);
+  setProgress(totalSources, totalSources, "done");
   return written;
 }
 
@@ -363,6 +504,7 @@ static void podcastBuildTask(void*) {
   // Even on forced builds, do not fight active playback or mode switches.
   if (shouldAbortBuild()) {
     Serial.println("[POD] build aborted (mode changed or playback started)");
+    setProgress(0, 0, "");
     s_podTask = nullptr;
     vTaskDelete(nullptr);
     return;

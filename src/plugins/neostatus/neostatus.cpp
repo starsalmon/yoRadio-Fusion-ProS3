@@ -30,6 +30,11 @@ namespace {
 #if !defined(NEO_NET_RGB) && defined(BUILTIN_NEOPIXEL_NET_RGB)
   #define NEO_NET_RGB BUILTIN_NEOPIXEL_NET_RGB
 #endif
+// SD playback start pulse color.
+// New preferred name: BUILTIN_NEOPIXEL_SD_START_RGB (keep legacy alias too).
+#if !defined(NEO_SD_RGB) && defined(BUILTIN_NEOPIXEL_SD_START_RGB)
+  #define NEO_SD_RGB BUILTIN_NEOPIXEL_SD_START_RGB
+#endif
 #if !defined(NEO_SD_RGB) && defined(BUILTIN_NEOPIXEL_SD_RGB)
   #define NEO_SD_RGB BUILTIN_NEOPIXEL_SD_RGB
 #endif
@@ -41,6 +46,9 @@ namespace {
 #endif
 #if !defined(NEO_RADIO_START_RGB) && defined(BUILTIN_NEOPIXEL_RADIO_START_RGB)
   #define NEO_RADIO_START_RGB BUILTIN_NEOPIXEL_RADIO_START_RGB
+#endif
+#if !defined(NEO_PODCAST_START_RGB) && defined(BUILTIN_NEOPIXEL_PODCAST_START_RGB)
+  #define NEO_PODCAST_START_RGB BUILTIN_NEOPIXEL_PODCAST_START_RGB
 #endif
 #if !defined(NEO_SPK_SELECT_RGB) && defined(BUILTIN_NEOPIXEL_SPK_SELECT_RGB)
   #define NEO_SPK_SELECT_RGB BUILTIN_NEOPIXEL_SPK_SELECT_RGB
@@ -84,6 +92,10 @@ namespace {
 #endif
 #ifndef NEO_RADIO_START_RGB
   #define NEO_RADIO_START_RGB 255, 255, 255
+#endif
+#ifndef NEO_PODCAST_START_RGB
+  // Distinct from web radio start.
+  #define NEO_PODCAST_START_RGB 255, 0, 200
 #endif
 #ifndef NEO_SPK_SELECT_RGB
   // Requested: speaker select is greener (reserve red for low battery).
@@ -134,6 +146,9 @@ namespace {
 #endif
 #ifndef NEO_RADIO_START_PULSES
   #define NEO_RADIO_START_PULSES 2u
+#endif
+#ifndef NEO_PODCAST_START_PULSES
+  #define NEO_PODCAST_START_PULSES 2u
 #endif
 #ifndef NEO_BT_CONNECTED_PULSES
   #define NEO_BT_CONNECTED_PULSES 2u
@@ -226,8 +241,10 @@ public:
   void on_start_play() override {
     // Requested: white pulse when a radio (web streaming) station starts.
     // SD playback also triggers on_start_play(), so gate on mode.
-    if (config.getMode() == PM_WEB || config.getMode() == PM_PODCAST) {
+    if (config.getMode() == PM_WEB) {
       startSeq({NEO_RADIO_START_RGB}, NEO_RADIO_START_PULSES, NEO_SEQ_PULSE_MS, NEO_SEQ_GAP_MS);
+    } else if (config.getMode() == PM_PODCAST) {
+      startSeq({NEO_PODCAST_START_RGB}, NEO_PODCAST_START_PULSES, NEO_SEQ_PULSE_MS, NEO_SEQ_GAP_MS);
     } else if (config.getMode() == PM_SDCARD) {
       // Requested: SD indication should trigger on SD playback start (not indexing).
       startSeq({NEO_SD_RGB}, NEO_SD_PULSES, NEO_SEQ_PULSE_MS, NEO_SEQ_GAP_MS);

@@ -12,3 +12,7 @@ uint32_t podcasts_buildEpisodesPlaylist();
 void podcasts_requestBuild(bool force = false);
 bool podcasts_buildInProgress();
 
+// Progress for the current build (best-effort).
+// `showOut` may be empty when idle.
+void podcasts_getProgress(uint16_t* cur, uint16_t* total, char* showOut, uint16_t showOutSz);
+

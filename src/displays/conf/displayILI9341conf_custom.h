@@ -27,8 +27,8 @@
 #define bootLogoTop     20
 
 /* SCROLLS */
-const ScrollConfig metaConf     PROGMEM = {{ TFT_FRAMEWDT+38, 6, 3, WA_CENTER }, 140, true, MAX_WIDTH-84, 5000, 5, 30 };
-const ScrollConfig title1Conf   PROGMEM = {{ TFT_FRAMEWDT, 36, 2, WA_CENTER   }, 140, true,  MAX_WIDTH, 5000, 4, 30 };
+const ScrollConfig metaConf     PROGMEM = {{ TFT_FRAMEWDT+38, 6, 3, WA_CENTER }, 140, false, MAX_WIDTH-84, 5000, 5, 30 };
+const ScrollConfig title1Conf   PROGMEM = {{ TFT_FRAMEWDT, 36, 2, WA_CENTER   }, 140, false,  MAX_WIDTH, 5000, 4, 30 };
 const ScrollConfig title2Conf   PROGMEM = {{ TFT_FRAMEWDT, 56, 1, WA_CENTER   }, 140, false, MAX_WIDTH, 5000, 4, 30 };  // textsize=1 → DejaVuSans13
 const ScrollConfig playlistConf PROGMEM = {{ TFT_FRAMEWDT,112, 1, WA_LEFT   }, 140, false, MAX_WIDTH, 1000, 2, 30 };  // textsize=1 → DejaVuSans13
 const ScrollConfig apTitleConf  PROGMEM = {{ TFT_FRAMEWDT, TFT_FRAMEWDT, 3, WA_CENTER }, 140, false, MAX_WIDTH, 0, 4, 20 };

@@ -621,6 +621,8 @@ void Display::_buildPager(){
   if(_metabackground) pages[PG_DIALOG]->addWidget(_metabackground);
   if(_metaline) pages[PG_DIALOG]->addWidget(_metaline);
   pages[PG_DIALOG]->addWidget(_meta);
+  pages[PG_DIALOG]->addWidget(_title1);
+  if(_title2) pages[PG_DIALOG]->addWidget(_title2);
   pages[PG_DIALOG]->addWidget(_nums);
   
   #if !defined(DSP_LCD) && DSP_MODEL!=DSP_NOKIA5110
@@ -810,6 +812,9 @@ if (newmode == _mode ||
     #endif
     _meta->setAlign(metaConf.widget.align);
     _meta->setText(config.station.name);
+    // Switching away to dialogs (e.g. volume) can clear the shared title widgets.
+    // Ensure the player view always restores the current title from config state.
+    _title();
     #if STATION_WIDGETS
     if (_stationNum) _stationNum->setNum(config.lastStation());
     if (_playMode) {
@@ -870,7 +875,7 @@ if (newmode == _mode ||
   if (newmode == LOST)      _showDialog(LANG::const_DlgLost);
   if (newmode == UPDATING)  _showDialog(LANG::const_DlgUpdate);
   if (newmode == SLEEPING)  _showDialog("SLEEPING");
-  if (newmode == SDCHANGE)  _showDialog(LANG::const_waitForSD);
+  if (newmode == SDCHANGE)  _showDialog(config.getMode() == PM_PODCAST ? "Indexing Podcasts" : LANG::const_waitForSD);
   if (newmode == INFO || newmode == SETTINGS || newmode == TIMEZONE || newmode == WIFI) _showDialog(LANG::const_DlgNextion);
   if (newmode == NUMBERS) _showDialog("");
   if (newmode == STATIONS) {
@@ -1097,7 +1102,7 @@ void Display::loop() {
           break;
         }
         case WAITFORSD: {
-          if(_bootstring) _bootstring->setText(LANG::const_waitForSD);
+          if(_bootstring) _bootstring->setText(config.getMode() == PM_PODCAST ? "Indexing Podcasts" : LANG::const_waitForSD);
           break;
         }
         case SDFILEINDEX: {

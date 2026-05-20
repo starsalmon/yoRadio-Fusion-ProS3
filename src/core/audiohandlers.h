@@ -96,7 +96,13 @@ void my_audio_info(Audio::msg_t m) {
   const bool skipStationName = (config.store.metaStNameSkip != 0);
 
   // Generic errors we can detect in any event text.
-  if (strstr(msg, "Account already in use") != nullptr || strstr(msg, "HTTP/1.0 401") != nullptr) {
+  if (strstr(msg, "Account already in use") != nullptr ||
+      strstr(msg, "HTTP/1.0 401") != nullptr ||
+      strstr(msg, "HTTP/1.1 401") != nullptr ||
+      strstr(msg, "HTTP/1.1 403") != nullptr ||
+      strstr(msg, "HTTP/2 403") != nullptr ||
+      strstr(msg, " 403 ") != nullptr ||
+      strstr(msg, "403 Forbidden") != nullptr) {
     player.setError(msg);
   }
 
@@ -153,10 +159,12 @@ void my_audio_info(Audio::msg_t m) {
 
       // Ha a stream „skip metadata” módot jelez, akkor állomásnév kerül a title-be
       if (strstr(msg, "skip metadata") != nullptr) {
-        if (config.station.name[0] == '.') {
-          config.setTitle(config.station.name + 1);
-        } else {
-          config.setTitle(config.station.name);
+        if (config.getMode() != PM_PODCAST) {
+          if (config.station.name[0] == '.') {
+            config.setTitle(config.station.name + 1);
+          } else {
+            config.setTitle(config.station.name);
+          }
         }
       }
     } break;
@@ -338,6 +346,10 @@ void seekSD() {
 }
 
 void processID3(const char *msg) {
+  if (config.getMode() == PM_PODCAST) {
+    // Podcast UX: keep episode title stable from the playlist entry ("Show - Episode").
+    return;
+  }
   bool updated = false;
   if (!msg) {
     return;
@@ -455,7 +467,14 @@ void audio_showstreamtitle(const char *info) {
     return;
   }
 
-  if (strstr(info, "Account already in use") != nullptr || strstr(info, "HTTP/1.0 401") != nullptr) {
+  if (strstr(info, "Account already in use") != nullptr ||
+      strstr(info, "HTTP/1.0 401") != nullptr ||
+      strstr(info, "HTTP/1.1 401") != nullptr ||
+      strstr(info, "HTTP/1.1 403") != nullptr ||
+      strstr(info, "HTTP/2 403") != nullptr ||
+      strstr(info, " 403 ") != nullptr ||
+      strstr(info, "403 Forbidden") != nullptr) {
+    Serial.printf("[AUD] HTTP error while playing %.128s: %.128s\n", config.station.url, info);
     player.setError(info);
   }
 
@@ -465,9 +484,15 @@ void audio_showstreamtitle(const char *info) {
   config.setTitle(DEBUG_TITLES);
 #else
   if (p) {
-    config.setTitle(info);
+    // Podcast episode titles are managed from the playlist entry ("Show - Episode")
+    // and should not be overwritten by stream metadata fallbacks.
+    if (config.getMode() != PM_PODCAST) {
+      config.setTitle(info);
+    }
   } else if (strlen(config.station.title) == 0) {
-    config.setTitle(config.station.name);
+    if (config.getMode() != PM_PODCAST) {
+      config.setTitle(config.station.name);
+    }
   }
 #endif
 }
@@ -481,6 +506,7 @@ void audio_error(const char *info) {
 }
 
 void audio_id3artist(const char *info) {
+  if (config.getMode() == PM_PODCAST) return;
   if (config.store.metaStNameSkip) return;
   config.setStation(info);
   display.putRequest(NEWSTATION);
@@ -503,6 +529,10 @@ void audio_setTitleSafe(const char *info) {
   if (!info) {
     return;
   }
+  if (config.getMode() == PM_PODCAST) {
+    // Keep episode title stable during podcast playback.
+    return;
+  }
   config.setTitle(info);
 }
 
@@ -511,6 +541,9 @@ void audio_icy_description(const char *info) {
     return;
   }
   if (!info) {
+    return;
+  }
+  if (config.getMode() == PM_PODCAST) {
     return;
   }
   if (strlen(config.station.title) == 0 ||                           // ha üres

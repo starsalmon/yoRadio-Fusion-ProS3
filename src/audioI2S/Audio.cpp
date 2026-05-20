@@ -4773,8 +4773,10 @@ bool Audio::parseHttpResponseHeader() { // this is the response to a GET / reque
     }
     m_phreh.f_time = false;
 
+    // Some endpoints (notably BBC podcast redirects) can emit very long Location headers.
+    // If this buffer is too small, the URL gets truncated and subsequent requests can 403.
     ps_ptr<char> rhl;
-    rhl.alloc(1024, "rhl"); // responseHeaderline
+    rhl.alloc(4096, "rhl"); // responseHeaderline
     rhl.clear();
     bool ct_seen = false;
 
@@ -4801,11 +4803,11 @@ bool Audio::parseHttpResponseHeader() { // this is the response to a GET / reque
             if (b < 0x20) continue;
             rhl[pos] = b;
             pos++;
-            if (pos == 1023) {
-                pos = 1022;
+            if (pos == 4095) {
+                pos = 4094;
                 continue;
             }
-            if (pos == 1022) {
+            if (pos == 4094) {
                 rhl[pos] = '\0';
                 AUDIO_LOG_WARN("responseHeaderline overflow");
             }
@@ -4828,7 +4830,12 @@ bool Audio::parseHttpResponseHeader() { // this is the response to a GET / reque
             statusCode[3] = '\0';
             int sc = atoi(statusCode);
             if (sc > 310) { // e.g. HTTP/1.1 301 Moved Permanently
-                info(*this, evt_streamtitle, "%s", rhl.get());
+                // Include the currently requested URL for debugging redirect chains (e.g. BBC).
+                if (m_currentHost.valid() && m_currentHost.strlen() > 0) {
+                    info(*this, evt_streamtitle, "%s (%s)", rhl.get(), m_currentHost.c_get());
+                } else {
+                    info(*this, evt_streamtitle, "%s", rhl.get());
+                }
                 goto exit;
             }
         } else if (rhl.starts_with_icase("content-type:")) { // content-type: text/html; charset=UTF-8
@@ -5019,7 +5026,7 @@ lastToDo:
 bool Audio::parseHttpRangeHeader() { // this is the response to a Range request
 
     ps_ptr<char> rhl;
-    rhl.alloc(1024); // responseHeaderline
+    rhl.alloc(4096); // responseHeaderline (Location headers can be large)
     bool ct_seen = false;
 
     if (m_dataMode != HTTP_RANGE_HEADER) {
@@ -5064,11 +5071,11 @@ bool Audio::parseHttpRangeHeader() { // this is the response to a Range request
             if (b < 0x20) continue;
             rhl[pos] = b;
             pos++;
-            if (pos == 1023) {
-                pos = 1022;
+            if (pos == 4095) {
+                pos = 4094;
                 continue;
             }
-            if (pos == 1022) {
+            if (pos == 4094) {
                 rhl[pos] = '\0';
                 AUDIO_LOG_WARN("responseHeaderline overflow");
             }

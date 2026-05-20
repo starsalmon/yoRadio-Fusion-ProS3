@@ -26,6 +26,9 @@
 #include <cstddef>
 #include "driver/rtc_io.h"
 
+// Forward declaration for clangd/lint environments that don't pick up `podcasts.h` correctly.
+void podcasts_getProgress(uint16_t* cur, uint16_t* total, char* showOut, uint16_t showOutSz);
+
 #if DSP_MODEL==DSP_DUMMY
 #define DUMMYDISPLAY
 #endif
@@ -454,6 +457,26 @@ void Config::changeMode(int newmode) { // DLNA mod
                 // Fall back to Podcast mode when Wi-Fi is available.
                 if (WiFi.status() == WL_CONNECTED) {
                   newmode = PM_PODCAST;
+                  // If we were streaming (WEB/DLNA) and SD wasn't available, ensure we
+                  // stop before entering Podcast mode. Otherwise the old stream can
+                  // keep playing in the background.
+                  if (oldMode != PM_SDCARD && pir) {
+                    player.lockOutput = true;
+                    player.sendCommand({PR_STOP, 0});
+                    uint32_t stopStart = millis();
+                    while (player.isRunning() && (millis() - stopStart) < 2500) {
+                      player.loop();
+                      delay(10);
+                    }
+                    if (player.isRunning()) {
+                      Serial.println("##[WARN]# WEB->POD (SD missing): forcing audio stop");
+                      player.stopSong();
+                    }
+                    player.lockOutput = false;
+                    setStation("yoRadio");
+                    setTitle(LANG::const_PlStopped);
+                    delay(30);
+                  }
                 } else {
                   return;
                 }
@@ -487,10 +510,10 @@ void Config::changeMode(int newmode) { // DLNA mod
 
     initPlaylistMode();
 
-    // Always clear the 2nd line when switching into non-podcast modes,
-    // so we never show a stale episode title on SD/WEB.
-    if (getMode() != PM_PODCAST) {
-      setTitle("");
+    // For non-podcast modes, line 2 should indicate the stopped state when nothing is playing.
+    // (Podcast mode uses line 2 for episode titles while browsing.)
+    if (getMode() != PM_PODCAST && !player.isRunning()) {
+      setTitle(LANG::const_PlStopped);
     }
 
     // SD: optionally resume last SD track on entering SD mode (even if we weren't playing).
@@ -670,18 +693,52 @@ void Config::initPlaylistMode() {
 #endif
   {
     if (getMode() == PM_PODCAST) {
-      // Use any previously generated list immediately, then refresh in background.
+      // Always rebuild + index on entry so the list is complete.
+      // Show progress on the player screen while indexing.
+      if (display.ready()) {
+        display.putRequest(NEWMODE, SDCHANGE);
+        display.putRequest(SDFILEINDEX, 0);
+      }
+
+      podcasts_requestBuild(true);
+      const uint32_t t0 = millis();
+      int lastPct = -1;
+      char lastShow[96];
+      lastShow[0] = '\0';
+      while (podcasts_buildInProgress() && (uint32_t)(millis() - t0) < 600000u) {
+        uint16_t cur = 0, tot = 0;
+        char show[96];
+        memset(show, 0, sizeof(show));
+        podcasts_getProgress(&cur, &tot, show, sizeof(show));
+
+        if (show[0] != '\0' && strcmp(show, lastShow) != 0) {
+          strlcpy(lastShow, show, sizeof(lastShow));
+          // Show the currently-indexed podcast source on the 2nd row.
+          setTitle(show);
+        }
+
+        int pct = 0;
+        if (tot > 0) {
+          pct = (int)(((uint32_t)cur * 100u) / (uint32_t)tot);
+          if (pct > 100) pct = 100;
+        }
+        if (pct != lastPct) {
+          lastPct = pct;
+          if (display.ready()) display.putRequest(SDFILEINDEX, (int16_t)pct);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+      }
+
+      // Ensure the index exists for whatever episode list we have (new or previous).
+      indexPodcastPlaylist();
       initPodcastPlaylist();
+
       uint16_t cs = playlistLength();
       _lastStation = store.lastPodcastStation;
       if (_lastStation == 0 && cs > 0) _lastStation = 1;
       if (_lastStation > cs) _lastStation = (cs > 0) ? 1 : 0;
-
-      // Always refresh on entry (feeds can update multiple times per day).
-      // Uses background task; list will update when ready.
-      podcasts_requestBuild(true);
       if (cs == 0) {
-        // Avoid showing stale SD/Web metadata when the podcast list is empty.
         setStation("yoRadio");
         setTitle(LANG::const_PlStopped);
       }

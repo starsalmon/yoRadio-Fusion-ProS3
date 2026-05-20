@@ -171,10 +171,15 @@ Notes:
 - The generated playlist is designed to reuse the existing station browser:
   - **Top line** (station name) shows the **podcast/show name**
   - **Second line** (title) shows the **episode title**
+- Some BBC feeds use `open.live.bbc.co.uk/mediaselector/.../audio-nondrm-download-rss/...` links in RSS; the firmware rewrites those to `audio-nondrm-download` so the episode URLs match what works in a browser.
 - Episode list generation runs in a **background task** and is guarded to reduce watchdog/network contention:
   - It refreshes on entering Podcast mode, and can refresh again after playback stops while still in Podcast mode.
   - It avoids rebuilding while audio is actively playing, and aborts early if you leave Podcast mode mid-refresh.
 - Uploading a new `podcasts.csv` via the web UI will remove the generated playlist/index so it rebuilds next time you enter Podcast mode.
+
+Indexing behavior:
+
+- **Entering Podcast mode** performs a full RSS fetch + index build and shows **progress** on the player screen (so the resulting list should be complete before you start browsing).
 
 
 ### Import stations from Moode (fast)
@@ -245,8 +250,9 @@ If you have `BUILTIN_NEOPIXEL_PIN` defined (ProS3: GPIO18), this fork can run a 
   - Preferred “easy to find” names:
     - `BUILTIN_NEOPIXEL_BOOT_RGB`
     - `BUILTIN_NEOPIXEL_NET_RGB`
-    - `BUILTIN_NEOPIXEL_SD_RGB`
+    - `BUILTIN_NEOPIXEL_SD_START_RGB` (preferred; legacy `BUILTIN_NEOPIXEL_SD_RGB` still supported)
     - `BUILTIN_NEOPIXEL_RADIO_START_RGB`
+    - `BUILTIN_NEOPIXEL_PODCAST_START_RGB`
     - `BUILTIN_NEOPIXEL_SPK_SELECT_RGB`
     - `BUILTIN_NEOPIXEL_WIFI_LOST_RGB`
     - `BUILTIN_NEOPIXEL_SLEEP_RGB`

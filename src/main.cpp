@@ -128,7 +128,8 @@ void setup() {
   network.begin();
   if(SDC_CS!=255) {
     display.putRequest(WAITFORSD, 0);
-    Serial.print("##[BOOT]#\tSD search\t");
+    if (config.getMode() == PM_PODCAST) Serial.print("##[BOOT]#\tPodcast index\t");
+    else Serial.print("##[BOOT]#\tSD search\t");
   }
   config.initPlaylistMode();
   netserver.begin();

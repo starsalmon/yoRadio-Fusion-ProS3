@@ -146,6 +146,13 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
 - Display split: in Podcast mode, the **show name** is the station name (top line) and the **episode title** is shown on the second line.
 - Persistence: the last selected podcast episode is stored separately from radio/SD last-station so rebooting/switching modes doesn’t cross-contaminate selections.
 - Build robustness: episode generation runs in a background task with guards (Wi‑Fi connected, display ready, and no active playback), aborts if mode changes or playback starts, and uses atomic file swaps to avoid “missing file” windows during refresh.
+- Mode entry robustness: entering Podcast mode now runs a full rebuild + index with visible progress before the list is shown (reduces “missing shows” and scroll-time races).
+- BBC compatibility:
+  - RSS feeds may publish `open.live.bbc.co.uk/mediaselector/.../audio-nondrm-download-rss/...` enclosure URLs which 403 on-device; those URLs are rewritten to `audio-nondrm-download` (the variant that works in a browser).
+  - Long redirect `Location:` headers are supported (prevents truncated redirect URLs which can also cause 403s).
+- UI polish:
+  - The player view restores the “episode title” after showing volume/dialog overlays.
+  - ILI9341 custom config no longer forces uppercase for the top lines (show/episode aren’t ALL CAPS).
 - MQTT / Home Assistant "Mode" select now includes `Podcast`.
 
 ### Where to look for the “full” change list

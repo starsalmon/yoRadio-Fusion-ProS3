@@ -880,11 +880,19 @@ if (newmode == _mode ||
   if (newmode == NUMBERS) _showDialog("");
   if (newmode == STATIONS) {
     _pager->setPage( pages[PG_PLAYLIST]);
+    // Ensure the playlist marquee can take over immediately even if a different ScrollWidget
+    // was mid-scroll on the player page (scrollId is global).
+    dsp.setScrollId(NULL);
     _plcurrent->setText("");
     currentPlItem = config.lastStation();
     // When audio is playing, prefer the "moving cursor" playlist renderer:
     // it avoids per-step SD/SPIFFS reads + full list redraws that can starve audio.
-    if (_plwidget) _plwidget->setForceMovingCursor(player.isRunning());
+    // Web/podcast benefit from moving-cursor: long titles + selected-row marquee.
+    // Also keep it enabled while audio is running to reduce redraw cost.
+    const bool wantMovingCursor = player.isRunning() ||
+                                 (config.getMode() == PM_PODCAST) ||
+                                 (config.getMode() == PM_WEB);
+    if (_plwidget) _plwidget->setForceMovingCursor(wantMovingCursor);
     if (_plwidget) _plwidget->invalidateCache();
     _drawPlaylist();
   }

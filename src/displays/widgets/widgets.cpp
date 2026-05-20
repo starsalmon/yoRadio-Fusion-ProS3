@@ -2253,8 +2253,14 @@ void PlayListWidget::_drawMovingCursor(uint16_t currentItem) {
     if (oldLocalPos >= 0 &&
         oldLocalPos < itemsPerPage &&
         oldLocalPos != newLocalPos) {
-
+        // IMPORTANT:
+        // The selected-row marquee uses `_current->moveTo()`, which clears the old marquee area
+        // before moving. If we redraw the old row first, the marquee move can wipe it,
+        // leaving a blank entry. So: update the selected row first, then repaint the old row.
+        _printMoving(newLocalPos, _plCache[newLocalPos].c_str());
         _printMoving(oldLocalPos, _plCache[oldLocalPos].c_str());
+        _plLastGlobalPos = currentItem;
+        return;
     }
 
     _printMoving(newLocalPos, _plCache[newLocalPos].c_str());

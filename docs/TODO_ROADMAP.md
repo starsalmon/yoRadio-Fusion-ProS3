@@ -25,6 +25,10 @@
 - **Podcast mode**: dedicated mode to stream recent episodes from podcast feeds
   - **Option A (flat episodes list)**: implemented (RSS → generated `podcast_episodes.csv` playlist)
   - Next: add sorting (pubDate), caching/refresh interval, and “show → episodes” browsing (Option B)
+    - Grouped playlist view (nicer UX): show headers + indented episode rows, e.g.
+      - `Show Name 01`
+      - `  - Episode 01`
+      - `  - Episode 02`
 - **Load station logos from SD**: might be easier long-term; likely needs stable image decode first
 - **Configure new features from web**: allow setting options like `BATTERY_ENABLED`, `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT` from the web interface
 - **Reduce blocking patterns and busy-waits** (queue allocation loops, MQTT playlist block)

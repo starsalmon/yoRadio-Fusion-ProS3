@@ -140,6 +140,8 @@ void setup() {
   // If last output was BT, start the companion connect flow now.
 #ifdef BT_COMPANION_ENABLE
   btcompanion_setEnabled(config.store.outputDevice == 1);
+  // Prime companion with the current PCM sample rate (best-effort).
+  btcompanion_setPcmSampleRate(player.getSampleRate());
   if (config.store.outputDevice != 1) {
     // Ensure companion isn't left streaming if ProS3 rebooted.
     btcompanion_forceSleep();
@@ -202,6 +204,18 @@ void loop() {
   // represent "SD available" in all cases.)
   if (network.status == CONNECTED || network.status==SDREADY || config.getMode() == PM_SDCARD) {
     player.loop();
+#ifdef BT_COMPANION_ENABLE
+    // Keep the companion informed if content changes the PCM sample rate.
+    // This is especially important for podcasts (often 48kHz).
+    static uint32_t s_lastBtSr = 0;
+    if (config.store.outputDevice == 1 && btcompanion_enabled()) {
+      const uint32_t sr = player.getSampleRate();
+      if (sr != 0 && sr != s_lastBtSr) {
+        s_lastBtSr = sr;
+        btcompanion_setPcmSampleRate(sr);
+      }
+    }
+#endif
 #ifdef MQTT_ROOT_TOPIC
     if (network.status == CONNECTED) mqttLoop();
 #endif

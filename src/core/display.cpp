@@ -1493,6 +1493,8 @@ static uint16_t* loadStationLogoFromSpiffs(const char* stationName, uint16_t* ou
   // Special-case default logo.
   if (strcmp(stationName, "_DEFAULT_") == 0 || strcmp(stationName, "default") == 0) {
     strlcpy(path, "/logos/default.ylg", sizeof(path));
+  } else if (strcmp(stationName, "_PODCAST_DEFAULT_") == 0) {
+    strlcpy(path, "/logos/podcast_default.ylg", sizeof(path));
   } else {
     char key[96];
     spiffsKeyFromStationName(stationName, key, sizeof(key));
@@ -1744,9 +1746,20 @@ void Display::_updateStationLogo() {
   }
 
   const bool isWeb = (config.getMode() == PM_WEB);
-  // IMPORTANT: use the playlist station name for the logo key.
-  // `config.station.name` may be updated from ICY metadata after playback starts.
-  const char* sname = (config.station.playlistName[0] ? config.station.playlistName : config.station.name);
+  const bool isPodcast = (config.getMode() == PM_PODCAST);
+  const bool showLogosInThisMode = (isWeb || isPodcast);
+
+  // IMPORTANT:
+  // - Web mode: prefer the playlist station name for the logo key because `station.name`
+  //   can be overwritten by ICY metadata after playback starts.
+  // - Podcast mode: the playlist label is "Show - Episode", which changes per episode.
+  //   Use the show name (`station.name`) so a single show logo applies to all episodes.
+  const char* sname = nullptr;
+  if (isPodcast) {
+    sname = config.station.name;
+  } else {
+    sname = (config.station.playlistName[0] ? config.station.playlistName : config.station.name);
+  }
 
   auto clearScaled = [&]() {
     if (_stationLogoScaled) {
@@ -1773,7 +1786,7 @@ void Display::_updateStationLogo() {
     return;
   }
 
-  if (!isWeb || !sname || !sname[0]) {
+  if (!showLogosInThisMode || !sname || !sname[0]) {
     clearScaled();
     _stationLogoLastKey[0] = '\0';
     _stationLogoUsedDefault = false;
@@ -1792,6 +1805,7 @@ void Display::_updateStationLogo() {
   // SPIFFS-only logos:
   // - station-specific: /logos/<hash>.ylg
   // - fallback default: /logos/default.ylg (generated from images_src/station_logos/default_logo.png)
+  // - podcast fallback: /logos/podcast_default.ylg (generated from images_src/podcast_logos/default_podcast.png)
   const bool want64 = (config.store.vuLayout == 0);
   const uint16_t wantW = want64 ? 64 : 80;
   const uint16_t wantH = want64 ? 64 : 80;
@@ -1823,10 +1837,15 @@ void Display::_updateStationLogo() {
   uint16_t* filePixels = loadStationLogoFromSpiffs(sname, &fw, &fh);
   const bool usedDefault = (filePixels == nullptr);
   if (!filePixels) {
-    // Default logo from SPIFFS.
+    // Fallback logo from SPIFFS.
     fw = 0;
     fh = 0;
-    filePixels = loadStationLogoFromSpiffs("_DEFAULT_", &fw, &fh);
+    if (isPodcast) {
+      filePixels = loadStationLogoFromSpiffs("_PODCAST_DEFAULT_", &fw, &fh);
+    }
+    if (!filePixels) {
+      filePixels = loadStationLogoFromSpiffs("_DEFAULT_", &fw, &fh);
+    }
   }
 
   if (!filePixels) {

@@ -29,6 +29,11 @@ const char* btcompanion_sinkName();
 // If audio is already started, this is a no-op to avoid disrupting playback.
 void btcompanion_requestConnect();
 
+// Optional: inform the companion about the current PCM sample rate on the I2S lines.
+// This is used to keep A2DP TX audio pitched correctly when streams switch between
+// 44.1k and 48k content (podcasts are often 48k).
+void btcompanion_setPcmSampleRate(uint32_t hz);
+
 // Best-effort link state based on periodic STATUS polling.
 // Used for UI icon selection (idle/searching/connected).
 enum class BtCompanionLinkState : uint8_t {

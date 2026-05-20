@@ -2214,11 +2214,6 @@ void PlayListWidget::invalidateCache() {
 
 void PlayListWidget::_drawMovingCursor(uint16_t currentItem) {
 
-  /* A _plcurrent ScrollWidget loop()-ja automatikusan újrarajzolna ha _doscroll=true.
-     Üres szöveggel biztosítjuk hogy _doscroll=false legyen → nincs auto-rajzolás.
-     Moving cursor módban a _printMoving kezeli a teljes vizuális megjelenítést. */
-  if (_current) _current->setText("");
-
   bool isLongPause = (millis() - _plLastDrawTime > 2000);
   _plLastDrawTime = millis();
 
@@ -2285,6 +2280,16 @@ void PlayListWidget::_printMoving(uint8_t pos, const char* item) {
   dsp.fillRect(0, yPos, dsp.width(),
                _plItemHeight - 1,
                bgColor);
+
+  // Selected-row marquee: for very long labels (common in Podcast mode),
+  // use the dedicated ScrollWidget to auto-scroll the selected item.
+  // This keeps the rest of the list fast/static while still making the selected item readable.
+  if (isSelected && _current) {
+    _current->setFgColor(fgColor);
+    _current->moveTo({ (uint16_t)TFT_FRAMEWDT, (uint16_t)yPos, (int16_t)playlistConf.width });
+    _current->setText(item ? item : "");
+    return;
+  }
 
   if (item && item[0] != '\0') {
     const GFXfont* _plfont = yoScrollFont(playlistConf.widget.textsize);

@@ -38,6 +38,7 @@ static uint32_t s_enabledSinceMs = 0;
 static uint32_t s_nextKickMs = 0;
 static uint32_t s_kickBackoffMs = 0;
 static uint32_t s_lastBlinkReqMs = 0;
+static uint32_t s_pcmHz = 0;
 static int s_conn = -1;
 static int s_audio = -1;
 static BtCompanionLinkState s_link = BtCompanionLinkState::OFF;
@@ -226,6 +227,16 @@ void btcompanion_requestConnect() {
   sendLine("STATUS");
 }
 
+void btcompanion_setPcmSampleRate(uint32_t hz) {
+  if (hz == 0) return;
+  if (hz == s_pcmHz) return;
+  s_pcmHz = hz;
+  if (!s_enabled) return;
+  char buf[32];
+  snprintf(buf, sizeof(buf), "SR %lu", (unsigned long)hz);
+  sendLine(buf);
+}
+
 void btcompanion_setEnabled(bool enable) {
   if (enable == s_enabled) return;
   s_enabled = enable;
@@ -277,6 +288,11 @@ void btcompanion_setEnabled(bool enable) {
       delay(120);
     }
     sendConnectDefault();
+    if (s_pcmHz) {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "SR %lu", (unsigned long)s_pcmHz);
+      sendLine(buf);
+    }
     sendLine("STATUS");
   } else {
     s_link = BtCompanionLinkState::OFF;
@@ -350,6 +366,7 @@ void btcompanion_forceSleep() {}
 void btcompanion_setSinkName(const char*) {}
 const char* btcompanion_sinkName() { return ""; }
 void btcompanion_requestConnect() {}
+void btcompanion_setPcmSampleRate(uint32_t) {}
 BtCompanionLinkState btcompanion_linkState() { return BtCompanionLinkState::OFF; }
 
 #endif

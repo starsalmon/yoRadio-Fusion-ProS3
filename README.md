@@ -80,6 +80,7 @@ platformio device monitor -b 115200
 - **Bluetooth audio output (A2DP Source) via companion ESP32 (optional)**:
   - ESP32‑S3 is BLE-only, so Classic-BT A2DP TX is handled by a second ESP32 over UART + I2S
   - Output can be toggled (speaker vs BT) and the footer shows BT **off/searching/connected/audio** state (separate BT icon left of the speaker)
+  - Podcasts can be 48kHz: the ProS3 now informs the companion of PCM sample-rate changes (`SR 44100|48000`) so BT output stays pitch-correct (companion resamples to A2DP’s fixed 44.1kHz)
 - **Audio/UI performance work** (opt-in diagnostics + throttling):
   - 1Hz audio diagnostics (`[AUD] …`) and display loop diagnostics (`[DSP] …`)
   - Adaptive VU throttling based on buffer health and audio loop time
@@ -202,13 +203,19 @@ More info: [`images_src/station_logos/README.md`](images_src/station_logos/READM
 Summary:
 
 - **Source**: `images_src/station_logos/*.png|*.jpg` (tracked)
+- **Podcast show logos (cached)**: `images_src/podcast_logos/*.png` (tracked; fetched from RSS on `buildfs/uploadfs`)
 - **Output**: `data/logos/*.ylg` + `data/logos/index.tsv` (gitignored; uploaded to SPIFFS)
 - **Default logo**: `images_src/station_logos/default_logo.png` → `/logos/default.ylg`
+- **Default podcast logo**: `images_src/podcast_logos/default_podcast.png` → `/logos/podcast_default.ylg`
 - **Generation** runs automatically on filesystem builds:
 
 ```bash
 platformio run -e yoradio-um_pros3-ili9341 -t uploadfs
 ```
+
+Notes:
+
+- Podcast show logo fetching is **best-effort** during filesystem builds. To disable it (offline builds), set `PODCAST_LOGOS_FETCH=0`.
 
 ## Controls
 

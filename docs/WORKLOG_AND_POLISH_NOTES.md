@@ -153,6 +153,9 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
 - UI polish:
   - The player view restores the “episode title” after showing volume/dialog overlays.
   - ILI9341 custom config no longer forces uppercase for the top lines (show/episode aren’t ALL CAPS).
+  - Playlist UX: in moving-cursor mode, the **selected** playlist row uses a marquee scroll for long items (helps long podcast “Show - Episode” labels).
+- BT output robustness:
+  - Some podcast MP3s are **48kHz**; ProS3 now reports PCM sample-rate changes to the companion (`SR 44100|48000`) and the companion resamples 48k → 44.1k so A2DP output stays pitch-correct without clicks.
 - MQTT / Home Assistant "Mode" select now includes `Podcast`.
 
 ### Where to look for the “full” change list

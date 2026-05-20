@@ -9,6 +9,7 @@
 - **IR control UX**: set up receiver + on-screen “IR RX” indicator
 - **Station logo workflow polish**: improve matching/coverage; automate maintaining the local image library
 - **SD playback resume**: track resume is implemented; resume *position* still WIP
+- **Podcast playback resume**: resume *position* (episode time offset) still WIP
 - **Album art**: revisit later (needs stable decoder/task model)
 - **Bluetooth output UX polish** (Companion ESP32 A2DP TX):
   - **NeoLED statuses**: booting, network connect, SD card indexing, BT connecting/disconnecting (**DONE**)

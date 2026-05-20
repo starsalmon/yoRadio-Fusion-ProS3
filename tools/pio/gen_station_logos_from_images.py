@@ -30,10 +30,13 @@ from PIL import Image
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SRC_DIR = REPO_ROOT / "images_src" / "station_logos"
+STATION_SRC_DIR = REPO_ROOT / "images_src" / "station_logos"
+PODCAST_SRC_DIR = REPO_ROOT / "images_src" / "podcast_logos"
 PLAYLIST_FILE = REPO_ROOT / "data" / "data" / "playlist.csv"
+PODCASTS_FILE = REPO_ROOT / "data" / "data" / "podcasts.csv"
 OUT_SPIFFS_DIR = REPO_ROOT / "data" / "logos"
 DEFAULT_LOGO_PNG = REPO_ROOT / "images_src" / "station_logos" / "default_logo.png"
+PODCAST_DEFAULT_LOGO_PNG = REPO_ROOT / "images_src" / "podcast_logos" / "default_podcast.png"
 
 TARGET_W = 80
 TARGET_H = 80
@@ -70,6 +73,28 @@ def _norm_for_key(station: str) -> str:
     # Keep in sync with firmware-side normalization.
     key = re.sub(r"[^a-zA-Z0-9]+", "_", station).strip("_").lower()
     return key or "logo"
+
+
+def read_podcast_show_map(path: Path) -> dict[str, str]:
+    """
+    Map normalized show keys -> original show names from podcasts.csv.
+    This lets us keep the cached logo filenames stable (normalized), while writing
+    human-friendly show names into data/logos/index.tsv (and using the show name
+    as the hash input, which produces the same key).
+    """
+    out: dict[str, str] = {}
+    if not path.exists():
+        return out
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        raw = raw.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        parts = raw.split("\t")
+        show = parts[0].strip() if parts else ""
+        if not show:
+            continue
+        out[_norm_for_key(show)] = show
+    return out
 
 
 def _fnv1a32(data: bytes) -> int:
@@ -216,9 +241,12 @@ def main() -> int:
         print(f"ERROR: no stations found in {PLAYLIST_FILE}", file=sys.stderr)
         return 2
 
-    candidates = list_candidates(SRC_DIR)
-    if not candidates:
-        print(f"ERROR: no images found in {SRC_DIR}", file=sys.stderr)
+    # Combine both station and podcast logo sources.
+    candidates: list[ImageCandidate] = []
+    candidates.extend(list_candidates(STATION_SRC_DIR))
+    candidates.extend(list_candidates(PODCAST_SRC_DIR))
+    if not candidates and not DEFAULT_LOGO_PNG.exists() and not PODCAST_DEFAULT_LOGO_PNG.exists():
+        print(f"ERROR: no images found in {STATION_SRC_DIR} or {PODCAST_SRC_DIR}", file=sys.stderr)
         return 2
 
     selected: list[tuple[str, ImageCandidate]] = []
@@ -232,6 +260,7 @@ def main() -> int:
 
     OUT_SPIFFS_DIR.mkdir(parents=True, exist_ok=True)
     spiffs_index: list[tuple[str, str]] = []
+    podcast_show_map = read_podcast_show_map(PODCASTS_FILE)
 
     # Clean stale outputs so old filenames can't break SPIFFS builds.
     for p in OUT_SPIFFS_DIR.glob("*.ylg"):
@@ -251,7 +280,20 @@ def main() -> int:
             continue
         if c.label.lower() == "default_logo":
             continue
-        jobs.append((c.label, c.path))
+        if c.path.resolve() == PODCAST_DEFAULT_LOGO_PNG.resolve():
+            continue
+        if c.label.lower() == "default_podcast":
+            continue
+        # For cached podcast logos, prefer the original show name for the key/index label.
+        # Cached filenames are normalized (e.g. "the_infinite_monkey_cage.png"), so look
+        # up the friendly show name from podcasts.csv.
+        name_for_key = c.label
+        try:
+            if PODCAST_SRC_DIR.resolve() in c.path.resolve().parents:
+                name_for_key = podcast_show_map.get(c.label, c.label)
+        except OSError:
+            pass
+        jobs.append((name_for_key, c.path))
 
     written_keys: dict[str, Path] = {}
     for name_for_key, img_path in jobs:
@@ -291,6 +333,19 @@ def main() -> int:
         spiffs_index.append(("_DEFAULT_", "default.ylg"))
     else:
         print(f"WARN: default logo not found at {DEFAULT_LOGO_PNG}", file=sys.stderr)
+
+    # Podcast default logo (used as the fallback image in Podcast mode).
+    if PODCAST_DEFAULT_LOGO_PNG.exists():
+        ppixels = image_to_rgb565_80x80(PODCAST_DEFAULT_LOGO_PNG)
+        pdraw_words = ppixels
+        prle_words = rle_encode_rgb565(ppixels)
+        if len(prle_words) * 2 < len(pdraw_words) * 2:
+            write_spiffs_logo_file(OUT_SPIFFS_DIR / "podcast_default.ylg", fmt=1, w=TARGET_W, h=TARGET_H, words=prle_words)
+        else:
+            write_spiffs_logo_file(OUT_SPIFFS_DIR / "podcast_default.ylg", fmt=0, w=TARGET_W, h=TARGET_H, words=pdraw_words)
+        spiffs_index.append(("_PODCAST_DEFAULT_", "podcast_default.ylg"))
+    else:
+        print(f"WARN: podcast default logo not found at {PODCAST_DEFAULT_LOGO_PNG}", file=sys.stderr)
 
     (OUT_SPIFFS_DIR / "index.tsv").write_text(
         "\n".join(f"{s}\t{fn}" for (s, fn) in spiffs_index) + ("\n" if spiffs_index else ""),

@@ -392,6 +392,19 @@ void Config::changeMode(int newmode) { // DLNA mod
         network.status = SDREADY;
     }
 
+    // Make Podcast indexing UI appear immediately on mode entry, even if we're not currently
+    // playing (or if stop/connect work below blocks briefly).
+    if (oldMode != PM_PODCAST && newmode == PM_PODCAST && _bootDone && display.ready()) {
+        display.resetQueue();
+        setStation("Podcasts");
+        setTitle("Indexing podcasts...");
+        display.putRequest(NEWMODE, SDCHANGE);
+        display.putRequest(SDFILEINDEX, 0);
+        display.putRequest(NEWSTATION);
+        display.putRequest(NEWTITLE);
+        delay(1);
+    }
+
     // IMPORTANT: if we're leaving SD while SD playback is active, stop first *before*
     // unmounting the card. Without this, subsequent mode playback can fail.
     if (oldMode == PM_SDCARD && newmode != PM_SDCARD) {
@@ -420,10 +433,24 @@ void Config::changeMode(int newmode) { // DLNA mod
     // If we're switching into Podcast mode from WEB/DLNA while something is playing,
     // stop first so we don't keep streaming audio in the background.
     if (oldMode != PM_SDCARD && newmode == PM_PODCAST && pir) {
+        // Make the "Indexing Podcasts" UI appear immediately, before any blocking stop work.
+        // This avoids a "nothing happened" pause when switching from Web → Podcast mid-playback.
+        if (display.ready()) {
+          display.resetQueue();
+          setStation("Podcasts");
+          setTitle("Indexing podcasts...");
+          display.putRequest(NEWMODE, SDCHANGE);
+          display.putRequest(SDFILEINDEX, 0);
+          display.putRequest(NEWSTATION);
+          display.putRequest(NEWTITLE);
+          // Give the display task a moment to render before we start blocking stop/connect work.
+          vTaskDelay(pdMS_TO_TICKS(25));
+        }
         player.lockOutput = true;
         player.sendCommand({PR_STOP, 0});
         uint32_t stopStart = millis();
-        while (player.isRunning() && (millis() - stopStart) < 2500) {
+        // Stop shouldn't take long; if it does, force-stop so mode switching feels instant.
+        while (player.isRunning() && (millis() - stopStart) < 700) {
             player.loop();
             delay(10);
         }

@@ -24,7 +24,7 @@
   - Put BT companion into deep sleep when ProS3 enters deep sleep
 - **Podcast mode**: dedicated mode to stream recent episodes from podcast feeds
   - **Option A (flat episodes list)**: implemented (RSS → generated `podcast_episodes.csv` playlist)
-  - Next: add sorting (pubDate), caching/refresh interval, and “show → episodes” browsing (Option B)
+  - Next: add sorting (pubDate), caching/refresh interval (basic 3h throttle done), and “show → episodes” browsing (Option B)
     - Grouped playlist view (nicer UX): show headers + indented episode rows, e.g.
       - `Show Name 01`
       - `  - Episode 01`

@@ -174,13 +174,15 @@ Notes:
   - **Second line** (title) shows the **episode title**
 - Some BBC feeds use `open.live.bbc.co.uk/mediaselector/.../audio-nondrm-download-rss/...` links in RSS; the firmware rewrites those to `audio-nondrm-download` so the episode URLs match what works in a browser.
 - Episode list generation runs in a **background task** and is guarded to reduce watchdog/network contention:
-  - It refreshes on entering Podcast mode, and can refresh again after playback stops while still in Podcast mode.
+  - It refreshes on entering Podcast mode (throttled, see below), and can refresh again after playback stops while still in Podcast mode (also throttled).
   - It avoids rebuilding while audio is actively playing, and aborts early if you leave Podcast mode mid-refresh.
 - Uploading a new `podcasts.csv` via the web UI will remove the generated playlist/index so it rebuilds next time you enter Podcast mode.
 
 Indexing behavior:
 
-- **Entering Podcast mode** performs a full RSS fetch + index build and shows **progress** on the player screen (so the resulting list should be complete before you start browsing).
+- **Entering Podcast mode** will perform a full RSS fetch + index build at most **once every ~3 hours** and shows **progress** on the player screen.
+  - Switching into Podcast mode again within that window reuses the cached `podcast_episodes.csv` list (no refresh).
+  - Booting straight into Podcast mode is a convenient way to force a refresh when you want it.
 
 
 ### Import stations from Moode (fast)

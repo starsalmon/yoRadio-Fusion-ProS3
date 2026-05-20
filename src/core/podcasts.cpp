@@ -7,11 +7,24 @@
 
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <time.h>
 
 namespace {
 
 static TaskHandle_t s_podTask = nullptr;
 static bool s_forceBuild = false;
+static uint32_t s_lastIndexMs = 0;
+
+static inline bool epochLooksValid(uint32_t epoch) {
+  // Rough sanity check: epoch seconds after 2023-01-01.
+  return epoch >= 1672531200u;
+}
+
+static inline uint32_t epochNow() {
+  const time_t t = time(nullptr);
+  if (t <= 0) return 0u;
+  return (uint32_t)t;
+}
 
 static portMUX_TYPE s_progMux = portMUX_INITIALIZER_UNLOCKED;
 static uint16_t s_progCur = 0;
@@ -274,6 +287,27 @@ static uint16_t countPodcastSources() {
 
 } // namespace
 
+bool podcasts_isIndexDue(uint32_t minIntervalSeconds) {
+  if (minIntervalSeconds == 0) return true;
+
+  // Prefer wall clock if SNTP/RTC has set the time.
+  const uint32_t now = epochNow();
+  uint32_t lastEpoch = config.store.lastPodcastIndexEpoch;
+  if (lastEpoch == 0xFFFFFFFFu) lastEpoch = 0u;
+  if (epochLooksValid(now) && epochLooksValid(lastEpoch)) {
+    return (now - lastEpoch) >= minIntervalSeconds;
+  }
+
+  // Fallback: throttle within a single uptime using millis().
+  if (s_lastIndexMs != 0u) {
+    const uint32_t minMs = minIntervalSeconds * 1000u;
+    return (uint32_t)(millis() - s_lastIndexMs) >= minMs;
+  }
+
+  // No time source yet; allow a build (best-effort).
+  return true;
+}
+
 void podcasts_getProgress(uint16_t* cur, uint16_t* total, char* showOut, uint16_t showOutSz) {
   if (cur) *cur = 0;
   if (total) *total = 0;
@@ -515,6 +549,11 @@ static void podcastBuildTask(void*) {
   if (wrote > 0) {
     config.indexPodcastPlaylist();
     config.initPodcastPlaylist();
+    s_lastIndexMs = millis();
+    const uint32_t now = epochNow();
+    if (epochLooksValid(now)) {
+      config.saveValue(&config.store.lastPodcastIndexEpoch, now);
+    }
     if (display.ready() && config.getMode() == PM_PODCAST && display.mode() == STATIONS) {
       display.putRequest(DRAWPLAYLIST);
     }
@@ -529,6 +568,10 @@ void podcasts_requestBuild(bool force) {
   if (s_podTask) return;
 
   if (!force) {
+    // Throttle refreshes so switching into Podcast mode isn't always expensive.
+    // (Forced builds bypass this gate.)
+    if (!podcasts_isIndexDue(3u * 60u * 60u)) return; // 3 hours
+
     // Keep this low-impact: only refresh while you're in Podcast mode and not playing.
     if (config.getMode() != PM_PODCAST) return;
     if (WiFi.status() != WL_CONNECTED) return;

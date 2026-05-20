@@ -322,6 +322,11 @@ void Config::_setupVersion(){
       saveValue(&store.lastPodcastStation, (uint16_t)1, false);
       break;
     }
+    case 19: {
+      // Add persisted podcast index timestamp (epoch seconds).
+      saveValue(&store.lastPodcastIndexEpoch, (uint32_t)0, false);
+      break;
+    }
   }
   currentVersion++;
   saveValue(&store.version, currentVersion);
@@ -378,11 +383,24 @@ void Config::changeMode(int newmode) { // DLNA mod
 
     const uint8_t oldMode = getMode();
     bool pir = player.isRunning();
+    const bool willIndexPodcasts =
+        (oldMode != PM_PODCAST && newmode == PM_PODCAST && podcasts_isIndexDue(3u * 60u * 60u)); // 3 hours
 
     if (SDC_CS == 255 && newmode == PM_SDCARD) { return; }
     if (newmode == PM_PODCAST && WiFi.status() != WL_CONNECTED) {
         Serial.println("##[ERROR]# Podcast mode requires Wi-Fi");
         return;
+    }
+
+    // Always give immediate visual feedback on entering Podcast mode, even when we are
+    // not going to run a full RSS index/build (which can make mode switching feel "dead").
+    if (!willIndexPodcasts && oldMode != PM_PODCAST && newmode == PM_PODCAST && _bootDone && display.ready()) {
+        display.resetQueue();
+        setStation("Podcasts");
+        setTitle("Loading...");
+        display.putRequest(NEWSTATION);
+        display.putRequest(NEWTITLE);
+        delay(1);
     }
 
     // If we're not connected (SoftAP / LOST), switching into SD mode should NOT reboot.
@@ -394,7 +412,7 @@ void Config::changeMode(int newmode) { // DLNA mod
 
     // Make Podcast indexing UI appear immediately on mode entry, even if we're not currently
     // playing (or if stop/connect work below blocks briefly).
-    if (oldMode != PM_PODCAST && newmode == PM_PODCAST && _bootDone && display.ready()) {
+    if (willIndexPodcasts && _bootDone && display.ready()) {
         display.resetQueue();
         setStation("Podcasts");
         setTitle("Indexing podcasts...");
@@ -433,18 +451,17 @@ void Config::changeMode(int newmode) { // DLNA mod
     // If we're switching into Podcast mode from WEB/DLNA while something is playing,
     // stop first so we don't keep streaming audio in the background.
     if (oldMode != PM_SDCARD && newmode == PM_PODCAST && pir) {
-        // Make the "Indexing Podcasts" UI appear immediately, before any blocking stop work.
-        // This avoids a "nothing happened" pause when switching from Web → Podcast mid-playback.
-        if (display.ready()) {
-          display.resetQueue();
-          setStation("Podcasts");
-          setTitle("Indexing podcasts...");
-          display.putRequest(NEWMODE, SDCHANGE);
-          display.putRequest(SDFILEINDEX, 0);
-          display.putRequest(NEWSTATION);
-          display.putRequest(NEWTITLE);
-          // Give the display task a moment to render before we start blocking stop/connect work.
-          vTaskDelay(pdMS_TO_TICKS(25));
+        // If we're going to index, show the UI before we do any blocking stop work.
+        if (willIndexPodcasts && display.ready()) {
+            display.resetQueue();
+            setStation("Podcasts");
+            setTitle("Indexing podcasts...");
+            display.putRequest(NEWMODE, SDCHANGE);
+            display.putRequest(SDFILEINDEX, 0);
+            display.putRequest(NEWSTATION);
+            display.putRequest(NEWTITLE);
+            // Give the display task a moment to render before we start blocking stop/connect work.
+            vTaskDelay(pdMS_TO_TICKS(25));
         }
         player.lockOutput = true;
         player.sendCommand({PR_STOP, 0});
@@ -720,45 +737,49 @@ void Config::initPlaylistMode() {
 #endif
   {
     if (getMode() == PM_PODCAST) {
-      // Always rebuild + index on entry so the list is complete.
-      // Show progress on the player screen while indexing.
-      if (display.ready()) {
-        display.putRequest(NEWMODE, SDCHANGE);
-        display.putRequest(SDFILEINDEX, 0);
+      // Throttle expensive RSS indexing. Within the interval we just use the
+      // cached episode list and index file.
+      const bool doIndex = podcasts_isIndexDue(3u * 60u * 60u); // 3 hours
+      if (doIndex) {
+        // Show progress on the player screen while indexing.
+        if (display.ready()) {
+          display.putRequest(NEWMODE, SDCHANGE);
+          display.putRequest(SDFILEINDEX, 0);
+        }
+
+        podcasts_requestBuild(true);
+        const uint32_t t0 = millis();
+        int lastPct = -1;
+        char lastShow[96];
+        lastShow[0] = '\0';
+        while (podcasts_buildInProgress() && (uint32_t)(millis() - t0) < 600000u) {
+          uint16_t cur = 0, tot = 0;
+          char show[96];
+          memset(show, 0, sizeof(show));
+          podcasts_getProgress(&cur, &tot, show, sizeof(show));
+
+          if (show[0] != '\0' && strcmp(show, lastShow) != 0) {
+            strlcpy(lastShow, show, sizeof(lastShow));
+            // Show the currently-indexed podcast source on the 2nd row.
+            setTitle(show);
+          }
+
+          int pct = 0;
+          if (tot > 0) {
+            pct = (int)(((uint32_t)cur * 100u) / (uint32_t)tot);
+            if (pct > 100) pct = 100;
+          }
+          if (pct != lastPct) {
+            lastPct = pct;
+            if (display.ready()) display.putRequest(SDFILEINDEX, (int16_t)pct);
+          }
+
+          vTaskDelay(pdMS_TO_TICKS(100));
+        }
       }
 
-      podcasts_requestBuild(true);
-      const uint32_t t0 = millis();
-      int lastPct = -1;
-      char lastShow[96];
-      lastShow[0] = '\0';
-      while (podcasts_buildInProgress() && (uint32_t)(millis() - t0) < 600000u) {
-        uint16_t cur = 0, tot = 0;
-        char show[96];
-        memset(show, 0, sizeof(show));
-        podcasts_getProgress(&cur, &tot, show, sizeof(show));
-
-        if (show[0] != '\0' && strcmp(show, lastShow) != 0) {
-          strlcpy(lastShow, show, sizeof(lastShow));
-          // Show the currently-indexed podcast source on the 2nd row.
-          setTitle(show);
-        }
-
-        int pct = 0;
-        if (tot > 0) {
-          pct = (int)(((uint32_t)cur * 100u) / (uint32_t)tot);
-          if (pct > 100) pct = 100;
-        }
-        if (pct != lastPct) {
-          lastPct = pct;
-          if (display.ready()) display.putRequest(SDFILEINDEX, (int16_t)pct);
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(100));
-      }
-
-      // Ensure the index exists for whatever episode list we have (new or previous).
-      indexPodcastPlaylist();
+      // Load the cached episode list. `initPodcastPlaylist()` will only rebuild the
+      // on-device index file if it's missing, avoiding a full scan on every entry.
       initPodcastPlaylist();
 
       uint16_t cs = playlistLength();

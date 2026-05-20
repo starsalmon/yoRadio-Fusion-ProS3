@@ -146,7 +146,9 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
 - Display split: in Podcast mode, the **show name** is the station name (top line) and the **episode title** is shown on the second line.
 - Persistence: the last selected podcast episode is stored separately from radio/SD last-station so rebooting/switching modes doesn’t cross-contaminate selections.
 - Build robustness: episode generation runs in a background task with guards (Wi‑Fi connected, display ready, and no active playback), aborts if mode changes or playback starts, and uses atomic file swaps to avoid “missing file” windows during refresh.
-- Mode entry robustness: entering Podcast mode now runs a full rebuild + index with visible progress before the list is shown (reduces “missing shows” and scroll-time races).
+- Mode entry robustness:
+  - Entering Podcast mode can run a full rebuild + index with visible progress before the list is shown (reduces “missing shows” and scroll-time races).
+  - To keep mode switching snappy during normal use, the rebuild is throttled to ~**once per 3 hours**; within the interval it reuses the cached episode list.
 - BBC compatibility:
   - RSS feeds may publish `open.live.bbc.co.uk/mediaselector/.../audio-nondrm-download-rss/...` enclosure URLs which 403 on-device; those URLs are rewritten to `audio-nondrm-download` (the variant that works in a browser).
   - Long redirect `Location:` headers are supported (prevents truncated redirect URLs which can also cause 403s).

@@ -55,7 +55,7 @@
   #define ESP_ARDUINO_3 1
 #endif
 
-#define CONFIG_VERSION  19
+#define CONFIG_VERSION  20
 
 enum playMode_e : uint8_t {  //DLNA mod
   PM_WEB    = 0,
@@ -261,6 +261,10 @@ struct config_t
   // Podcast mode: remember the last selected episode index.
   // Kept separate from `lastStation` so podcast browsing doesn't clobber radio.
   uint16_t  lastPodcastStation;
+
+  // Podcast mode: unix epoch (seconds) of last successful RSS index/build.
+  // Used to throttle re-indexing when switching into Podcast mode.
+  uint32_t  lastPodcastIndexEpoch;
 };
 
 #if IR_PIN != 255

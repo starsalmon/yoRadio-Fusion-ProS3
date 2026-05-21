@@ -1086,8 +1086,15 @@ void Display::loop() {
                 _trackposHidWeather = true;
               }
 
-              const uint32_t cur = player.getAudioCurrentTime();
+              uint32_t cur = player.getAudioCurrentTime();
               const uint32_t dur = player.getAudioFileDuration();
+              // After a podcast resume seek, the decoder may report 0 briefly while
+              // the HTTP range jump is applied. Use a short-lived hint so the UI
+              // counter doesn't flash "00:00".
+              if (config.getMode() == PM_PODCAST && cur < 2) {
+                const uint32_t hint = player.podcastResumeHintSec();
+                if (hint > 0) cur = hint;
+              }
               if (dur > 0 || cur > 0) {
                 char a[16], b[16], line[40];
                 formatHms(cur, a, sizeof(a));
@@ -1095,7 +1102,10 @@ void Display::loop() {
                   formatHms(dur, b, sizeof(b));
                   snprintf(line, sizeof(line), "%s / %s", a, b);
                 } else {
-                  strlcpy(line, a, sizeof(line));
+                  // Duration can be unknown briefly after starting/resuming a webfile.
+                  // Still render a stable "cur / --:--" so the line doesn't visually
+                  // change format mid-playback.
+                  snprintf(line, sizeof(line), "%s / --:--", a);
                 }
                 _trackpos->unlock();
                 _trackpos->setText(line);

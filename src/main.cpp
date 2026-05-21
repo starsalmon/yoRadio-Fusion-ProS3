@@ -22,6 +22,7 @@
 #include "clock/clock_tts.h"
 #include "driver/rtc_io.h"
 #include "battery/battery.h"
+#include "core/podcast_resume.h"
 
 #ifdef USE_NEXTION
 #include "displays/nextion.h"
@@ -247,6 +248,20 @@ void loop() {
     }
   }
 #endif
+
+  // Podcast resume checkpoint: store current play time by episode URL (bounded cache).
+  if (config.getMode() == PM_PODCAST && player.isRunning()) {
+    static uint32_t s_lastPodcastResumeSaveMs = 0;
+    const uint32_t now3 = millis();
+    if (s_lastPodcastResumeSaveMs == 0 || (uint32_t)(now3 - s_lastPodcastResumeSaveMs) >= 10000) {
+      s_lastPodcastResumeSaveMs = now3;
+      const uint32_t curSec = player.getAudioCurrentTime();
+      const uint32_t durSec = player.getAudioFileDuration();
+      if (durSec > 0 && curSec > 0 && curSec + 2 < durSec) {
+        podcast_resume_update_sec(config.station.url, curSec, durSec, false);
+      }
+    }
+  }
 
 #if (WAKE_PIN1 != 255) || (WAKE_PIN2 != 255)
   #ifndef AUTO_DEEPSLEEP_BATT_PCT

@@ -62,9 +62,10 @@ The local diff shows large, real changes in `src/` (dozens of files; thousands o
   - Web config surface updates (e.g. `dateFormat`)
 
 - **New modules**
-  - `src/battery.*` (MAX17048)
+  - `src/battery/*` (MAX17048 fuel gauge + ALRT-based low-battery behavior)
   - `src/core/bt_companion.*` (UART-controlled companion ESP32 for A2DP TX)
   - `src/idf_component.yml` (IDF component metadata)
+  - `src/core/podcast_resume.*` (podcast resume: last ~10 episodes, SPIFFS-backed)
 
 ### “Date format fix” (documented + in code)
 

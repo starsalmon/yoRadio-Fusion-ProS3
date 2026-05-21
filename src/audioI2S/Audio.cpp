@@ -5859,6 +5859,12 @@ void Audio::calculateAudioTime(uint16_t bytesDecoderIn, uint16_t samples_decoder
         }
         m_audioCurrentTime = round(newTime);
         m_cat.sumBytesIn = posWhithinAudioBlock;
+        // Keep nominal-bitrate time in sync after a seek.
+        // Otherwise the next update tick will recompute time from sum_samples and
+        // can "jump backwards" (e.g. resume shows correct time briefly, then resets).
+        if (m_cat.nominalBitRate && m_i2s_items.sampleRate) {
+            m_cat.sum_samples = (uint64_t)llroundf(newTime * (float)m_i2s_items.sampleRate);
+        }
         m_haveNewFilePos = 0;
         m_cat.syltIdx = 0;
         if (m_syltLines.size()) {

@@ -29,6 +29,10 @@ class Player: public Audio {
     bool        _speakerForceMuted = false;
     bool        _speakerUnmutePending = false;
     uint32_t    _speakerUnmuteAtMs = 0;
+    // Podcast resume: UI hint so the on-screen counter doesn't flash "00:00"
+    // while the decoder applies an HTTP range seek.
+    uint32_t    _podcastResumeHintSec = 0;
+    uint32_t    _podcastResumeHintUntilMs = 0;
     //char        _plError[PLERR_LN];
   private:
     void _stop(bool alreadyStopped = false);
@@ -73,6 +77,12 @@ class Player: public Audio {
     void scheduleSpeakerUnmute(uint32_t delayMs);
     bool speakerForceMuted() const { return _speakerForceMuted; }
     void setResumeFilePos(uint32_t pos) { _resumeFilePos = pos; }
+    uint32_t podcastResumeHintSec() const {
+      if (_podcastResumeHintUntilMs == 0) return 0u;
+      const uint32_t now = millis();
+      // Show hint while now <= until (wrap-safe).
+      return ((uint32_t)(_podcastResumeHintUntilMs - now) < 0x80000000u) ? _podcastResumeHintSec : 0u;
+    }
     #ifdef USE_DLNA
     void switchToWebPlaylist();  // Switch from DLNA back to web playlist
     #endif

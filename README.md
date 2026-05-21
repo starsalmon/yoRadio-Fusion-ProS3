@@ -191,6 +191,13 @@ Indexing behavior:
   - Switching into Podcast mode again within that window reuses the cached `podcast_episodes.csv` list (no refresh).
   - Booting straight into Podcast mode is a convenient way to force a refresh when you want it.
 
+Resume behavior:
+
+- Podcasts support **best-effort resume** (last ~10 episodes) keyed by the **episode enclosure URL**.
+  - Checkpoint saved roughly every ~10s while playing, and flushed on stop.
+  - Resume uses HTTP **Range** requests; if a host doesn’t accept ranges, the episode will start from the beginning.
+  - Resume state lives at `SPIFFS:/data/podcast_resume.bin`.
+
 
 ### Import stations from Moode (fast)
 

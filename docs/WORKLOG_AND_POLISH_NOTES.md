@@ -121,6 +121,21 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
     - Battery is effectively full (≥ ~100%)
   - Bolt is hidden only when we’re clearly discharging (no 5V sense, \(rate < -1\%\!/\!h\), not full)
 
+### Battery + low-battery behavior (MAX17048 alert pin)
+
+- Reworked low-battery handling to use the MAX17048 **ALRT** pin (ProS3: GPIO10 / `BATTERY_INT`) with a programmable SOC-low threshold, rather than relying solely on periodic % sampling.
+- Moved battery implementation into a dedicated module folder:
+  - `src/battery/battery.cpp`
+  - `src/battery/battery.h`
+
+### SD/Podcast “track position” overlay (and weather interaction)
+
+- Added an optional `mm:ss / mm:ss` overlay shown while playing **SD** or **Podcast** items.
+- It’s centered to “belong with track info” rather than the clock.
+- On the ILI9341 layout this overlaps the weather text region, so it’s controllable via build-time toggles:
+  - `TRACKPOS_ENABLE`
+  - `TRACKPOS_REPLACE_WEATHER_WHILE_PLAYING`
+
 ### Stability hardening (FreeRTOS + web handler)
 
 - Removed boot-time **busy-wait starvation** risks by switching `displayQueue` and `nsQueue` to **static FreeRTOS queues** (`xQueueCreateStatic`) instead of heap allocation loops.
@@ -159,6 +174,9 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
 - BT output robustness:
   - Some podcast MP3s are **48kHz**; ProS3 now reports PCM sample-rate changes to the companion (`SR 44100|48000`) and the companion resamples 48k → 44.1k so A2DP output stays pitch-correct without clicks.
 - MQTT / Home Assistant "Mode" select now includes `Podcast`.
+- Resume:
+  - Best-effort podcast resume keyed by **episode enclosure URL**, keeping only the last ~10 entries.
+  - Checkpoint saved while playing and flushed on stop; resume uses HTTP **Range** requests when supported by the host.
 
 ### Where to look for the “full” change list
 

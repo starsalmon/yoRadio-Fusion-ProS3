@@ -8,6 +8,7 @@
 #include "netserver.h"
 #include "timekeeper.h"
 #include "podcasts.h"
+#include "podcast_resume.h"
 #include <time.h> /* ----- Auto On-Off Timer ----- */
 #include "../displays/tools/l10n.h"
 #include "../pluginsManager/pluginsManager.h"
@@ -19,6 +20,11 @@ QueueHandle_t playerQueue;
 
 volatile uint32_t g_audioLoopUsLast = 0;
 volatile uint32_t g_audioLoopUsAvg  = 0;
+
+// Podcast resume pending seek state (keyed by current config.station.url).
+static uint32_t s_podcastPendingSec = 0;
+static uint32_t s_podcastPendingSetAtMs = 0;
+static uint8_t  s_podcastPendingAttempts = 0;
 
 #if VS1053_CS!=255 && !I2S_INTERNAL
   #if VS_HSPI
@@ -198,6 +204,14 @@ void Player::_stop(bool alreadyStopped){
     config.saveValue(&config.store.lastSdResumePos, (uint32_t)persisted);
     // Keep the runtime resume value in sync with what we persisted.
     config.sdResumePos = persisted;
+  }
+
+  if (config.getMode() == PM_PODCAST && !alreadyStopped) {
+    const uint32_t curSec = player.getAudioCurrentTime();
+    const uint32_t durSec = player.getAudioFileDuration();
+    if (durSec > 0 && curSec > 0) {
+      podcast_resume_update_sec(config.station.url, curSec, durSec, true);
+    }
   }
   _status = STOPPED;
   setOutputPins(false);
@@ -380,6 +394,33 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
     Audio::loop();
     audioLoopUs = micros() - t0;
   }
+
+  // Podcast resume: apply a pending seek once the decoder knows bitrate/duration.
+  {
+    if (config.getMode() == PM_PODCAST && isRunning() && s_podcastPendingSec > 0) {
+      const uint32_t now = millis();
+      if (s_podcastPendingSetAtMs != 0 && (uint32_t)(now - s_podcastPendingSetAtMs) <= 15000u && s_podcastPendingAttempts < 6) {
+        const uint32_t dur = getAudioFileDuration();
+        const uint32_t cur = getAudioCurrentTime();
+        // Once the decoder reports a time near our target, clear the UI hint.
+        if (_podcastResumeHintSec > 0 && (cur + 1 >= _podcastResumeHintSec)) {
+          _podcastResumeHintSec = 0;
+          _podcastResumeHintUntilMs = 0;
+        }
+        if (dur > 0 && s_podcastPendingSec + 2 < dur && cur + 2 < s_podcastPendingSec) {
+          // setAudioPlayTime() needs bitrate; once dur is known it’s generally safe to try.
+          if (setAudioPlayTime((uint16_t)min<uint32_t>(s_podcastPendingSec, 0xFFFFu))) {
+            s_podcastPendingSec = 0;
+          }
+          s_podcastPendingAttempts++;
+        }
+      } else {
+        // Give up.
+        s_podcastPendingSec = 0;
+      }
+    }
+  }
+
   g_audioLoopUsLast = audioLoopUs;
   // Simple EWMA so UI can react to sustained load, not spikes.
   if (g_audioLoopUsAvg == 0) g_audioLoopUsAvg = audioLoopUs;
@@ -532,6 +573,31 @@ void Player::_play(uint16_t stationId) {
   // Mark "connection in progress" so other network users can optionally wait.
   connproc = false;
   bool isConnected = false;
+
+  // Podcast resume: look up saved position by enclosure URL, then apply it
+  // once playback is actually running (bitrate/duration known).
+  if (config.getMode() == PM_PODCAST) {
+    uint32_t sec = 0;
+    if (podcast_resume_get_sec(config.station.url, &sec) && sec > 0) {
+      s_podcastPendingSec = sec;
+      s_podcastPendingSetAtMs = millis();
+      s_podcastPendingAttempts = 0;
+      _podcastResumeHintSec = sec;
+      _podcastResumeHintUntilMs = millis() + 8000u;
+    } else {
+      s_podcastPendingSec = 0;
+      s_podcastPendingSetAtMs = 0;
+      s_podcastPendingAttempts = 0;
+      _podcastResumeHintSec = 0;
+      _podcastResumeHintUntilMs = 0;
+    }
+  } else {
+    s_podcastPendingSec = 0;
+    s_podcastPendingSetAtMs = 0;
+    s_podcastPendingAttempts = 0;
+    _podcastResumeHintSec = 0;
+    _podcastResumeHintUntilMs = 0;
+  }
   if (config.getMode() == PM_SDCARD && SDC_CS != 255) {
     // connecttoFS doesn't support start offsets for SD -> use -1 and start from the beginning.
     isConnected = connecttoFS(sdman, config.station.url, -1);
@@ -553,6 +619,14 @@ void Player::_play(uint16_t stationId) {
     _status = PLAYING;
     config.configPostPlaying(stationId);
     setOutputPins(true);
+    // Best-effort early seek (we also retry in Player::loop()).
+    if (config.getMode() == PM_PODCAST && s_podcastPendingSec > 0 && s_podcastPendingAttempts < 1) {
+      const uint32_t dur = getAudioFileDuration();
+      if (dur > 0 && s_podcastPendingSec + 2 < dur) {
+        (void)setAudioPlayTime((uint16_t)min<uint32_t>(s_podcastPendingSec, 0xFFFFu));
+        s_podcastPendingAttempts++;
+      }
+    }
     if (player_on_start_play) player_on_start_play();
     pm.on_start_play();
   }else{

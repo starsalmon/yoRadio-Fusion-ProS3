@@ -22,6 +22,11 @@ float battery_get_charge_rate();
 // Returns false if CHARGE_SENSE_PIN isn't configured.
 bool battery_usb_present();
 
+// True if the MAX17048 alert pin is currently active (best-effort).
+// Requires `BATTERY_INT` to be defined and wired to MAX17048 ALRT.
+bool battery_alert_active();
+
 // Put the MAX17048 into ultra-low-power sleep mode right before ESP deep sleep.
 // Safe to call even if the gauge is unavailable.
 void battery_prepare_for_deepsleep();
+

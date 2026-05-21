@@ -11,7 +11,7 @@
 #include "rtcsupport.h"
 #include "bt_companion.h"
 #include "podcasts.h"
-#include "../battery.h"
+#include "../battery/battery.h"
 #ifdef USE_NEOSTATUS_PLUGIN
   #include "../plugins/neostatus/neostatus.h"
 #endif
@@ -1783,7 +1783,40 @@ bool Config::loadStation(uint16_t ls) {
 
         strncpy(station.name, show, BUFLEN);
         if (ep[0] != 0) {
-          setTitle(ep);
+          // If the episode title contains a "splitter" ( -- / – / — ), put the right side on the 3rd line
+          // by converting it to the existing title split delimiter (" - ").
+          //
+          // Example:
+          //   "Risky Business #838 -- GitHub investigates..."
+          // becomes:
+          //   title1="Risky Business #838"
+          //   title2="GitHub investigates..."
+          char epWork[BUFLEN];
+          strlcpy(epWork, ep, sizeof(epWork));
+          const char* seps[] = {" -- ", " – ", " — "};
+          const char* sepHit = nullptr;
+          char* dd = nullptr;
+          for (size_t i = 0; i < (sizeof(seps) / sizeof(seps[0])); i++) {
+            dd = strstr(epWork, seps[i]);
+            if (dd) {
+              sepHit = seps[i];
+              break;
+            }
+          }
+          if (dd && sepHit) {
+            *dd = '\0';
+            dd += strlen(sepHit);
+            while (*dd == ' ') dd++;
+            // Trim right of left side.
+            size_t n = strlen(epWork);
+            while (n > 0 && epWork[n - 1] == ' ') epWork[--n] = '\0';
+
+            char epJoined[BUFLEN];
+            snprintf(epJoined, sizeof(epJoined), "%s - %s", epWork, dd);
+            setTitle(epJoined);
+          } else {
+            setTitle(ep);
+          }
         } else {
           setTitle("");
         }

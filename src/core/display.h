@@ -56,7 +56,7 @@ class Display {
     uint16_t width();
     uint16_t height();
   private:
-    ScrollWidget *_meta, *_title1, *_plcurrent, *_weather, *_title2;
+    ScrollWidget *_meta, *_title1, *_plcurrent, *_weather, *_title2, *_trackpos;
     PlayListWidget *_plwidget;
     BitrateWidget *_fullbitrate;
     StationNumWidget *_stationNum = nullptr;
@@ -87,6 +87,8 @@ class Display {
     bool _stationLogoUsedDefault = false;
     uint32_t _sdStationChangedAt = 0;
     uint32_t _sdPstartAt = 0;
+    bool _trackposVisible = false;
+    bool _trackposHidWeather = false;
     Page *_boot;
     TextWidget *_bootstring, *_volip, *_voltxt, *_rssi, *_bitrate;
     TextWidget* _battxt = nullptr;

@@ -107,6 +107,12 @@
 // #define HIDE_CLOCK
 // #define HIDE_DATE_WIDGET
 
+// Track position overlay ("mm:ss / mm:ss") for SD + Podcast playback.
+// Note: On some layouts this overlaps the weather text area.
+// - Set TRACKPOS_REPLACE_WEATHER_WHILE_PLAYING=1 to temporarily hide weather while playing.
+#define TRACKPOS_ENABLE 1
+#define TRACKPOS_REPLACE_WEATHER_WHILE_PLAYING 0
+
 /*****************************************/
 // #define NEXTION_RX      15
 // #define NEXTION_TX     16

@@ -54,6 +54,8 @@ platformio device monitor -b 115200
 
 - **PROS3 hardware bring-up**: LDO2 (3V3_AUX) enable + optional external antenna init in `src/yoradio_user.cpp`
 - **Battery gauge**: MAX17048 via I2C (can be disabled in `myoptions.h` with `BATTERY_ENABLED 0`)
+  - Uses MAX17048 **ALRT** pin (ProS3: `BATTERY_INT` / GPIO10) for low-battery alert threshold (default 5%) to reduce reliance on slow % polling
+  - Battery implementation lives in `src/battery/` (`battery.h/.cpp`)
 - **Deep sleep power management**:
   - Wake pins: `WAKE_PIN1` + optional `WAKE_PIN2` (RTC GPIO only) via ext1 wake
   - Auto deep sleep (when wake pins are configured): `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT`
@@ -81,6 +83,11 @@ platformio device monitor -b 115200
   - ESP32‑S3 is BLE-only, so Classic-BT A2DP TX is handled by a second ESP32 over UART + I2S
   - Output can be toggled (speaker vs BT) and the footer shows BT **off/searching/connected/audio** state (separate BT icon left of the speaker)
   - Podcasts can be 48kHz: the ProS3 now informs the companion of PCM sample-rate changes (`SR 44100|48000`) so BT output stays pitch-correct (companion resamples to A2DP’s fixed 44.1kHz)
+- **SD/Podcast playback UI**:
+  - Optional **track position overlay** (`mm:ss / mm:ss`) shown while playing SD/Podcast
+  - Controlled via `myoptions.h`:
+    - `TRACKPOS_ENABLE` (0/1)
+    - `TRACKPOS_REPLACE_WEATHER_WHILE_PLAYING` (0/1) — if enabled, temporarily hides weather while the counter is visible
 - **Audio/UI performance work** (opt-in diagnostics + throttling):
   - 1Hz audio diagnostics (`[AUD] …`) and display loop diagnostics (`[DSP] …`)
   - Adaptive VU throttling based on buffer health and audio loop time

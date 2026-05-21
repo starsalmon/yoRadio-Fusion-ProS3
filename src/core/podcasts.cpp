@@ -99,6 +99,30 @@ static void decodeBasicXmlEntities(char* s) {
   }
 }
 
+static void trimInPlace(char* s) {
+  if (!s) return;
+  // left trim
+  while (*s == ' ') memmove(s, s + 1, strlen(s));
+  // right trim
+  size_t n = strlen(s);
+  while (n > 0 && s[n - 1] == ' ') s[--n] = '\0';
+}
+
+static void truncateEllipsis(char* s, size_t maxChars) {
+  if (!s || maxChars == 0) return;
+  const size_t n = strlen(s);
+  if (n < maxChars) return;
+  if (maxChars <= 4) {
+    s[maxChars - 1] = '\0';
+    return;
+  }
+  // Keep room for "..."
+  s[maxChars - 4] = '.';
+  s[maxChars - 3] = '.';
+  s[maxChars - 2] = '.';
+  s[maxChars - 1] = '\0';
+}
+
 static bool extractTagText(const String& item, const char* tag, char* out, size_t outSz) {
   if (!out || outSz == 0) return false;
   out[0] = '\0';
@@ -445,8 +469,10 @@ uint32_t podcasts_buildEpisodesPlaylist() {
           sawAnyItem = true;
 
           char title[192];
+          char subtitle[256];
           char url[320];
           bool okTitle = extractTagText(item, "title", title, sizeof(title));
+          const bool okSubtitle = extractTagText(item, "itunes:subtitle", subtitle, sizeof(subtitle));
 
           // Prefer HTTPS enclosure URLs when available (e.g. BBC provides both).
           bool okUrl = extractAttrUrl(item, "ppg:enclosureSecure", "url", url, sizeof(url));
@@ -454,10 +480,67 @@ uint32_t podcasts_buildEpisodesPlaylist() {
           if (!okUrl) okUrl = extractAttrUrl(item, "media:content", "url", url, sizeof(url));
           if (!okTitle || !okUrl) continue;
 
-          char fullTitle[300];
-          snprintf(fullTitle, sizeof(fullTitle), "%s - %s", show, title);
+          // We render 3 lines as:
+          //   meta:  station.name (show)
+          //   line2: title1 (episode name)
+          //   line3: title2 (short episode description)
+          //
+          // `Config::loadStation()` already splits the playlist label on the first " - "
+          // to populate (show, episode). Then Display::_title() splits station.title on
+          // " - " to populate (title1, title2). So we can populate line 3 by ensuring
+          // the episode portion contains one more " - ".
+          //
+          // Example:
+          //   "<show> - Risky Business #838 -- GitHub investigates..."
+          // becomes:
+          //   "<show> - Risky Business #838 - GitHub investigates..."
+
+          char epTitle[192];
+          char epDesc[256];
+          strlcpy(epTitle, title, sizeof(epTitle));
+          epDesc[0] = '\0';
+
+          // Split on common "title — description" patterns inside the episode title.
+          // (ASCII double-hyphen, en dash, em dash)
+          {
+            const char* seps[] = {" -- ", " – ", " — "};
+            const char* sepHit = nullptr;
+            char* dd = nullptr;
+            for (size_t i = 0; i < (sizeof(seps) / sizeof(seps[0])); i++) {
+              dd = strstr(epTitle, seps[i]);
+              if (dd) {
+                sepHit = seps[i];
+                break;
+              }
+            }
+            if (dd && sepHit) {
+              *dd = '\0';
+              dd += strlen(sepHit);
+              strlcpy(epDesc, dd, sizeof(epDesc));
+            }
+          }
+          if (epDesc[0] == '\0' && okSubtitle && subtitle[0]) {
+            // Fallback: use itunes:subtitle (truncated) for line 3.
+            strlcpy(epDesc, subtitle, sizeof(epDesc));
+          }
+
+          trimInPlace(epTitle);
+          trimInPlace(epDesc);
+
+          // Keep line 3 short enough to be useful on small displays.
+          truncateEllipsis(epDesc, 96);
+
+          char episodeField[480];
+          if (epDesc[0]) {
+            snprintf(episodeField, sizeof(episodeField), "%s - %s", epTitle, epDesc);
+          } else {
+            strlcpy(episodeField, epTitle, sizeof(episodeField));
+          }
+
+          char fullTitle[520];
+          snprintf(fullTitle, sizeof(fullTitle), "%s - %s", show, episodeField);
           // Don't sanitize in-place: sanitizeTsvField() clears the output first.
-          char safeTitle[300];
+          char safeTitle[520];
           sanitizeTsvField(fullTitle, safeTitle, sizeof(safeTitle));
 
           out.print(safeTitle);

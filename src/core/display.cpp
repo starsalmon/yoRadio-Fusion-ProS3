@@ -15,13 +15,15 @@
 #include "../displays/widgets/widgets.h"
 #include "../displays/widgets/pages.h"
 #include "../displays/tools/l10n.h"
-#include "../battery.h"
+#include "../battery/battery.h"
 #include "../displays/bitmaps/footer_icons_16.h"
 #include "../myoptions.h"
 #include "sdmanager.h"
 #include "bt_companion.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+
+static void formatHms(uint32_t sec, char* out, size_t outSz);
 
 Display display;
 #ifdef USE_NEXTION
@@ -576,7 +578,37 @@ void Display::_buildPager(){
   #if BITRATE_FULL
     _fullbitrate = new BitrateWidget(getfullbitrateConf(), config.theme.bitrate, config.theme.background);
     pages[PG_PLAYER]->addWidget( _fullbitrate);
+    // Track time/duration line (for SD & Podcast) sits just above the bitrate badge.
+    {
+      WidgetConfig tp = getfullbitrateConf().widget;
+      // Lift it above the bitrate badge, then nudge down a touch for visual alignment.
+      tp.top = (tp.top > 24) ? (tp.top - 24) : 0;
+      // Center it like title/description: it's track info, not clock info.
+      tp.left  = TFT_FRAMEWDT;
+      tp.align = WA_CENTER;
+      // Use ScrollWidget even though we don't scroll: it draws via psFrameBuffer,
+      // which avoids visible flicker on updates (no fillRect-on-screen blank frame).
+      ScrollConfig sc = { tp, 40, false, MAX_WIDTH, 0, 1, 50 };
+      _trackpos = new ScrollWidget("*", sc, config.theme.bitrate, config.theme.background);
+      _trackpos->lock(true); // start hidden (avoids clobbering weather area)
+      pages[PG_PLAYER]->addWidget(_trackpos);
+    }
   #else
+    // Track time/duration line (for SD & Podcast) sits just above the bitrate badge.
+    // Use the same anchor as bitrateConf so it stays aligned across custom layouts.
+    {
+      WidgetConfig tp = bitrateConf;
+      // Lift it into the empty strip above the "128 / MP3" badge.
+      // Lift it above the bitrate badge, then nudge down a touch for visual alignment.
+      tp.top = (tp.top > 24) ? (tp.top - 24) : 0;
+      // Center it like title/description: it's track info, not clock info.
+      tp.left  = TFT_FRAMEWDT;
+      tp.align = WA_CENTER;
+      ScrollConfig sc = { tp, 40, false, MAX_WIDTH, 0, 1, 50 };
+      _trackpos = new ScrollWidget("*", sc, config.theme.bitrate, config.theme.background);
+      _trackpos->lock(true); // start hidden (avoids clobbering weather area)
+      pages[PG_PLAYER]->addWidget(_trackpos);
+    }
     _bitrate = new TextWidget(bitrateConf, 30, false, config.theme.bitrate, config.theme.background);
     pages[PG_PLAYER]->addWidget( _bitrate);
   #endif
@@ -1031,6 +1063,61 @@ void Display::loop() {
         case CLOSEPLAYLIST: player.sendCommand({PR_PLAY, request.payload}); break;
         case CLOCK: 
           if(_mode==PLAYER || _mode==SCREENSAVER) _time(request.payload==1);
+          // For SD / Podcast playback, show current time / duration in the strip
+          // above the bitrate badge (see screenshot red highlight).
+          #if !defined(TRACKPOS_ENABLE) || (TRACKPOS_ENABLE != 0)
+          if (_mode == PLAYER && _trackpos) {
+            const bool isFileMode = (config.getMode() == PM_SDCARD || config.getMode() == PM_PODCAST);
+            const bool wants = isFileMode && player.isRunning();
+            const bool weatherOn = config.store.showweather;
+            const bool replaceWeather =
+              #if defined(TRACKPOS_REPLACE_WEATHER_WHILE_PLAYING)
+                (TRACKPOS_REPLACE_WEATHER_WHILE_PLAYING != 0)
+              #else
+                false
+              #endif
+              ;
+            const bool canShow = wants && (!weatherOn || replaceWeather);
+
+            if (canShow) {
+              if (weatherOn && replaceWeather && !_trackposHidWeather) {
+                if (_weather) _weather->lock(true);
+                if (_weatherIcon) _weatherIcon->lock(true);
+                _trackposHidWeather = true;
+              }
+
+              const uint32_t cur = player.getAudioCurrentTime();
+              const uint32_t dur = player.getAudioFileDuration();
+              if (dur > 0 || cur > 0) {
+                char a[16], b[16], line[40];
+                formatHms(cur, a, sizeof(a));
+                if (dur > 0) {
+                  formatHms(dur, b, sizeof(b));
+                  snprintf(line, sizeof(line), "%s / %s", a, b);
+                } else {
+                  strlcpy(line, a, sizeof(line));
+                }
+                _trackpos->unlock();
+                _trackpos->setText(line);
+                _trackposVisible = true;
+              }
+            } else {
+              // Only clear if it was visible; avoid wiping the weather area when
+              // weather is enabled and we're not in "replace weather" mode.
+              if (_trackposVisible) {
+                _trackpos->setText("");
+                _trackpos->lock(true);
+                _trackposVisible = false;
+              }
+              if (_trackposHidWeather && !(wants && weatherOn && replaceWeather)) {
+                if (_weather) _weather->unlock();
+                if (_weatherIcon) _weatherIcon->unlock();
+                _trackposHidWeather = false;
+                _refreshWeatherUI();
+              }
+            }
+          }
+          #endif
           /*#ifdef USE_NEXTION
             if(_mode==TIMEZONE) nextion.localTime(network.timeinfo);
             if(_mode==INFO)     nextion.rssi();
@@ -1938,6 +2025,17 @@ char *split(char *str, const char *delim) {
   if (dmp == NULL) return NULL;
   *dmp = '\0'; 
   return dmp + strlen(delim);
+}
+
+static void formatHms(uint32_t sec, char* out, size_t outSz) {
+  if (!out || outSz == 0) return;
+  const uint32_t h = sec / 3600u;
+  const uint32_t m = (sec / 60u) % 60u;
+  const uint32_t s = sec % 60u;
+  if (h > 0) snprintf(out, outSz, "%lu:%02lu:%02lu",
+                      (unsigned long)h, (unsigned long)m, (unsigned long)s);
+  else       snprintf(out, outSz, "%02lu:%02lu",
+                      (unsigned long)m, (unsigned long)s);
 }
 
 void Display::_title() {

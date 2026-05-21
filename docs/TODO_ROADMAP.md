@@ -29,6 +29,14 @@
       - `Show Name 01`
       - `  - Episode 01`
       - `  - Episode 02`
+  - **Line 3 from subtitle**: if an episode title has no obvious split delimiter, persist/display a truncated `itunes:subtitle` (today it only appears after a full index rebuild)
+- **Podcast/SD playback UI**: show item length + current position while playing (e.g. `03:12 / 52:10`)
+- **Track position overlay**: add runtime toggle (and define behavior when weather is enabled)
+- **Podcast resume**: resume last-played position per-episode (keyed by enclosure URL/title), keep only last ~10 entries
+- **Web UI improvements (tomorrow)**
+  - Add fork-specific controls/features to Web UI (e.g. upload `podcasts.csv`)
+  - Add a Podcast mode button in the Web UI (mode switch)
+  - Add a Bluetooth/Speaker output switch in the Web UI
 - **Load station logos from SD**: might be easier long-term; likely needs stable image decode first
 - **Configure new features from web**: allow setting options like `BATTERY_ENABLED`, `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT` from the web interface
 - **Reduce blocking patterns and busy-waits** (queue allocation loops, MQTT playlist block)

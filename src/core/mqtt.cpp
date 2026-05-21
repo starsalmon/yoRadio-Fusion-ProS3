@@ -10,7 +10,7 @@
 #if (BRIGHTNESS_PIN != 255)
 #include "../plugins/backlight/backlight.h"
 #endif
-#include "../battery.h"
+#include "../battery/battery.h"
 #include <esp_log.h>
 #include <strings.h>
 

@@ -2,7 +2,7 @@
 #include <SPI.h>
 #include "core/options.h"
 #include "../myoptions.h"
-#include "battery.h"
+#include "battery/battery.h"
 #include <Adafruit_NeoPixel.h>
 
 #ifndef BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS

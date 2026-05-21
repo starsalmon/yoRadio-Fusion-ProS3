@@ -21,7 +21,7 @@
 #include "core/timekeeper.h"
 #include "clock/clock_tts.h"
 #include "driver/rtc_io.h"
-#include "battery.h"
+#include "battery/battery.h"
 
 #ifdef USE_NEXTION
 #include "displays/nextion.h"
@@ -270,9 +270,10 @@ void loop() {
 
     if (battery_is_ready()) {
       const float pct = battery_get_percent();
+      const bool alertLow = battery_alert_active();
       if (!battery_usb_present()) {
         const float warnPct = (float)AUTO_DEEPSLEEP_BATT_PCT + 2.0f;
-        if (pct > 0.1f && pct <= warnPct && pct > (float)AUTO_DEEPSLEEP_BATT_PCT) {
+        if ((alertLow || (pct > 0.1f && pct <= warnPct && pct > (float)AUTO_DEEPSLEEP_BATT_PCT))) {
           if (s_lastLowBattWarnMs == 0 || (uint32_t)(now - s_lastLowBattWarnMs) >= 60000u) {
             s_lastLowBattWarnMs = now;
           #ifdef USE_NEOSTATUS_PLUGIN
@@ -282,8 +283,8 @@ void loop() {
         }
       }
 
-      if (pct > 0.1f && pct <= (float)AUTO_DEEPSLEEP_BATT_PCT && !battery_usb_present()) {
-        Serial.printf("Auto deep sleep: battery low (%.1f%%) and no 5V.\n", pct);
+      if ((alertLow || (pct > 0.1f && pct <= (float)AUTO_DEEPSLEEP_BATT_PCT)) && !battery_usb_present()) {
+        Serial.printf("Auto deep sleep: battery low (%.1f%%, alert=%d) and no 5V.\n", pct, (int)alertLow);
         display.putRequest(NEWMODE, SLEEPING);
         player.sendCommand({PR_STOP, 0});
         delay(150);

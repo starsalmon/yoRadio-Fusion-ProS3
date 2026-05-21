@@ -15,6 +15,13 @@ static TaskHandle_t s_podTask = nullptr;
 static bool s_forceBuild = false;
 static uint32_t s_lastIndexMs = 0;
 
+#ifndef PODBUILD_STACK
+// The RSS parsing/build path uses HTTPClient + String heavy operations.
+// On PROS3 this can overflow smaller task stacks (stack canary in "podBuild").
+// Increase to avoid boot-loop when indexing on startup.
+#define PODBUILD_STACK 16384
+#endif
+
 static inline bool epochLooksValid(uint32_t epoch) {
   // Rough sanity check: epoch seconds after 2023-01-01.
   return epoch >= 1672531200u;
@@ -663,7 +670,7 @@ void podcasts_requestBuild(bool force) {
   }
 
   // Run on the app side, but separate from MQTT callbacks / UI loop.
-  xTaskCreatePinnedToCore(podcastBuildTask, "podBuild", 8192, nullptr, 1, &s_podTask, 0);
+  xTaskCreatePinnedToCore(podcastBuildTask, "podBuild", PODBUILD_STACK, nullptr, 1, &s_podTask, 0);
 }
 
 bool podcasts_buildInProgress() {

@@ -190,6 +190,7 @@ Indexing behavior:
 - **Entering Podcast mode** will perform a full RSS fetch + index build at most **once every ~3 hours** and shows **progress** on the player screen.
   - Switching into Podcast mode again within that window reuses the cached `podcast_episodes.csv` list (no refresh).
   - Booting straight into Podcast mode is a convenient way to force a refresh when you want it.
+  - If you ever hit a `Stack canary` crash during indexing, increase `PODBUILD_STACK` in `src/core/podcasts.cpp` (RSS parsing can be stack-heavy).
 
 Resume behavior:
 

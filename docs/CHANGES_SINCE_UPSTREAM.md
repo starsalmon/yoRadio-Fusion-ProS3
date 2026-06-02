@@ -35,6 +35,10 @@ The local diff shows large, real changes in `src/` (dozens of files; thousands o
 
 - **Audio/player (`src/core/player.*`, `src/audioI2S/*`)**
   - Optional 1Hz audio diagnostics (`[AUD] …`) including core + buffer and `Audio::loop()` timing
+  - Optional **bi-amp DSP crossover** (2x MAX98357 on one I2S bus):
+    - Mono sum + 4th‑order Linkwitz‑Riley crossover; route low/high to L/R
+    - Runtime control via MQTT/HA (enable/map/crossover Hz) and persisted in EEPROM
+    - Optional extra tweeter-protection high-pass (12/24 dB/oct) on the high band only
   - **Audio/HLS robustness work (in progress)** (stream-dependent), with changes in:
     - `src/audioI2S/Audio.cpp` (TS/PES demux + segment boundary handling + buffer/mutex fixes)
     - `src/audioI2S/aac_decoder/aac_decoder.cpp` (ADTS sync scanning/validation tweaks)

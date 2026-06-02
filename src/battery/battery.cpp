@@ -16,7 +16,10 @@ static float lastPercent = 0;
 static float lastVoltage = 0;
 static float lastChargeRate = 0;
 static bool batteryReady = false;
-static TwoWire batteryWire(1);
+// Use the default I2C bus (`Wire`) so other peripherals (e.g. BH1750 backlight sensor)
+// can share the same SDA/SCL lines safely. Using multiple I2C controllers on the same
+// pins can cause "bus is not initialized" errors or electrical contention.
+static TwoWire* batteryWire = &Wire;
 static uint8_t fastSamplesRemaining = 0;
 
 static uint32_t lastChargeCheck = 0;
@@ -110,23 +113,23 @@ static bool sampleLooksLikeStaleFull(const BatterySample& s) {
 }
 
 static bool max17048_read16(uint8_t reg, uint16_t& out) {
-  batteryWire.beginTransmission(MAX17048_I2CADDR_DEFAULT);
-  batteryWire.write(reg);
-  if (batteryWire.endTransmission(false) != 0) return false;
-  const uint8_t n = batteryWire.requestFrom((int)MAX17048_I2CADDR_DEFAULT, 2);
+  batteryWire->beginTransmission(MAX17048_I2CADDR_DEFAULT);
+  batteryWire->write(reg);
+  if (batteryWire->endTransmission(false) != 0) return false;
+  const uint8_t n = batteryWire->requestFrom((int)MAX17048_I2CADDR_DEFAULT, 2);
   if (n != 2) return false;
-  const uint16_t msb = (uint16_t)batteryWire.read();
-  const uint16_t lsb = (uint16_t)batteryWire.read();
+  const uint16_t msb = (uint16_t)batteryWire->read();
+  const uint16_t lsb = (uint16_t)batteryWire->read();
   out = (uint16_t)((msb << 8) | lsb);
   return true;
 }
 
 static bool max17048_write16(uint8_t reg, uint16_t v) {
-  batteryWire.beginTransmission(MAX17048_I2CADDR_DEFAULT);
-  batteryWire.write(reg);
-  batteryWire.write((uint8_t)((v >> 8) & 0xFF));
-  batteryWire.write((uint8_t)(v & 0xFF));
-  return batteryWire.endTransmission(true) == 0;
+  batteryWire->beginTransmission(MAX17048_I2CADDR_DEFAULT);
+  batteryWire->write(reg);
+  batteryWire->write((uint8_t)((v >> 8) & 0xFF));
+  batteryWire->write((uint8_t)(v & 0xFF));
+  return batteryWire->endTransmission(true) == 0;
 }
 
 static void max17048_setSocAlertPct(uint8_t pct) {
@@ -149,18 +152,21 @@ void battery_init() {
   Serial.printf("5V sense initial: %s\n", lastUsbPresent ? "ON" : "OFF");
 #endif
 
-#if defined(ESP32)
-  batteryWire.setPins(BATTERY_SDA, BATTERY_SCL);
+  // Initialize I2C explicitly (Arduino-ESP32 requires begin() before requestFrom()).
+#if defined(BATTERY_SDA) && defined(BATTERY_SCL)
+  Wire.begin(BATTERY_SDA, BATTERY_SCL);
+#else
+  Wire.begin();
 #endif
+  Wire.setClock(400000);
 
-  if (!maxlipo.begin(&batteryWire)) {
+  if (!maxlipo.begin(batteryWire)) {
     Serial.println("MAX17048 not found!");
     batteryReady = false;
     return;
   }
 
   Serial.println("MAX17048 detected");
-  batteryWire.setClock(400000);
   batteryReady = true;
 
 #ifdef BATTERY_INT

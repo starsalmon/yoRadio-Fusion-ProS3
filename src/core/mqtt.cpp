@@ -106,6 +106,118 @@ static void mqttPublishBtSinkName(bool force = false) {
 #endif
 }
 
+static void mqttPublishBiampEnable(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
+  static int s_last = -1;
+  const int cur = (int)config.store.biampEnable;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "biamp_enable");
+  mqttClient.publish(t2, 0, true, (cur != 0) ? "ON" : "OFF");
+#else
+  (void)force;
+#endif
+}
+
+static void mqttPublishBiampMap(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
+  static int s_last = -1;
+  const int cur = (int)config.store.biampLowOnLeft;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "biamp_map");
+  mqttClient.publish(t2, 0, true, (cur != 0) ? "Low->Left" : "Low->Right");
+#else
+  (void)force;
+#endif
+}
+
+static void mqttPublishBiampCrossoverHz(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
+  static uint16_t s_last = 0xFFFFu;
+  const uint16_t cur = config.store.biampCrossoverHz;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "biamp_crossover_hz");
+  char buf[12];
+  snprintf(buf, sizeof(buf), "%u", (unsigned)cur);
+  mqttClient.publish(t2, 0, true, buf);
+#else
+  (void)force;
+#endif
+}
+
+static void mqttPublishBiampTweeterHpOrder(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
+  static int s_last = -1;
+  const int cur = (int)config.store.biampTweeterHpOrder;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "biamp_tweeter_hp_order");
+  const char* v = "Off";
+  if (cur == 2) v = "12dB";
+  else if (cur == 4) v = "24dB";
+  mqttClient.publish(t2, 0, true, v);
+#else
+  (void)force;
+#endif
+}
+
+static void mqttPublishBiampTweeterHpHz(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
+  static uint16_t s_last = 0xFFFFu;
+  const uint16_t cur = config.store.biampTweeterHpHz;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "biamp_tweeter_hp_hz");
+  char buf[12];
+  snprintf(buf, sizeof(buf), "%u", (unsigned)cur);
+  mqttClient.publish(t2, 0, true, buf);
+#else
+  (void)force;
+#endif
+}
+
 static void mqttPublishHADiscovery() {
   if (!mqttClient.connected()) return;
 
@@ -343,6 +455,83 @@ static void mqttPublishHADiscovery() {
   }
 #endif
 
+#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
+  // Bi-amp DSP enable switch (combined state + control).
+  {
+    char cfg[720];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Bi-amp DSP\",\"unique_id\":\"%s_biamp_enable_sw\","
+             "\"state_topic\":\"%sbiamp_enable\","
+             "\"command_topic\":\"%scmd/biamp_enable\","
+             "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
+             "\"icon\":\"mdi:audio-equalizer\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("switch", "biamp_enable", cfg);
+  }
+
+  // Bi-amp channel mapping selector.
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Bi-amp Map\",\"unique_id\":\"%s_biamp_map_select\","
+             "\"state_topic\":\"%sbiamp_map\","
+             "\"command_topic\":\"%scmd/biamp_map\","
+             "\"options\":[\"Low->Left\",\"Low->Right\"],"
+             "\"icon\":\"mdi:swap-horizontal\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("select", "biamp_map", cfg);
+  }
+
+  // Crossover frequency (Hz).
+  {
+    char cfg[780];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Bi-amp Crossover (Hz)\",\"unique_id\":\"%s_biamp_xover_hz\","
+             "\"state_topic\":\"%sbiamp_crossover_hz\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/biamp_crossover_hz\","
+             "\"min\":200,\"max\":12000,\"step\":50,\"mode\":\"box\","
+             "\"icon\":\"mdi:sine-wave\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "biamp_crossover_hz", cfg);
+  }
+
+  // Tweeter protection order selector (extra HP on high band only).
+  {
+    char cfg[780];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Tweeter HP Slope\",\"unique_id\":\"%s_biamp_tweeter_hp_order\","
+             "\"state_topic\":\"%sbiamp_tweeter_hp_order\","
+             "\"command_topic\":\"%scmd/biamp_tweeter_hp_order\","
+             "\"options\":[\"Off\",\"12dB\",\"24dB\"],"
+             "\"icon\":\"mdi:high-pass-filter\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("select", "biamp_tweeter_hp_order", cfg);
+  }
+
+  // Tweeter protection cutoff (Hz).
+  {
+    char cfg[820];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Tweeter HP (Hz)\",\"unique_id\":\"%s_biamp_tweeter_hp_hz\","
+             "\"state_topic\":\"%sbiamp_tweeter_hp_hz\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/biamp_tweeter_hp_hz\","
+             "\"min\":200,\"max\":20000,\"step\":50,\"mode\":\"box\","
+             "\"icon\":\"mdi:high-pass-filter\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "biamp_tweeter_hp_hz", cfg);
+  }
+#endif
+
   // --- Buttons ---
   {
     char cfg[520];
@@ -522,6 +711,25 @@ void onMqttConnect(bool sessionPresent) {
   snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/bt_sink_name");
   mqttClient.subscribe(topic, 2);
 #endif
+
+#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_enable");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_map");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_crossover_hz");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_tweeter_hp_order");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_tweeter_hp_hz");
+  mqttClient.subscribe(topic, 2);
+#endif
+
   mqttPublishAvailability(true);
   if (!s_haDiscoveryPublished && mqttHADiscoveryTaskHandle == nullptr) {
     xTaskCreatePinnedToCore(mqttHADiscoveryTask, "haDisc", 4096, nullptr, 1, &mqttHADiscoveryTaskHandle, 0);
@@ -532,6 +740,11 @@ void onMqttConnect(bool sessionPresent) {
   mqttPublishBattery();
   mqttPublishOutputDevice(true);
   mqttPublishBtSinkName(true);
+  mqttPublishBiampEnable(true);
+  mqttPublishBiampMap(true);
+  mqttPublishBiampCrossoverHz(true);
+  mqttPublishBiampTweeterHpOrder(true);
+  mqttPublishBiampTweeterHpHz(true);
   // Ensure HA gets an initial value immediately on connect.
   mqttPublishTrackTime(true);
   mqttPublishStationNumber(true);
@@ -590,6 +803,11 @@ void mqttPublishStatus() {
     mqttPublishStationNumber(false);
     mqttPublishOutputDevice(false);
     mqttPublishBtSinkName(false);
+    mqttPublishBiampEnable(false);
+    mqttPublishBiampMap(false);
+    mqttPublishBiampCrossoverHz(false);
+    mqttPublishBiampTweeterHpOrder(false);
+    mqttPublishBiampTweeterHpHz(false);
   }
 }
 
@@ -832,6 +1050,162 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       }
 
       mqttPublishOutputDevice(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+#endif
+
+  // Dedicated command topic: <root>cmd/biamp_enable (HA switch)
+#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
+  {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_enable");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 31) ? len : 31;
+      char buf[32];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+
+      bool enable = false;
+      bool recognized = true;
+      if (strcasecmp(s, "on") == 0 || strcasecmp(s, "enable") == 0 || strcmp(s, "1") == 0) enable = true;
+      else if (strcasecmp(s, "off") == 0 || strcasecmp(s, "disable") == 0 || strcmp(s, "0") == 0) enable = false;
+      else if (isTruthyPayload(s)) enable = true;
+      else recognized = false;
+      if (!recognized) return;
+
+      const uint8_t want = enable ? 1 : 0;
+      if (config.store.biampEnable == want) {
+        mqttPublishBiampEnable(true);
+        return;
+      }
+      config.saveValue(&config.store.biampEnable, want);
+      mqttPublishBiampEnable(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+
+  // Dedicated command topic: <root>cmd/biamp_map (HA select)
+  {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_map");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 31) ? len : 31;
+      char buf[32];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+
+      int lowOnLeft = -1;
+      if (strcasecmp(s, "low->left") == 0 || strcasecmp(s, "low-left") == 0 || strcasecmp(s, "lowleft") == 0) lowOnLeft = 1;
+      else if (strcasecmp(s, "low->right") == 0 || strcasecmp(s, "low-right") == 0 || strcasecmp(s, "lowright") == 0) lowOnLeft = 0;
+      else if (strcasecmp(s, "left") == 0) lowOnLeft = 1;
+      else if (strcasecmp(s, "right") == 0) lowOnLeft = 0;
+      else if (strcmp(s, "1") == 0) lowOnLeft = 1;
+      else if (strcmp(s, "0") == 0) lowOnLeft = 0;
+      if (lowOnLeft < 0) return;
+
+      const uint8_t want = (uint8_t)(lowOnLeft ? 1 : 0);
+      if (config.store.biampLowOnLeft == want) {
+        mqttPublishBiampMap(true);
+        return;
+      }
+      config.saveValue(&config.store.biampLowOnLeft, want);
+      mqttPublishBiampMap(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+
+  // Dedicated command topic: <root>cmd/biamp_crossover_hz (HA number)
+  {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_crossover_hz");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 15) ? len : 15;
+      char buf[16];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+
+      int hz = atoi(s);
+      if (hz < 50) hz = 50;
+      if (hz > 20000) hz = 20000;
+      const uint16_t want = (uint16_t)hz;
+      if (config.store.biampCrossoverHz == want) {
+        mqttPublishBiampCrossoverHz(true);
+        return;
+      }
+      config.saveValue(&config.store.biampCrossoverHz, want);
+      mqttPublishBiampCrossoverHz(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+
+  // Dedicated command topic: <root>cmd/biamp_tweeter_hp_order (HA select)
+  {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_tweeter_hp_order");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 31) ? len : 31;
+      char buf[32];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+
+      int order = -1;
+      if (strcasecmp(s, "off") == 0 || strcmp(s, "0") == 0) order = 0;
+      else if (strcasecmp(s, "12db") == 0 || strcasecmp(s, "12") == 0 || strcmp(s, "2") == 0) order = 2;
+      else if (strcasecmp(s, "24db") == 0 || strcasecmp(s, "24") == 0 || strcmp(s, "4") == 0) order = 4;
+      if (order < 0) return;
+
+      const uint8_t want = (uint8_t)order;
+      if (config.store.biampTweeterHpOrder == want) {
+        mqttPublishBiampTweeterHpOrder(true);
+        return;
+      }
+      config.saveValue(&config.store.biampTweeterHpOrder, want);
+      mqttPublishBiampTweeterHpOrder(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+
+  // Dedicated command topic: <root>cmd/biamp_tweeter_hp_hz (HA number)
+  {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_tweeter_hp_hz");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 15) ? len : 15;
+      char buf[16];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+
+      int hz = atoi(s);
+      if (hz < 50) hz = 50;
+      if (hz > 20000) hz = 20000;
+      const uint16_t want = (uint16_t)hz;
+      if (config.store.biampTweeterHpHz == want) {
+        mqttPublishBiampTweeterHpHz(true);
+        return;
+      }
+      config.saveValue(&config.store.biampTweeterHpHz, want);
+      mqttPublishBiampTweeterHpHz(true);
       mqttPublishStatus();
       return;
     }

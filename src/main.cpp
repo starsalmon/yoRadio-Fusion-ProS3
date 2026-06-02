@@ -33,6 +33,17 @@
 extern volatile bool g_dlnaPlaylistDirty;
 #endif
 
+// Mirrored output device selection for the audio engine (0=speaker, 1=BT companion).
+// Kept as a simple global so `src/audioI2S/Audio.cpp` can gate optional DSP
+// without including core config headers (avoids heavy dependencies in the hot path).
+volatile uint8_t g_outputDeviceForAudio = 0;
+// Bi-amp DSP runtime settings (mirrored from config.store).
+volatile uint8_t  g_biampEnableForAudio = 0;
+volatile uint8_t  g_biampLowOnLeftForAudio = 1;
+volatile uint16_t g_biampCrossoverHzForAudio = 2500;
+volatile uint8_t  g_biampTweeterHpOrderForAudio = 0;
+volatile uint16_t g_biampTweeterHpHzForAudio = 3500;
+
 #if USE_OTA
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
 #include <NetworkUdp.h>
@@ -126,6 +137,12 @@ void setup() {
 #else
   player.setSpeakerForceMuted(false);
 #endif
+  g_outputDeviceForAudio = config.store.outputDevice;
+  g_biampEnableForAudio = config.store.biampEnable;
+  g_biampLowOnLeftForAudio = config.store.biampLowOnLeft;
+  g_biampCrossoverHzForAudio = config.store.biampCrossoverHz;
+  g_biampTweeterHpOrderForAudio = config.store.biampTweeterHpOrder;
+  g_biampTweeterHpHzForAudio = config.store.biampTweeterHpHz;
   network.begin();
   if(SDC_CS!=255) {
     display.putRequest(WAITFORSD, 0);
@@ -172,6 +189,12 @@ void loop() {
   telnet.loop();
   btcompanion_loop();
   processControlsEvents();
+  g_outputDeviceForAudio = config.store.outputDevice;
+  g_biampEnableForAudio = config.store.biampEnable;
+  g_biampLowOnLeftForAudio = config.store.biampLowOnLeft;
+  g_biampCrossoverHzForAudio = config.store.biampCrossoverHz;
+  g_biampTweeterHpOrderForAudio = config.store.biampTweeterHpOrder;
+  g_biampTweeterHpHzForAudio = config.store.biampTweeterHpHz;
 #ifdef USE_DLNA
   // After DLNA build/append: refresh playlist at runtime (main context)
   static uint32_t dlnaReloadAt = 0;

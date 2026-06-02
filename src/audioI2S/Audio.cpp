@@ -48,6 +48,224 @@ __attribute__((weak)) void audio_process_raw_samples(int32_t* outBuff, int16_t v
     // Default: do nothing. User can provide their own implementation to process audio data.
 }
 
+#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
+extern volatile uint8_t g_outputDeviceForAudio; // defined in src/main.cpp
+extern volatile uint8_t g_biampEnableForAudio; // defined in src/main.cpp
+extern volatile uint8_t g_biampLowOnLeftForAudio; // defined in src/main.cpp
+extern volatile uint16_t g_biampCrossoverHzForAudio; // defined in src/main.cpp
+extern volatile uint8_t g_biampTweeterHpOrderForAudio; // defined in src/main.cpp
+extern volatile uint16_t g_biampTweeterHpHzForAudio; // defined in src/main.cpp
+
+namespace {
+struct Biquad {
+    float b0 = 1, b1 = 0, b2 = 0;
+    float a1 = 0, a2 = 0;
+    float x1 = 0, x2 = 0;
+    float y1 = 0, y2 = 0;
+};
+
+static inline float biquadProcess(Biquad& s, float x) {
+    const float y = (s.b0 * x) + (s.b1 * s.x1) + (s.b2 * s.x2) - (s.a1 * s.y1) - (s.a2 * s.y2);
+    s.x2 = s.x1;
+    s.x1 = x;
+    s.y2 = s.y1;
+    s.y1 = y;
+    return y;
+}
+
+static inline float clamp1(float x) {
+    if (x > 1.0f) return 1.0f;
+    if (x < -1.0f) return -1.0f;
+    return x;
+}
+
+static inline int32_t f_to_i32(float x) {
+    x = clamp1(x);
+    // Map [-1,1) -> int32_t full scale
+    const float s = x * 2147483647.0f;
+    if (s >= 2147483647.0f) return INT32_MAX;
+    if (s <= -2147483648.0f) return INT32_MIN;
+    return (int32_t)lrintf(s);
+}
+
+static inline float i32_to_f(int32_t s) {
+    // int32 PCM expected in full-scale range.
+    return (float)s * (1.0f / 2147483648.0f);
+}
+
+static void biquadSetLowpass(Biquad& q, float fs, float fc, float Q) {
+    const float w0 = 2.0f * (float)M_PI * (fc / fs);
+    const float c = cosf(w0);
+    const float s = sinf(w0);
+    const float alpha = s / (2.0f * Q);
+
+    float b0 = (1.0f - c) * 0.5f;
+    float b1 = (1.0f - c);
+    float b2 = (1.0f - c) * 0.5f;
+    float a0 = 1.0f + alpha;
+    float a1 = -2.0f * c;
+    float a2 = 1.0f - alpha;
+
+    q.b0 = b0 / a0;
+    q.b1 = b1 / a0;
+    q.b2 = b2 / a0;
+    q.a1 = a1 / a0;
+    q.a2 = a2 / a0;
+    q.x1 = q.x2 = q.y1 = q.y2 = 0;
+}
+
+static void biquadSetHighpass(Biquad& q, float fs, float fc, float Q) {
+    const float w0 = 2.0f * (float)M_PI * (fc / fs);
+    const float c = cosf(w0);
+    const float s = sinf(w0);
+    const float alpha = s / (2.0f * Q);
+
+    float b0 = (1.0f + c) * 0.5f;
+    float b1 = -(1.0f + c);
+    float b2 = (1.0f + c) * 0.5f;
+    float a0 = 1.0f + alpha;
+    float a1 = -2.0f * c;
+    float a2 = 1.0f - alpha;
+
+    q.b0 = b0 / a0;
+    q.b1 = b1 / a0;
+    q.b2 = b2 / a0;
+    q.a1 = a1 / a0;
+    q.a2 = a2 / a0;
+    q.x1 = q.x2 = q.y1 = q.y2 = 0;
+}
+
+struct BiampCrossover {
+    uint32_t fs = 0;
+    uint32_t fc = 0;
+    // 4th-order Linkwitz-Riley: two cascaded 2nd-order Butterworth (Q=0.7071)
+    Biquad lp1, lp2;
+    Biquad hp1, hp2;
+    // Optional extra tweeter protection HP (applied to the high band only).
+    uint32_t thpFc = 0;
+    uint8_t  thpOrder = 0; // 0/2/4
+    Biquad thp1, thp2;
+    bool   ready = false;
+#if defined(BIAMP_TEST_MODE) && (BIAMP_TEST_MODE != 0)
+    uint64_t testFrames = 0;
+#endif
+};
+
+static BiampCrossover s_biamp;
+
+static inline uint32_t clampFc(uint32_t fs, uint32_t fc) {
+    // Keep well below Nyquist and above DC.
+    if (fc < 50) fc = 50;
+    const uint32_t maxFc = (fs > 0) ? (fs / 2u - 200u) : fc;
+    if (fs > 0 && fc > maxFc) fc = maxFc;
+    return fc;
+}
+
+static void biampEnsureConfigured(uint32_t fs, uint32_t fc) {
+    if (fs == 0) return;
+    fc = clampFc(fs, fc);
+    if (s_biamp.ready && s_biamp.fs == fs && s_biamp.fc == fc) return;
+
+    s_biamp.fs = fs;
+    s_biamp.fc = fc;
+    const float Q = 0.70710678f;
+    biquadSetLowpass(s_biamp.lp1, (float)fs, (float)fc, Q);
+    biquadSetLowpass(s_biamp.lp2, (float)fs, (float)fc, Q);
+    biquadSetHighpass(s_biamp.hp1, (float)fs, (float)fc, Q);
+    biquadSetHighpass(s_biamp.hp2, (float)fs, (float)fc, Q);
+    s_biamp.ready = true;
+
+#if defined(BIAMP_DIAG_LOG) && (BIAMP_DIAG_LOG != 0)
+    static uint32_t s_lastFs = 0;
+    static uint32_t s_lastFc = 0;
+    static int s_lastMap = -1;
+    const int map = (int)g_biampLowOnLeftForAudio;
+    if (s_lastFs != fs || s_lastFc != fc || s_lastMap != map) {
+        s_lastFs = fs;
+        s_lastFc = fc;
+        s_lastMap = map;
+        Serial.printf("[BIAMP] configured fs=%luHz fc=%luHz map=%s btBypass=%d\n",
+                      (unsigned long)fs,
+                      (unsigned long)fc,
+                      (map != 0) ? "low->L" : "low->R",
+#if defined(BIAMP_DISABLE_WHEN_BT) && (BIAMP_DISABLE_WHEN_BT != 0)
+                      1
+#else
+                      0
+#endif
+        );
+    }
+#endif
+}
+
+static void biampEnsureTweeterHp(uint32_t fs, uint32_t fc, uint8_t order) {
+    if (fs == 0) return;
+    fc = clampFc(fs, fc);
+    if (order != 0 && order != 2 && order != 4) order = 0;
+    if (s_biamp.thpOrder == order && s_biamp.thpFc == fc && s_biamp.fs == fs) return;
+    s_biamp.thpOrder = order;
+    s_biamp.thpFc = fc;
+    if (order == 0) return;
+    const float Q = 0.70710678f;
+    biquadSetHighpass(s_biamp.thp1, (float)fs, (float)fc, Q);
+    if (order == 4) {
+        biquadSetHighpass(s_biamp.thp2, (float)fs, (float)fc, Q);
+    }
+}
+
+static void biampProcessInterleaved(int32_t* lr, int frames, uint32_t fs, uint32_t fc, bool lowOnLeft,
+                                    uint32_t tweeterHpHz, uint8_t tweeterHpOrder) {
+    if (!lr || frames <= 0) return;
+    biampEnsureConfigured(fs, fc);
+    if (!s_biamp.ready) return;
+    biampEnsureTweeterHp(fs, tweeterHpHz, tweeterHpOrder);
+
+    for (int i = 0; i < frames; i++) {
+        const int32_t l0 = lr[i * 2];
+        const int32_t r0 = lr[i * 2 + 1];
+        const int64_t sum = (int64_t)l0 + (int64_t)r0;
+        const int32_t mono = (int32_t)(sum / 2);
+        const float   x = i32_to_f(mono);
+
+        float low = biquadProcess(s_biamp.lp1, x);
+        low = biquadProcess(s_biamp.lp2, low);
+        float high = biquadProcess(s_biamp.hp1, x);
+        high = biquadProcess(s_biamp.hp2, high);
+        // Extra tweeter protection slope: apply only to the high band.
+        if (s_biamp.thpOrder == 2 || s_biamp.thpOrder == 4) {
+            high = biquadProcess(s_biamp.thp1, high);
+            if (s_biamp.thpOrder == 4) high = biquadProcess(s_biamp.thp2, high);
+        }
+
+#if defined(BIAMP_TEST_MODE) && (BIAMP_TEST_MODE != 0)
+        // Make it obvious: swap channels periodically so bass/treble "bounces".
+        bool swap = false;
+        if (fs) {
+            const uint64_t framesPerToggle = (uint64_t)fs * (uint64_t)BIAMP_TEST_TOGGLE_MS / 1000ULL;
+            if (framesPerToggle > 0) {
+                swap = ((s_biamp.testFrames / framesPerToggle) & 1ULL) != 0ULL;
+            }
+        }
+        s_biamp.testFrames++;
+#endif
+
+        int32_t outL = lowOnLeft ? f_to_i32(low) : f_to_i32(high);
+        int32_t outR = lowOnLeft ? f_to_i32(high) : f_to_i32(low);
+
+#if defined(BIAMP_TEST_MODE) && (BIAMP_TEST_MODE != 0)
+        if (swap) {
+            const int32_t t = outL;
+            outL = outR;
+            outR = t;
+        }
+#endif
+        lr[i * 2] = outL;
+        lr[i * 2 + 1] = outR;
+    }
+}
+} // namespace
+#endif // BIAMP_ENABLE
+
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 // 📌📌📌  A U D I O B U F F E R  📌📌📌
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -3447,8 +3665,85 @@ void IRAM_ATTR Audio::playChunk() {
     //------------------------------------------------------------------------------------------
     if (m_f_output48KHz && m_i2s_items.sampleRate != 48000) {
         m_validSamples = resampleTo48kStereo(m_resampler, m_outBuff.get(), m_validSamples, m_samplesBuff48K.get()); // have new amount of samples
+        // Optional DSP bi-amp: split mono into low/high bands on L/R.
+#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
+        const bool btOut = (g_outputDeviceForAudio == 1);
+        const bool biampOn = (g_biampEnableForAudio != 0);
+#if defined(BIAMP_DISABLE_WHEN_BT) && (BIAMP_DISABLE_WHEN_BT != 0)
+        if (biampOn && !btOut) {
+            biampProcessInterleaved(m_samplesBuff48K.get(),
+                                    (int)m_validSamples,
+                                    48000u,
+                                    (uint32_t)g_biampCrossoverHzForAudio,
+                                    g_biampLowOnLeftForAudio != 0,
+                                    (uint32_t)g_biampTweeterHpHzForAudio,
+                                    (uint8_t)g_biampTweeterHpOrderForAudio);
+        }
+#else
+        (void)btOut;
+        if (biampOn) {
+            biampProcessInterleaved(m_samplesBuff48K.get(),
+                                    (int)m_validSamples,
+                                    48000u,
+                                    (uint32_t)g_biampCrossoverHzForAudio,
+                                    g_biampLowOnLeftForAudio != 0,
+                                    (uint32_t)g_biampTweeterHpHzForAudio,
+                                    (uint8_t)g_biampTweeterHpOrderForAudio);
+        }
+#endif
+#if defined(BIAMP_DIAG_LOG) && (BIAMP_DIAG_LOG != 0) && defined(BIAMP_DISABLE_WHEN_BT) && (BIAMP_DISABLE_WHEN_BT != 0)
+        {
+            static int s_lastBypass = -1;
+            const int bypass = (btOut || !biampOn) ? 1 : 0;
+            if (bypass != s_lastBypass) {
+                s_lastBypass = bypass;
+                const char* why = btOut ? "BYPASS (BT output)" : (!biampOn ? "BYPASS (disabled)" : "ACTIVE");
+                Serial.printf("[BIAMP] %s (outputDevice=%u)\n", why, (unsigned)g_outputDeviceForAudio);
+            }
+        }
+#endif
+#endif
         audio_process_i2s(m_samplesBuff48K.get(), m_validSamples, &continueI2S);                                    // 48KHz stereo 32bps
     } else {
+        // Optional DSP bi-amp: split mono into low/high bands on L/R.
+#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
+        const bool btOut = (g_outputDeviceForAudio == 1);
+        const bool biampOn = (g_biampEnableForAudio != 0);
+        const uint32_t fs = (uint32_t)m_i2s_items.sampleRate;
+#if defined(BIAMP_DISABLE_WHEN_BT) && (BIAMP_DISABLE_WHEN_BT != 0)
+        if (biampOn && !btOut) {
+            biampProcessInterleaved(m_outBuff.get(),
+                                    (int)m_validSamples,
+                                    fs,
+                                    (uint32_t)g_biampCrossoverHzForAudio,
+                                    g_biampLowOnLeftForAudio != 0,
+                                    (uint32_t)g_biampTweeterHpHzForAudio,
+                                    (uint8_t)g_biampTweeterHpOrderForAudio);
+        }
+#else
+        (void)btOut;
+        if (biampOn) {
+            biampProcessInterleaved(m_outBuff.get(),
+                                    (int)m_validSamples,
+                                    fs,
+                                    (uint32_t)g_biampCrossoverHzForAudio,
+                                    g_biampLowOnLeftForAudio != 0,
+                                    (uint32_t)g_biampTweeterHpHzForAudio,
+                                    (uint8_t)g_biampTweeterHpOrderForAudio);
+        }
+#endif
+#if defined(BIAMP_DIAG_LOG) && (BIAMP_DIAG_LOG != 0) && defined(BIAMP_DISABLE_WHEN_BT) && (BIAMP_DISABLE_WHEN_BT != 0)
+        {
+            static int s_lastBypass2 = -1;
+            const int bypass = (btOut || !biampOn) ? 1 : 0;
+            if (bypass != s_lastBypass2) {
+                s_lastBypass2 = bypass;
+                const char* why = btOut ? "BYPASS (BT output)" : (!biampOn ? "BYPASS (disabled)" : "ACTIVE");
+                Serial.printf("[BIAMP] %s (outputDevice=%u)\n", why, (unsigned)g_outputDeviceForAudio);
+            }
+        }
+#endif
+#endif
         audio_process_i2s(m_outBuff.get(), (int32_t)m_validSamples, &continueI2S);
     }
     //------------------------------------------------------------------------------------------------------

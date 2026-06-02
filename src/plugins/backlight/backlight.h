@@ -36,6 +36,11 @@ class BacklightPlugin : public Plugin {
     bool          brightnessCaptured = false;
     displayMode_e lastMode = PLAYER;
 
+    // Optional ambient-light auto brightness (BH1750 over I2C).
+    bool          bh1750Ready = false;
+    uint16_t      bh1750Lux_x10 = 0; // lux * 10 (smoothed)
+    uint8_t       bhTargetBrightness = 0;
+
     enum State { WAIT, FADING, DIMMED };
 
     State state = WAIT;

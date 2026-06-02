@@ -39,6 +39,8 @@ platformio device monitor -b 115200
 
 ### Documentation
 
+- **Docs index**: [`docs/README.md`](docs/README.md)
+- **Hardware (PCB + schematic)**: [`docs/HARDWARE_PCB.md`](docs/HARDWARE_PCB.md)
 - **Worklog / polish notes (why this fork exists)**: [`docs/WORKLOG_AND_POLISH_NOTES.md`](docs/WORKLOG_AND_POLISH_NOTES.md)
 - **Changes vs upstream (repro commands + high-signal summary)**: [`docs/CHANGES_SINCE_UPSTREAM.md`](docs/CHANGES_SINCE_UPSTREAM.md)
 - **Suggested fixes**: [`docs/SUGGESTED_FIXES.md`](docs/SUGGESTED_FIXES.md)
@@ -56,6 +58,10 @@ platformio device monitor -b 115200
 - **Battery gauge**: MAX17048 via I2C (can be disabled in `myoptions.h` with `BATTERY_ENABLED 0`)
   - Uses MAX17048 **ALRT** pin (ProS3: `BATTERY_INT` / GPIO10) for low-battery alert threshold (default 5%) to reduce reliance on slow % polling
   - Battery implementation lives in `src/battery/` (`battery.h/.cpp`)
+- **Ambient backlight auto-dimming (BH1750, optional)**:
+  - Uses a BH1750 light sensor on the same I2C bus as the MAX17048 (ProS3: GPIO8/9)
+  - Auto brightness is smoothed and respects the user’s brightness slider as a **max cap**
+  - Enable/configure via `myoptions.h` (`BH1750_ENABLE`, lux→brightness mapping knobs)
 - **Deep sleep power management**:
   - Wake pins: `WAKE_PIN1` + optional `WAKE_PIN2` (RTC GPIO only) via ext1 wake
   - Auto deep sleep (when wake pins are configured): `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT`
@@ -83,6 +89,11 @@ platformio device monitor -b 115200
   - ESP32‑S3 is BLE-only, so Classic-BT A2DP TX is handled by a second ESP32 over UART + I2S
   - Output can be toggled (speaker vs BT) and the footer shows BT **off/searching/connected/audio** state (separate BT icon left of the speaker)
   - Podcasts can be 48kHz: the ProS3 now informs the companion of PCM sample-rate changes (`SR 44100|48000`) so BT output stays pitch-correct (companion resamples to A2DP’s fixed 44.1kHz)
+- **Bi-amp DSP crossover (2x MAX98357, optional)**:
+  - Uses **one I2S stereo stream** and routes **low band** to one channel and **high band** to the other
+  - Wiring: both MAX98357 share `I2S_BCLK`/`I2S_LRC`/`I2S_DOUT`, then strap one amp to **Left** and the other to **Right** using the MAX98357 LRC strap pin
+  - DSP is **compile-time optional** (`BIAMP_ENABLE=1`), and **auto-bypasses** when Bluetooth output is selected
+  - Runtime tuning (MQTT/HA): enable/disable, low-on-left vs low-on-right, crossover Hz, plus optional **tweeter protection high-pass** (slope + cutoff)
 - **SD/Podcast playback UI**:
   - Optional **track position overlay** (`mm:ss / mm:ss`) shown while playing SD/Podcast
   - Controlled via `myoptions.h`:
@@ -118,25 +129,28 @@ MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes
 - **State topics (retained)** (assuming `MQTT_ROOT_TOPIC` already ends with `/`):
   - `availability`: `online|offline` (LWT is `offline`)
   - `status`: JSON including playback + station + mode + brightness
-  - `station_number`: `1..N` (current station number for the active playlist/source)
-  - `mode`: `Web Streaming|SD Card|Podcast|DLNA`
-  - `output_device`: `Speaker|Bluetooth` (only meaningful when `BT_COMPANION_ENABLE != 0`)
-  - `bt_sink_name`: current BT target speaker name (only when `BT_COMPANION_ENABLE != 0`)
-  - `volume`: `0..100`
-  - `brightness`: `0..100`
-  - `playlist`: `http://<ip>/playlist`
-  - `battery`: JSON (`usb/state/percent/voltage/rate`)
-  - `battery/voltage`: `X.XX`
+
+### Bi-amp DSP controls (MQTT)
+
+If you build with `BIAMP_ENABLE=1`, you can control the bi-amp DSP crossover at runtime over MQTT (and via Home Assistant discovery).
+
+- **State topics (retained)**:
+  - `biamp_enable`: `ON|OFF`
+  - `biamp_map`: `Low->Left|Low->Right`
+  - `biamp_crossover_hz`: integer (Hz)
+  - `biamp_tweeter_hp_order`: `Off|12dB|24dB`
+  - `biamp_tweeter_hp_hz`: integer (Hz)
 
 - **Command topics**:
-  - `command`: legacy text commands (prev/next/toggle/play n/vol n/…)
-  - `cmd/sleep`: enter deep sleep (recommended vs `command`)
-  - `cmd/volume`: `0..100`
-  - `cmd/brightness`: `0..100`
-  - `cmd/station_number`: `1..N` (start playing station number)
-  - `cmd/playback_mode`: `Web Streaming|SD Card|Podcast|DLNA` (Home Assistant “select”)
-  - `cmd/output_device`: `Speaker|Bluetooth` (Home Assistant “select”, only when `BT_COMPANION_ENABLE != 0`)
-  - `cmd/bt_sink_name`: set BT target speaker name (Home Assistant “text”, only when `BT_COMPANION_ENABLE != 0`)
+  - `cmd/biamp_enable`: `ON|OFF` (also accepts `1|0`, `enable|disable`, `true|false`)
+  - `cmd/biamp_map`: `Low->Left|Low->Right` (also accepts `left|right`, `1|0`)
+  - `cmd/biamp_crossover_hz`: integer Hz (clamped 50..20000; DSP also clamps relative to sample-rate)
+  - `cmd/biamp_tweeter_hp_order`: `Off|12dB|24dB` (also accepts `0|2|4`)
+  - `cmd/biamp_tweeter_hp_hz`: integer Hz (clamped 50..20000)
+ 
+Notes:
+- These entities are only published when `BIAMP_ENABLE=1` at build time.
+- Tweeter protection is off by default; for fragile tweeters start with `24dB` at `3500–5000 Hz` and work down.
 
 - **Home Assistant discovery (retained)**:
   - Published under `homeassistant/<component>/<nodeId>/<objectId>/config`

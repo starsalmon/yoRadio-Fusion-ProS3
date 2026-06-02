@@ -148,6 +148,17 @@ void Config::init() {
   if (store.volumeBt > 100) store.volumeBt = 100;
   store.volume = (store.outputDevice == 1) ? store.volumeBt : store.volumeSpeaker;
 
+  // Clamp bi-amp DSP settings (safe even when feature isn't compiled in).
+  if (store.biampEnable > 1) store.biampEnable = 0;
+  if (store.biampLowOnLeft > 1) store.biampLowOnLeft = 1;
+  if (store.biampCrossoverHz < 50) store.biampCrossoverHz = 50;
+  if (store.biampCrossoverHz > 20000) store.biampCrossoverHz = 20000;
+  if (store.biampTweeterHpOrder != 0 && store.biampTweeterHpOrder != 2 && store.biampTweeterHpOrder != 4) {
+    store.biampTweeterHpOrder = 0;
+  }
+  if (store.biampTweeterHpHz < 50) store.biampTweeterHpHz = 50;
+  if (store.biampTweeterHpHz > 20000) store.biampTweeterHpHz = 20000;
+
   // Restore SD resume position (absolute file position). This is only applied
   // when playing the same SD track that was last stopped.
   sdResumePos = store.lastSdResumePos;
@@ -325,6 +336,23 @@ void Config::_setupVersion(){
     case 19: {
       // Add persisted podcast index timestamp (epoch seconds).
       saveValue(&store.lastPodcastIndexEpoch, (uint32_t)0, false);
+      break;
+    }
+    case 20: {
+      // Add persisted bi-amp DSP controls (runtime; MQTT).
+      saveValue(&store.biampEnable, (uint8_t)0, false);
+      saveValue(&store.biampLowOnLeft, (uint8_t)1, false);
+#ifdef BIAMP_CROSSOVER_HZ
+      saveValue(&store.biampCrossoverHz, (uint16_t)BIAMP_CROSSOVER_HZ, false);
+#else
+      saveValue(&store.biampCrossoverHz, (uint16_t)2500, false);
+#endif
+      break;
+    }
+    case 21: {
+      // Add persisted tweeter protection high-pass (extra slope for fragile tweeters).
+      saveValue(&store.biampTweeterHpOrder, (uint8_t)0, false); // off by default
+      saveValue(&store.biampTweeterHpHz, (uint16_t)3500, false);
       break;
     }
   }
@@ -1213,6 +1241,15 @@ void Config::setDefaults() {
   store.outputDevice = 0;
   store.volumeSpeaker = store.volume;
   store.volumeBt = store.volume;
+  store.biampEnable = 0;
+  store.biampLowOnLeft = 1;
+#ifdef BIAMP_CROSSOVER_HZ
+  store.biampCrossoverHz = (uint16_t)BIAMP_CROSSOVER_HZ;
+#else
+  store.biampCrossoverHz = 2500;
+#endif
+  store.biampTweeterHpOrder = 0;
+  store.biampTweeterHpHz = 3500;
   store.balance = 0;
   store.trebble = 0;
   store.middle = 0;

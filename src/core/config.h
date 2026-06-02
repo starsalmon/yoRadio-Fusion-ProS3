@@ -55,7 +55,7 @@
   #define ESP_ARDUINO_3 1
 #endif
 
-#define CONFIG_VERSION  20
+#define CONFIG_VERSION  22
 
 enum playMode_e : uint8_t {  //DLNA mod
   PM_WEB    = 0,
@@ -265,6 +265,16 @@ struct config_t
   // Podcast mode: unix epoch (seconds) of last successful RSS index/build.
   // Used to throttle re-indexing when switching into Podcast mode.
   uint32_t  lastPodcastIndexEpoch;
+
+  // Bi-amp DSP (fork extension; runtime-configurable via MQTT).
+  // These are NO-OPs unless the firmware is built with BIAMP_ENABLE=1.
+  uint8_t   biampEnable;         // 0/1
+  uint8_t   biampLowOnLeft;      // 0/1  (1 => low->L, high->R)
+  uint16_t  biampCrossoverHz;    // e.g. 2500
+  // Extra tweeter protection high-pass on the *high* channel only.
+  // 0 disables. 2 = add a 2nd-order (12 dB/oct) HP. 4 = add a 4th-order (24 dB/oct) HP.
+  uint8_t   biampTweeterHpOrder; // 0/2/4
+  uint16_t  biampTweeterHpHz;    // e.g. 3500
 };
 
 #if IR_PIN != 255

@@ -149,6 +149,52 @@
 #define I2S_BCLK 41
 #define I2S_LRC  42
 
+// --- Optional: Bi-amp (2x MAX98357) DSP crossover ---
+// Wiring approach (no extra I2S peripheral needed):
+// - Both MAX98357 share the same I2S signals: BCLK/LRC/DIN.
+// - Strap one amp to "Left" and the other to "Right" via its LRC strap pin.
+// Then yoRadio can output low frequencies on one channel and highs on the other.
+//
+// Safety defaults:
+// - Disabled by default (set BIAMP_ENABLE=1 to turn on).
+// - Automatically bypassed while Bluetooth output is selected.
+
+#define BIAMP_ENABLE 1
+#define BIAMP_TEST_MODE 0
+
+#ifndef BIAMP_ENABLE
+  #define BIAMP_ENABLE 0
+#endif
+#ifndef BIAMP_DISABLE_WHEN_BT
+  #define BIAMP_DISABLE_WHEN_BT 1
+#endif
+// Crossover frequency (Hz). Typical 3" woofer + tweeter: 2000-4000 Hz.
+#ifndef BIAMP_CROSSOVER_HZ
+  #define BIAMP_CROSSOVER_HZ 2500
+#endif
+// Channel mapping: 1 => low=L, high=R. 0 => low=R, high=L.
+#ifndef BIAMP_LOW_ON_LEFT
+  #define BIAMP_LOW_ON_LEFT 1
+#endif
+
+// Debugging aid: make bi-amp behavior obvious.
+// 0 = normal crossover.
+// 1 = swap low/high outputs L<->R periodically (bass/treble "bounces" between amps).
+#ifndef BIAMP_TEST_MODE
+  #define BIAMP_TEST_MODE 0
+#endif
+// Swap period (ms) when BIAMP_TEST_MODE=1.
+#ifndef BIAMP_TEST_TOGGLE_MS
+  #define BIAMP_TEST_TOGGLE_MS 500
+#endif
+
+// Low-rate serial diagnostics for bi-amp DSP (prints only on state changes).
+// 1 = enable logs like:
+//   [BIAMP] fs=44100Hz fc=2500Hz map=low->L btBypass=1
+#ifndef BIAMP_DIAG_LOG
+  #define BIAMP_DIAG_LOG 0
+#endif
+
 // Mute
 #define MUTE_PIN     39            /*  MUTE Pin */
 #define MUTE_VAL    LOW          /*  Write this to MUTE_PIN when player is stop */
@@ -229,8 +275,33 @@
 
 /* BACKLIGHT OPTIONS */
 #define FADE_PERIOD 300
-//#define LIGHT_SENSOR      40               /*  Light sensor  */
-//#define AUTOBACKLIGHT(x)  *function*        /*  Autobacklight function. See options.h for example  */
+// Ambient light auto-dimming (BH1750 over I2C on the same pins as MAX17048: GPIO8/9).
+// Enable the backlight plugin with `BRIGHTNESS_PIN` (already set for this build),
+// then optionally enable the BH1750 integration here.
+//
+// Wiring:
+// - BH1750 VCC -> 3V3
+// - BH1750 GND -> GND
+// - BH1750 SDA -> GPIO8  (BATTERY_SDA)
+// - BH1750 SCL -> GPIO9  (BATTERY_SCL)
+// - BH1750 ADDR: leave low for 0x23 (default) or strap high for 0x5C
+#define BH1750_ENABLE 1
+//#define BH1750_I2C_ADDR 0x23
+//#define BH1750_UPDATE_MS 1000
+// Map lux -> brightness% (and smooth).
+//#define BH1750_LUX_MIN 1.0f
+//#define BH1750_LUX_MAX 800.0f
+//#define BH1750_BRIGHTNESS_MIN_PCT 5
+//#define BH1750_BRIGHTNESS_MAX_PCT 100
+//#define BH1750_SMOOTH_ALPHA_X100 25
+//#define BH1750_GAMMA 0.60f
+//#define BH1750_RESPECT_USER_MAX 1
+// Optional diagnostics: print lux + target/applied brightness (rate-limited).
+#define BH1750_DIAG_LOG 1
+//
+// Notes:
+// - The user brightness slider remains your "cap"; auto brightness won't exceed it.
+// - Auto brightness drives PWM directly (no EEPROM writes).
 //#define DOWN_LEVEL           2      /* lowest level brightness (from 0 to 255) */
 //#define DOWN_INTERVAL        60     /* interval for BacklightDown in sec (60 sec = 1 min) */
 

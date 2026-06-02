@@ -112,6 +112,16 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
   - BT audio is stable once connected
   - Switching to BT can take ~30s (ongoing UX improvement area: status LED + connection-state feedback + faster connect path)
 
+### Bi-amp DSP crossover (2x MAX98357) + tweeter protection
+
+This fork adds an optional **bi-amp** mode using two MAX98357 I2S DAC/amps while keeping the wiring simple (single I2S bus):
+
+- **DSP crossover**: Mixes stereo to mono, then splits into **low** and **high** bands using a 4th‑order Linkwitz‑Riley crossover.
+- **Routing**: Low band goes to one I2S channel, high band to the other (mapping is runtime-selectable).
+- **Bluetooth safety**: DSP is automatically bypassed when BT output is selected (BT path receives full-range audio).
+- **Runtime control**: Bi-amp enable/map/crossover are controllable via MQTT + Home Assistant discovery (and persisted in EEPROM).
+- **Tweeter protection**: Optional extra high-pass on the tweeter (high) band only (12 dB/oct or 24 dB/oct) to protect small tweeters from LF content.
+
 ### Charging indicator (footer bolt) robust across power paths
 
 - On this hardware/power-path, the PROS3 **5V sense** pin can be unreliable (or unused). The footer **charging bolt** now uses a combined heuristic:
@@ -135,6 +145,12 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
 - On the ILI9341 layout this overlaps the weather text region, so it’s controllable via build-time toggles:
   - `TRACKPOS_ENABLE`
   - `TRACKPOS_REPLACE_WEATHER_WHILE_PLAYING`
+
+### Ambient backlight auto-dimming (BH1750 on I2C)
+
+- Added optional **BH1750** ambient light integration to the backlight plugin (`src/plugins/backlight/*`).
+- Uses the same I2C pins as the MAX17048 fuel gauge (ProS3: GPIO8/9).
+- Auto brightness is smoothed and applied via hardware-only PWM writes (no EEPROM spam), while the user brightness slider acts as a **cap**.
 
 ### Stability hardening (FreeRTOS + web handler)
 

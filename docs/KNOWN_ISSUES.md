@@ -1,6 +1,6 @@
 ## Known issues / rough edges (PROS3 fork)
 
-This is intentionally “honest status”. Some of these are upstream issues, some are PROS3/ESP32‑S3 specific, and some are introduced by the fork’s performance/diagnostics work.
+This is intentionally “honest status”. Some of these are upstream issues, some are PROS3/ESP32‑S3 specific, and some are introduced by the fork.
 
 ### Streaming / audio
 
@@ -26,3 +26,7 @@ This is intentionally “honest status”. Some of these are upstream issues, so
 - **VU Label font**: L and R labels are slightly too large for the grey boxes in the Studio VU style; in the default VU style they sit slightly too high.
 - **Scrolling text during playback** is intentionally throttled in this fork to protect audio (some stations make it feel “too slow”).
 
+### Podcast mode
+
+- **Podcast indexing cancellation**: cancellation is best-effort (if you switch modes or start playback, the index task should abort, but it may take a moment to stop).
+- **Boot-time indexing**: booting directly into Podcast mode intentionally triggers an index (handy for forcing a refresh), which can make startup feel slower.

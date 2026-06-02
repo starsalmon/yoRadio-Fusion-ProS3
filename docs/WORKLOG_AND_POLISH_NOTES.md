@@ -2,8 +2,6 @@
 
 This fork isn’t “just a board config change”. A lot of time went into making upstream behave well on PROS3/ESP32‑S3 + ILI9341, and into hardening a few sharp edges that only show up after real-world use (station logos at scale, HLS AAC weirdness, UI stutter, button responsiveness under heavy decode load, etc.).
 
-This document exists so we don’t undersell the work.
-
 ### Station logo system (SPIFFS `.ylg`) — end-to-end workflow
 
 - **Removed/retired legacy logo paths** that were confusing or unused (bulk RGB565 dumps, random default JPGs) and documented what’s actually used.
@@ -43,7 +41,7 @@ This document exists so we don’t undersell the work.
 
 ### Audio/HLS robustness (AAC reality)
 
-Some HLS AAC streams behave differently even at similar bitrates. This fork includes targeted robustness work (documented in `docs/CHANGES_SINCE_UPSTREAM.md`) including:
+Some HLS AAC streams behave differently even at similar bitrates. This fork includes targeted robustness work including:
 
 - **TS/PES handling improvements** (PES length 0 semantics, segment-boundary resets to avoid losing ADTS sync after segment switches)
 - **ADTS sync recovery across buffer boundaries** (tail overlap so headers can straddle blocks)
@@ -160,6 +158,18 @@ This fork adds an optional **bi-amp** mode using two MAX98357 I2S DAC/amps while
 - Removed duplicate `clock_tts_setup()` call (now called once in `setup()`).
 - Fixed a `dspcore.h` preprocessor shadowing issue so the `DSP_ST7789_76` branch is reachable again.
 
+### Completed: suggested-fixes sweep (retired)
+
+`docs/SUGGESTED_FIXES.md` was an initial punch-list from a read-only scan. Everything in it is now implemented, so the separate doc was removed to avoid duplicated/out-of-date documentation.
+
+- `setup()` no longer has an early-return path that skips important initialization (audio info callback + end-of-setup plugin events).
+- Busy-wait loops on queue creation were removed by using static FreeRTOS queues (`xQueueCreateStatic`) for display + netserver queues.
+- Web handler no longer waits forever on `mqttplaylistblock` (bounded wait + yield, then serve anyway).
+- `Config::waitConnection()` semantics were fixed (only waits when a connect is actually in progress; has a timeout).
+- `clock_tts_setup()` is called once (not twice).
+- `dspcore.h` unreachable `DSP_ST7789_76` preprocessor branch was fixed.
+- Serial noise in hot paths reduced (guarded behind option macros), mixed-language logs cleaned up, debounce helper deduped, and brittle `sprintf` paths hardened with `snprintf`.
+
 ### Station list management (Moode import automation)
 
 - Added `tools/moode/export_moode_radio_to_yoradio_csv.py` to scrape Moode’s station table and merge into `data/data/playlist.csv` (URL de-dupe, don’t clobber custom names).
@@ -196,7 +206,7 @@ This fork adds an optional **bi-amp** mode using two MAX98357 I2S DAC/amps while
 
 ### Where to look for the “full” change list
 
-- **Upstream diff summary**: `docs/CHANGES_SINCE_UPSTREAM.md` (includes repro commands)
+- **Upstream snapshot testing**: `docs/UPSTREAM_TESTING.md` (how to build/compare upstream snapshots)
 - **Known issues**: `docs/KNOWN_ISSUES.md`
 - **Controls**: `docs/CONTROLS.md`
 - **Logo pipeline**: `images_src/station_logos/README.md`

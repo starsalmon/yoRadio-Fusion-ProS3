@@ -28,7 +28,7 @@ platformio run -e yoradio-um_pros3-ili9341 -t uploadfs
 platformio device monitor -b 115200
 ```
 
-### Repo layout (the parts you’ll actually touch)
+### Repo layout
 
 - **User config**: [`myoptions.h`](myoptions.h)
 - **PlatformIO env**: [`platformio.ini`](platformio.ini) (`yoradio-um_pros3-ili9341`)
@@ -42,8 +42,7 @@ platformio device monitor -b 115200
 - **Docs index**: [`docs/README.md`](docs/README.md)
 - **Hardware (PCB + schematic)**: [`docs/HARDWARE_PCB.md`](docs/HARDWARE_PCB.md)
 - **Worklog / polish notes (why this fork exists)**: [`docs/WORKLOG_AND_POLISH_NOTES.md`](docs/WORKLOG_AND_POLISH_NOTES.md)
-- **Changes vs upstream (repro commands + high-signal summary)**: [`docs/CHANGES_SINCE_UPSTREAM.md`](docs/CHANGES_SINCE_UPSTREAM.md)
-- **Suggested fixes**: [`docs/SUGGESTED_FIXES.md`](docs/SUGGESTED_FIXES.md)
+- **Upstream snapshot testing**: [`docs/UPSTREAM_TESTING.md`](docs/UPSTREAM_TESTING.md)
 - **TODO / Roadmap**: [`docs/TODO_ROADMAP.md`](docs/TODO_ROADMAP.md)
 - **Known issues**: [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
 - **Controls (buttons/encoders/IR/touch)**: [`docs/CONTROLS.md`](docs/CONTROLS.md)
@@ -52,7 +51,7 @@ platformio device monitor -b 115200
 - **Plugins folder notes**: [`src/plugins/README.md`](src/plugins/README.md)
 - **IRremote locales** (upstream lib docs): [`src/IRremoteESP8266/locale/README.md`](src/IRremoteESP8266/locale/README.md)
 
-## What’s custom in this fork (high signal)
+## What’s custom in this fork
 
 - **PROS3 hardware bring-up**: LDO2 (3V3_AUX) enable + optional external antenna init in `src/yoradio_user.cpp`
 - **Battery gauge**: MAX17048 via I2C (can be disabled in `myoptions.h` with `BATTERY_ENABLED 0`)
@@ -118,7 +117,7 @@ Source of truth is `src/displays/widgets/widgets.cpp`:
 - `4`: `DOW - MM/DD/YYYY`
 - `5`: `MONTH DD, YYYY`
 
-## MQTT + Home Assistant (this fork)
+## MQTT + Home Assistant
 
 MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes Home Assistant MQTT discovery and additional state topics.
 
@@ -176,7 +175,7 @@ Your `platformio.ini` runs these:
 Station Name<TAB>https://example/stream<TAB>0
 ```
 
-### Podcast mode (Option A / flat episodes list)
+### Podcast mode (flat episodes list)
 
 Podcast sources live in `data/data/podcasts.csv` (tab-delimited):
 
@@ -310,6 +309,7 @@ More info: [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
 - **Some AAC stations are “CPU heavy”** and can make UI responsiveness / VU refresh worse.
 - **FLAC**: currently very choppy.
 - **SD playback**: still has edge-case instability; album art is disabled.
+- **Podcast indexing**: indexing cannot be cancelled. Should probably not index during boot.
 
 ## TODO / Roadmap
 

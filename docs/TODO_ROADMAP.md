@@ -1,43 +1,50 @@
 ## TODO / Roadmap
 
-- **Fixed invalid pin warnings at boot**: `OneButton` now treats pin `255` as “disabled” and skips `pinMode()` (prevents `__pinMode(): Invalid IO 255 selected`)
+This file is intentionally **only pending work**. Completed items are tracked in `docs/WORKLOG_AND_POLISH_NOTES.md`.
+
+### Audio / playback
+
 - **Fix SD → WEB → HLS AAC stall properly** (not just workarounds)
-- **More controls via MQTT**: add other controls that only exist in the web UI (tone, smart start, auto dimming, screensaver), and include some fork-only features too
+- **SD playback resume (position)**: track resume is implemented; resume *position* still WIP
+- **Album art**: revisit later (needs stable decoder/task model)
+
+### Battery / power
+
 - **Test/refine low battery cutoff**: not properly tested
+
+### UI / UX
+
 - **Theme switching**: add a way to select/switch themes (web UI/config + persist chosen theme)
-- **Boot screen improvement**: simple animation + build info; unicode SSID handling
+- **Boot screen improvement**: simple animation + build info
 - **IR control UX**: set up receiver + on-screen “IR RX” indicator
 - **Station logo workflow polish**: improve matching/coverage; automate maintaining the local image library
-- **SD playback resume**: track resume is implemented; resume *position* still WIP
-- **Podcast playback resume**: resume *position* (episode time offset) still WIP
-- **Album art**: revisit later (needs stable decoder/task model)
-- **Bluetooth output UX polish** (Companion ESP32 A2DP TX):
-  - **NeoLED statuses**: booting, network connect, SD card indexing, BT connecting/disconnecting (**DONE**)
-    - While waiting for BT connect: **slow blue pulse** (smooth “breathing” pulse, not a flash)
-  - Speed up BT connect (currently can take ~30s depending on speaker)
-  - Consider a cleaner “connected/disconnected” status message from the companion (optional; ProS3 currently polls `STATUS`)
-  - Implement **BT AVRCP controls** (if supported): play/pause, skip, volume via the speaker/headphones buttons
-- **Recently completed (BT companion basics)**:
-  - Change speaker icon to BT icon when in BT mode (with searching/connected state)
-  - Switch to last output device on boot
-  - Save last volume per output and restore when switching
-  - Put BT companion into deep sleep when ProS3 enters deep sleep
-- **Podcast mode**: dedicated mode to stream recent episodes from podcast feeds
-  - **Option A (flat episodes list)**: implemented (RSS → generated `podcast_episodes.csv` playlist)
-  - Next: add sorting (pubDate), caching/refresh interval (basic 3h throttle done), and “show → episodes” browsing (Option B)
-    - Grouped playlist view (nicer UX): show headers + indented episode rows, e.g.
-      - `Show Name 01`
-      - `  - Episode 01`
-      - `  - Episode 02`
-  - **Line 3 from subtitle**: if an episode title has no obvious split delimiter, persist/display a truncated `itunes:subtitle` (today it only appears after a full index rebuild)
-- **Podcast/SD playback UI**: show item length + current position while playing (e.g. `03:12 / 52:10`)
-- **Track position overlay**: add runtime toggle (and define behavior when weather is enabled)
-- **Podcast resume**: resume last-played position per-episode (keyed by enclosure URL/title), keep only last ~10 entries
-- **Web UI improvements (tomorrow)**
-  - Add fork-specific controls/features to Web UI (e.g. upload `podcasts.csv`)
-  - Add a Podcast mode button in the Web UI (mode switch)
-  - Add a Bluetooth/Speaker output switch in the Web UI
 - **Load station logos from SD**: might be easier long-term; likely needs stable image decode first
-- **Configure new features from web**: allow setting options like `BATTERY_ENABLED`, `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT` from the web interface
-- **Reduce blocking patterns and busy-waits** (queue allocation loops, MQTT playlist block)
+
+### Podcast mode
+
+- **Podcast index UX**: add sorting (pubDate) and “show → episodes” browsing (Option B)
+  - Grouped playlist view (nicer UX): show headers + indented episode rows
+- **Line 3 from subtitle**: if an episode title has no obvious split delimiter, persist/display a truncated `itunes:subtitle`
+- **Podcast/SD playback UI**: show item length + current position while playing (e.g. `03:12 / 52:10`)
+- **Track position overlay**: runtime toggle (and define behavior when weather is enabled)
+
+### Bluetooth output (companion ESP32)
+
+- Speed up BT connect (currently can take ~30s depending on speaker)
+- Consider a cleaner “connected/disconnected” status message from the companion (optional; ProS3 currently polls `STATUS`)
+- Implement **BT AVRCP controls** (if supported): play/pause, skip, volume via the speaker/headphones buttons
+
+### Web UI / MQTT
+
+- **More controls via MQTT/Web UI**:
+  - expose tone/equalizer, smart start, screensaver controls
+  - expose more fork-only toggles (power management, etc.)
+- **Web UI improvements**
+  - upload `podcasts.csv`
+  - add a Podcast mode button
+  - add a Bluetooth/Speaker output switch
+
+### Maintainability
+
+- **Reduce blocking patterns** (MQTT playlist block, other remaining busy-waits)
 

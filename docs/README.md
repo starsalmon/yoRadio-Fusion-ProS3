@@ -10,7 +10,7 @@ This folder is the “human docs” for the ProS3 fork (how to build it, how to 
 ### Fork overview / history
 
 - **Worklog / polish notes (why this fork exists)**: [`WORKLOG_AND_POLISH_NOTES.md`](WORKLOG_AND_POLISH_NOTES.md)
-- **Changes vs upstream (repro commands + high-signal summary)**: [`CHANGES_SINCE_UPSTREAM.md`](CHANGES_SINCE_UPSTREAM.md)
+- **Upstream snapshot testing**: [`UPSTREAM_TESTING.md`](UPSTREAM_TESTING.md)
 
 ### Usage / controls
 
@@ -19,7 +19,6 @@ This folder is the “human docs” for the ProS3 fork (how to build it, how to 
 ### Troubleshooting
 
 - **Known issues**: [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
-- **Suggested fixes**: [`SUGGESTED_FIXES.md`](SUGGESTED_FIXES.md)
 
 ### Roadmap
 

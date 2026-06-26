@@ -23,6 +23,9 @@ class BacklightPlugin : public Plugin {
     void setUserBrightness(uint8_t pct, bool save = true);
     void restoreNow();
     bool justWoke() const;
+    uint8_t getCurrentBrightnessPct() const { return currentBrightness; }
+    uint16_t getAlsLux_x10() const { return bh1750Lux_x10; }
+    bool isAlsReady() const { return bh1750Ready; }
 
   private:
     void tick();

@@ -510,7 +510,12 @@ void irLoop() {
                           #if defined(IR_WAKE_DIAG_LOG) && IR_WAKE_DIAG_LOG
                             Serial.println("IR POWER -> sleep");
                           #endif
+                            // Enter deep sleep immediately. Only switching the UI to SLEEPING can
+                            // leave the device half-alive (audio task running, controls gated).
                             display.putRequest(NEWMODE, SLEEPING);
+                            delay(40);
+                            Serial.flush();
+                            config.doSleepW();
                             break;
                         }
                         case IR_PLAY_STOP: {
@@ -646,8 +651,11 @@ void onBtnLongPressStart(int id) {
         break;
       }
     case EVT_BTNMODE: {
-        //config.doSleepW();
+        // Give immediate UI feedback, then deep sleep.
         display.putRequest(NEWMODE, SLEEPING);
+        delay(40);
+        Serial.flush();
+        config.doSleepW();
         break;
       }
     default: break;
@@ -816,6 +824,49 @@ void onBtnClick(int id) {
   }
 }
 
+static void toggleAudioOutputFromUi(controlEvt_e srcBtn) {
+  // Let plugins react (e.g. mode-button LED pulse, NeoStatus cues, etc).
+  pm.on_btn_click(srcBtn);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  const bool wasBt = (config.store.outputDevice == 1);
+
+  // Remember current volume for the currently active output.
+  const uint8_t curVol = config.store.volume;
+  if (wasBt) config.saveValue(&config.store.volumeBt, curVol, false);
+  else       config.saveValue(&config.store.volumeSpeaker, curVol, false);
+
+  const bool nowBt = !wasBt;
+  config.saveValue(&config.store.outputDevice, (uint8_t)(nowBt ? 1 : 0));
+
+  #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
+    Serial.printf("[BT2] %s double-click -> output=%s\n",
+                  (srcBtn == EVT_BTNMODE) ? "MODE" : "ENC",
+                  nowBt ? "BT" : "SPK");
+  #endif
+
+  // Restore the last volume for the newly selected output *before* unmuting the speaker.
+  // This prevents a brief loud burst when switching from BT (often louder) to speaker.
+  const uint8_t newVol = nowBt ? config.store.volumeBt : config.store.volumeSpeaker;
+  config.setVolume(newVol);
+  player.setVol(newVol);
+
+  if (nowBt) {
+    // Switching to BT: mute speaker immediately, then enable companion.
+    player.setSpeakerForceMuted(true);
+    btcompanion_setEnabled(true);
+  } else {
+    // Switching to speaker: disable companion and keep speaker muted briefly so the new
+    // volume has time to propagate through the audio pipeline before unmuting.
+    btcompanion_setEnabled(false);
+    player.setSpeakerForceMuted(true);
+    player.scheduleSpeakerUnmute(SPEAKER_UNMUTE_DELAY_MS);
+  }
+#else
+  // Companion feature not compiled in: ignore output toggles.
+  (void)srcBtn;
+#endif
+}
+
 void onBtnDoubleClick(int id) {
   if (display.mode() == SCREENSAVER || display.mode() == SCREENBLANK) {
     display.putRequest(NEWMODE, PLAYER);
@@ -831,7 +882,8 @@ void onBtnDoubleClick(int id) {
     case EVT_BTNCENTER:
     case EVT_ENCBTNB:
     case EVT_ENC2BTNB: {
-        onBtnClick(EVT_BTNMODE);
+        // Rotary/center double-click: toggle audio output (internal speaker vs BT companion).
+        toggleAudioOutputFromUi((controlEvt_e)id);
         break;
       }
     case EVT_BTNRIGHT: {
@@ -841,43 +893,10 @@ void onBtnDoubleClick(int id) {
         break;
       }
     case EVT_BTNMODE: {
-        // MODE double-click: toggle audio output (internal speaker vs BT companion).
-#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
-        const bool wasBt = (config.store.outputDevice == 1);
-
-        // Remember current volume for the currently active output.
-        const uint8_t curVol = config.store.volume;
-        if (wasBt) config.saveValue(&config.store.volumeBt, curVol, false);
-        else       config.saveValue(&config.store.volumeSpeaker, curVol, false);
-
-        const bool nowBt = !wasBt;
-        config.saveValue(&config.store.outputDevice, (uint8_t)(nowBt ? 1 : 0));
-
-        #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
-          Serial.printf("[BT2] MODE double-click -> output=%s\n", nowBt ? "BT" : "SPK");
-        #endif
-
-        // Restore the last volume for the newly selected output *before* unmuting the speaker.
-        // This prevents a brief loud burst when switching from BT (often louder) to speaker.
-        const uint8_t newVol = nowBt ? config.store.volumeBt : config.store.volumeSpeaker;
-        config.setVolume(newVol);
-        player.setVol(newVol);
-
-        if (nowBt) {
-          // Switching to BT: mute speaker immediately, then enable companion.
-          player.setSpeakerForceMuted(true);
-          btcompanion_setEnabled(true);
-        } else {
-          // Switching to speaker: disable companion and keep speaker muted briefly so the new
-          // volume has time to propagate through the audio pipeline before unmuting.
-          btcompanion_setEnabled(false);
-          player.setSpeakerForceMuted(true);
-          player.scheduleSpeakerUnmute(SPEAKER_UNMUTE_DELAY_MS);
-        }
-#else
-        // Companion feature not compiled in: ignore output toggles.
-        (void)id;
-#endif
+        // MODE double-click is intentionally left unused (spare for future).
+        // Still notify plugins so the mode-button LED pulse triggers.
+        controlEvt_e evt = EVT_BTNMODE;
+        pm.on_btn_click(evt);
         break;
       }
     default:

@@ -14,6 +14,7 @@ namespace {
 static TaskHandle_t s_podTask = nullptr;
 static bool s_forceBuild = false;
 static uint32_t s_lastIndexMs = 0;
+static volatile bool s_cancelBuild = false;
 
 #ifndef PODBUILD_STACK
 // The RSS parsing/build path uses HTTPClient + String heavy operations.
@@ -40,6 +41,7 @@ static char s_progShow[96] = {0};
 
 static inline bool shouldAbortBuild() {
   // Abort if the user left Podcast mode or playback started (avoid contention and UI races).
+  if (s_cancelBuild) return true;
   if (config.getMode() != PM_PODCAST) return true;
   if (player.isRunning()) return true;
   return false;
@@ -614,6 +616,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
 static void podcastBuildTask(void*) {
   const bool force = s_forceBuild;
   s_forceBuild = false;
+  s_cancelBuild = false;
 
   // Only build if it makes sense (or forced).
   if (!force) {
@@ -656,6 +659,7 @@ static void podcastBuildTask(void*) {
 void podcasts_requestBuild(bool force) {
   if (force) s_forceBuild = true;
   if (s_podTask) return;
+  s_cancelBuild = false;
 
   if (!force) {
     // Throttle refreshes so switching into Podcast mode isn't always expensive.
@@ -675,5 +679,10 @@ void podcasts_requestBuild(bool force) {
 
 bool podcasts_buildInProgress() {
   return s_podTask != nullptr;
+}
+
+void podcasts_requestCancel() {
+  // Best-effort: build checks this frequently while parsing RSS.
+  s_cancelBuild = true;
 }
 

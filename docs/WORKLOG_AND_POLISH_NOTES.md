@@ -58,6 +58,11 @@ Some HLS AAC streams behave differently even at similar bitrates. This fork incl
 
 - Improved MQTT state/command surfacing and **Home Assistant discovery** so sliders (volume/brightness) stay in sync, and battery reporting is more useful.
 - Added “quiet logs” options so MQTT doesn’t drown Serial when you’re debugging audio/display.
+- Added runtime controls (MQTT/HA) for:
+  - **ALS auto brightness** (enable + tuning) and a live lux sensor (`ALS Lux (Current)`)
+  - **LED brightness** (`LEDs Brightness`, `LEDs Brightness Follow Screen`) including the mode/power button LED
+  - **Audio EQ** (`Audio EQ Bass/Middle/Treble`, plus balance)
+  - Current effective brightness readout (`Screen Brightness (Current)`)
 
 ### Date format consistency
 
@@ -106,9 +111,18 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
   - BT SEARCHING: slow **pure blue** “breathing” pulse (smooth pulse, not a flash)
   - BT CONNECTED (waiting for audio): **fast pure blue** pulse (continuous) until AUDIO arrives
   - BT AUDIO: quick pure blue pulse (event), no constant pulse
+- NeoStatus can also drive an **external NeoPixel ring** (e.g. 8px behind the rotary knob):
+  - “Pulse sequences” map to **spins** (1 pulse = 1 spin)
+  - BT SEARCHING/CONNECTED patterns become a continuous spin
 - Current user-observed behavior:
   - BT audio is stable once connected
   - Switching to BT can take ~30s (ongoing UX improvement area: status LED + connection-state feedback + faster connect path)
+
+### Mode/Power button LED (PWM)
+
+- Added support for a white LED embedded in the mode/power button:
+  - Pin: `MODE_BUTTON_LED_PIN` (ProS3 PCB: GPIO34)
+  - Behavior: **slow breathe** when not playing, **solid** while playing
 
 ### Bi-amp DSP crossover (2x MAX98357) + tweeter protection
 

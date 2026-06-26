@@ -12,6 +12,10 @@ uint32_t podcasts_buildEpisodesPlaylist();
 void podcasts_requestBuild(bool force = false);
 bool podcasts_buildInProgress();
 
+// Request cancellation of an in-progress build (best-effort).
+// Used to keep mode switching responsive if the user leaves Podcast mode.
+void podcasts_requestCancel();
+
 // Whether a (non-forced) index/build should run now, based on the last successful
 // build time and a minimum interval. Uses unix epoch when available; falls back
 // to uptime-based throttling when time is not set.

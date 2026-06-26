@@ -494,10 +494,23 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
 // SD EOF fallback: only advance when we have valid bounds and we're at the end.
 // (The previous "filePosition==0" heuristic could trigger at track start and cause reboot loops.)
 if (config.getMode() == PM_SDCARD && !isRunning() && _status == PLAYING) {
-  if (player.sd_max > player.sd_min + 4096) {
+  // Prefer time-based EOF when the decoder reports duration.
+  // This is more reliable than file-position bounds for some containers.
+  if (!_hasError) {
+    const uint32_t durSec = player.getAudioFileDuration();
+    const uint32_t curSec = player.getAudioCurrentTime();
+    if (durSec > 0 && curSec + 1 >= durSec) {
+      Serial.println("[SD] EOF(time) -> next()");
+      next();
+      return;
+    }
+  }
+
+  // Fallback: byte-position bounds (only if they look valid).
+  if (!_hasError && player.sd_max > player.sd_min + 4096) {
     const uint32_t pos = player.getAudioFilePosition();
     if (pos >= (player.sd_max - 4096)) {
-      Serial.println("[SD] EOF -> next()");
+      Serial.println("[SD] EOF(pos) -> next()");
       next();
       return;
     }

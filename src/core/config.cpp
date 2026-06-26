@@ -25,6 +25,7 @@
 #endif
 #include <cstddef>
 #include "driver/rtc_io.h"
+#include "driver/gpio.h"
 
 // Forward declaration for clangd/lint environments that don't pick up `podcasts.h` correctly.
 void podcasts_getProgress(uint16_t* cur, uint16_t* total, char* showOut, uint16_t showOutSz);
@@ -158,6 +159,26 @@ void Config::init() {
   }
   if (store.biampTweeterHpHz < 50) store.biampTweeterHpHz = 50;
   if (store.biampTweeterHpHz > 20000) store.biampTweeterHpHz = 20000;
+
+  // Runtime mono fold-down (stereo -> mono).
+  if (store.forceMono > 1) store.forceMono = 0;
+
+  // NeoStatus runtime knobs.
+  if (store.neoStatusBrightnessPct > 100) store.neoStatusBrightnessPct = 100;
+  if (store.neoStatusFollowScreen > 1) store.neoStatusFollowScreen = 0;
+
+  // ALS / ambient auto-brightness runtime knobs.
+  if (store.alsEnable > 1) store.alsEnable = 0;
+  if (store.alsMinPct > 100) store.alsMinPct = 100;
+  if (store.alsMaxPct > 100) store.alsMaxPct = 100;
+  if (store.alsMinPct > store.alsMaxPct) store.alsMinPct = store.alsMaxPct;
+  if (store.alsUpdateMs < 200) store.alsUpdateMs = 200;
+  if (store.alsUpdateMs > 10000) store.alsUpdateMs = 10000;
+  if (store.alsAlphaX100 > 100) store.alsAlphaX100 = 100;
+  if (store.alsGammaX100 < 10) store.alsGammaX100 = 10;
+  if (store.alsGammaX100 > 250) store.alsGammaX100 = 250;
+  if (store.alsLuxMin_x10 < 1) store.alsLuxMin_x10 = 1;
+  if (store.alsLuxMax_x10 < store.alsLuxMin_x10) store.alsLuxMax_x10 = store.alsLuxMin_x10;
 
   // Restore SD resume position (absolute file position). This is only applied
   // when playing the same SD track that was last stopped.
@@ -355,6 +376,28 @@ void Config::_setupVersion(){
       saveValue(&store.biampTweeterHpHz, (uint16_t)3500, false);
       break;
     }
+    case 22: {
+      // Add runtime mono fold-down switch (stereo -> mono).
+      saveValue(&store.forceMono, (uint8_t)0, false);
+      break;
+    }
+    case 23: {
+      // NeoStatus runtime brightness knobs + ALS (BH1750/analog) tuning.
+      // Percent scale of the compiled-in NeoStatus brightness (0..100).
+      // Default 100% preserves existing behavior.
+      saveValue(&store.neoStatusBrightnessPct, (uint8_t)100, false);
+      saveValue(&store.neoStatusFollowScreen, (uint8_t)0, false);
+
+      saveValue(&store.alsEnable, (uint8_t)0, false);
+      saveValue(&store.alsMinPct, (uint8_t)5, false);
+      saveValue(&store.alsMaxPct, (uint8_t)100, false);
+      saveValue(&store.alsUpdateMs, (uint16_t)1000, false);
+      saveValue(&store.alsAlphaX100, (uint8_t)25, false);
+      saveValue(&store.alsGammaX100, (uint8_t)60, false);
+      saveValue(&store.alsLuxMin_x10, (uint16_t)10, false);    // 1.0 lux
+      saveValue(&store.alsLuxMax_x10, (uint16_t)8000, false);  // 800.0 lux
+      break;
+    }
   }
   currentVersion++;
   saveValue(&store.version, currentVersion);
@@ -413,6 +456,12 @@ void Config::changeMode(int newmode) { // DLNA mod
     bool pir = player.isRunning();
     const bool willIndexPodcasts =
         (oldMode != PM_PODCAST && newmode == PM_PODCAST && podcasts_isIndexDue(3u * 60u * 60u)); // 3 hours
+
+    // If we are leaving Podcast mode, cancel any in-progress RSS build immediately so the
+    // UI can switch back to radio/SD without waiting for a long network parse to finish.
+    if (oldMode == PM_PODCAST && newmode != PM_PODCAST) {
+        podcasts_requestCancel();
+    }
 
     if (SDC_CS == 255 && newmode == PM_SDCARD) { return; }
     if (newmode == PM_PODCAST && WiFi.status() != WL_CONNECTED) {
@@ -1250,6 +1299,17 @@ void Config::setDefaults() {
 #endif
   store.biampTweeterHpOrder = 0;
   store.biampTweeterHpHz = 3500;
+  store.forceMono = 0;
+  store.neoStatusBrightnessPct = 100;
+  store.neoStatusFollowScreen = 0;
+  store.alsEnable = 0;
+  store.alsMinPct = 5;
+  store.alsMaxPct = 100;
+  store.alsUpdateMs = 1000;
+  store.alsAlphaX100 = 25;
+  store.alsGammaX100 = 60;
+  store.alsLuxMin_x10 = 10;
+  store.alsLuxMax_x10 = 8000;
   store.balance = 0;
   store.trebble = 0;
   store.middle = 0;
@@ -2124,6 +2184,19 @@ void Config::doSleep() {
 #ifdef USE_NEXTION
     nextion.sleep();
 #endif
+#if (MODE_BUTTON_LED_PIN != 255)
+    // Ensure mode/power button LED is off during sleep.
+    ledcDetach((uint8_t)MODE_BUTTON_LED_PIN);
+    pinMode(MODE_BUTTON_LED_PIN, OUTPUT);
+    digitalWrite(MODE_BUTTON_LED_PIN, (MODE_BUTTON_LED_ACTIVE_HIGH ? LOW : HIGH));
+    gpio_pullup_dis((gpio_num_t)MODE_BUTTON_LED_PIN);
+    gpio_pulldown_en((gpio_num_t)MODE_BUTTON_LED_PIN);
+#endif
+#ifdef USE_NEOSTATUS_PLUGIN
+    // Prevent WS2812 flash artifacts during rail collapse.
+    neostatusPrepareForDeepSleep();
+    delay(3);
+#endif
     // If peripherals (TFT/DAC/etc) are powered from an AUX rail, turn it off.
 #ifdef LDO2_ENABLE
     #if LDO2_ENABLE != 255
@@ -2144,6 +2217,13 @@ void Config::doSleep() {
         rtc_gpio_pullup_en((gpio_num_t)WAKE_PIN2);
         rtc_gpio_pulldown_dis((gpio_num_t)WAKE_PIN2);
         mask |= (1ULL << WAKE_PIN2);
+    }
+#endif
+#if WAKE_PIN3 >= 0 && WAKE_PIN3 < 64
+    if (rtc_gpio_is_valid_gpio((gpio_num_t)WAKE_PIN3)) {
+        rtc_gpio_pullup_en((gpio_num_t)WAKE_PIN3);
+        rtc_gpio_pulldown_dis((gpio_num_t)WAKE_PIN3);
+        mask |= (1ULL << WAKE_PIN3);
     }
 #endif
     if (mask != 0) { esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ANY_LOW); }
@@ -2155,7 +2235,11 @@ void Config::doSleepW() {
 #ifdef USE_NEOSTATUS_PLUGIN
     // Cosmetic cue: pulse before entering deep sleep.
     neostatusPulseSleep();
-    delay(1100);
+    {
+      uint16_t ms = neostatusSleepCueMs();
+      if (ms < 250u) ms = 250u;
+      delay(ms);
+    }
 #endif
     // Best-effort: ensure the companion goes to deep sleep too.
     btcompanion_setEnabled(false);
@@ -2164,6 +2248,10 @@ void Config::doSleepW() {
     display.deepsleep();
 #ifdef USE_NEXTION
     nextion.sleep();
+#endif
+#ifdef USE_NEOSTATUS_PLUGIN
+    // Stop NeoStatus from writing while we fade the mode LED.
+    neostatusArmForDeepSleep();
 #endif
     // If peripherals (TFT/DAC/etc) are powered from an AUX rail, turn it off.
 #ifdef LDO2_ENABLE
@@ -2187,8 +2275,51 @@ void Config::doSleepW() {
         mask |= (1ULL << WAKE_PIN2);
     }
 #endif
+#if WAKE_PIN3 >= 0 && WAKE_PIN3 < 64
+    if (rtc_gpio_is_valid_gpio((gpio_num_t)WAKE_PIN3)) {
+        rtc_gpio_pullup_en((gpio_num_t)WAKE_PIN3);
+        rtc_gpio_pulldown_dis((gpio_num_t)WAKE_PIN3);
+        mask |= (1ULL << WAKE_PIN3);
+    }
+#endif
     delay(200);
     if (mask != 0) { esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ANY_LOW); }
+
+    // Final pre-sleep: fade the mode LED off (instead of snapping).
+    #ifndef MODE_BUTTON_LED_SLEEP_FADE_MS
+      #define MODE_BUTTON_LED_SLEEP_FADE_MS 260u
+    #endif
+    #if (MODE_BUTTON_LED_PIN != 255)
+      {
+        const bool playing = player.isRunning();
+        const uint8_t pct = playing ? (uint8_t)MODE_BUTTON_LED_SOLID_PCT : (uint8_t)MODE_BUTTON_LED_IDLE_SOLID_PCT;
+        uint8_t start = (uint8_t)((int)pct * 255 / 100);
+        // clamp
+        if ((int)pct < 0) start = 0;
+        if ((int)pct > 100) start = 255;
+        const uint32_t ms = (uint32_t)MODE_BUTTON_LED_SLEEP_FADE_MS;
+        const uint32_t steps = 18u;
+        for (uint32_t i = 0; i < steps; i++) {
+          const uint8_t br = (uint8_t)((uint32_t)start * (steps - 1u - i) / (steps - 1u));
+          const uint8_t out = (MODE_BUTTON_LED_ACTIVE_HIGH ? br : (uint8_t)(255u - br));
+          analogWrite(MODE_BUTTON_LED_PIN, out);
+          delay((ms / steps) ? (ms / steps) : 1u);
+        }
+        // Hard-off + bias low for sleep.
+        ledcDetach((uint8_t)MODE_BUTTON_LED_PIN);
+        pinMode(MODE_BUTTON_LED_PIN, OUTPUT);
+        digitalWrite(MODE_BUTTON_LED_PIN, (MODE_BUTTON_LED_ACTIVE_HIGH ? LOW : HIGH));
+        gpio_pullup_dis((gpio_num_t)MODE_BUTTON_LED_PIN);
+        gpio_pulldown_en((gpio_num_t)MODE_BUTTON_LED_PIN);
+      }
+    #endif
+
+#ifdef USE_NEOSTATUS_PLUGIN
+    // Prevent WS2812 flash artifacts during rail collapse.
+    neostatusPrepareForDeepSleep();
+    delay(3);
+#endif
+
     esp_deep_sleep_start();
 }
 

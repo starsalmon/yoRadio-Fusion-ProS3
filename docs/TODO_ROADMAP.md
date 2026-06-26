@@ -36,8 +36,9 @@ This file is intentionally **only pending work**. Completed items are tracked in
 
 ### Web UI / MQTT
 
+- **Web UI stutter → audio stutter**: navigating the web UI can cause audible stutters; profile and reduce blocking work in web handlers (throttle status pushes, cache playlist reads, move heavy work off the websocket callback path)
 - **More controls via MQTT/Web UI**:
-  - expose tone/equalizer, smart start, screensaver controls
+  - expose smart start, screensaver controls
   - expose more fork-only toggles (power management, etc.)
 - **Web UI improvements**
   - upload `podcasts.csv`

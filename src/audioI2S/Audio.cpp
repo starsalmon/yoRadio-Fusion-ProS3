@@ -53,8 +53,6 @@ extern volatile uint8_t g_outputDeviceForAudio; // defined in src/main.cpp
 extern volatile uint8_t g_biampEnableForAudio; // defined in src/main.cpp
 extern volatile uint8_t g_biampLowOnLeftForAudio; // defined in src/main.cpp
 extern volatile uint16_t g_biampCrossoverHzForAudio; // defined in src/main.cpp
-extern volatile uint8_t g_biampTweeterHpOrderForAudio; // defined in src/main.cpp
-extern volatile uint16_t g_biampTweeterHpHzForAudio; // defined in src/main.cpp
 
 namespace {
 struct Biquad {
@@ -141,10 +139,6 @@ struct BiampCrossover {
     // 4th-order Linkwitz-Riley: two cascaded 2nd-order Butterworth (Q=0.7071)
     Biquad lp1, lp2;
     Biquad hp1, hp2;
-    // Optional extra tweeter protection HP (applied to the high band only).
-    uint32_t thpFc = 0;
-    uint8_t  thpOrder = 0; // 0/2/4
-    Biquad thp1, thp2;
     bool   ready = false;
 #if defined(BIAMP_TEST_MODE) && (BIAMP_TEST_MODE != 0)
     uint64_t testFrames = 0;
@@ -194,31 +188,28 @@ static void biampEnsureConfigured(uint32_t fs, uint32_t fc) {
                       0
 #endif
         );
+        Serial.println("[BIAMP] mono mix: x = (L + R) / 2 (hard-panned content will be ~6dB lower)");
     }
 #endif
 }
 
-static void biampEnsureTweeterHp(uint32_t fs, uint32_t fc, uint8_t order) {
-    if (fs == 0) return;
-    fc = clampFc(fs, fc);
-    if (order != 0 && order != 2 && order != 4) order = 0;
-    if (s_biamp.thpOrder == order && s_biamp.thpFc == fc && s_biamp.fs == fs) return;
-    s_biamp.thpOrder = order;
-    s_biamp.thpFc = fc;
-    if (order == 0) return;
-    const float Q = 0.70710678f;
-    biquadSetHighpass(s_biamp.thp1, (float)fs, (float)fc, Q);
-    if (order == 4) {
-        biquadSetHighpass(s_biamp.thp2, (float)fs, (float)fc, Q);
-    }
-}
-
-static void biampProcessInterleaved(int32_t* lr, int frames, uint32_t fs, uint32_t fc, bool lowOnLeft,
-                                    uint32_t tweeterHpHz, uint8_t tweeterHpOrder) {
+static void biampProcessInterleaved(int32_t* lr, int frames, uint32_t fs, uint32_t fc, bool lowOnLeft) {
     if (!lr || frames <= 0) return;
     biampEnsureConfigured(fs, fc);
     if (!s_biamp.ready) return;
-    biampEnsureTweeterHp(fs, tweeterHpHz, tweeterHpOrder);
+
+#if defined(BIAMP_DIAG_LOG) && (BIAMP_DIAG_LOG != 0)
+    // Lightweight proof that the crossover is doing work:
+    // sample a tiny subset of frames and report average magnitudes of low/high bands.
+    static uint32_t s_lastDiagMs = 0;
+    static uint32_t s_samples = 0;
+    static float s_accIn = 0.0f;
+    static float s_accLow = 0.0f;
+    static float s_accHigh = 0.0f;
+    const uint32_t nowMs = millis();
+    if (s_lastDiagMs == 0) s_lastDiagMs = nowMs;
+    const int stride = 128; // 1/128 samples (cheap)
+#endif
 
     for (int i = 0; i < frames; i++) {
         const int32_t l0 = lr[i * 2];
@@ -231,11 +222,15 @@ static void biampProcessInterleaved(int32_t* lr, int frames, uint32_t fs, uint32
         low = biquadProcess(s_biamp.lp2, low);
         float high = biquadProcess(s_biamp.hp1, x);
         high = biquadProcess(s_biamp.hp2, high);
-        // Extra tweeter protection slope: apply only to the high band.
-        if (s_biamp.thpOrder == 2 || s_biamp.thpOrder == 4) {
-            high = biquadProcess(s_biamp.thp1, high);
-            if (s_biamp.thpOrder == 4) high = biquadProcess(s_biamp.thp2, high);
+
+#if defined(BIAMP_DIAG_LOG) && (BIAMP_DIAG_LOG != 0)
+        if ((i % stride) == 0) {
+            s_accIn += fabsf(x);
+            s_accLow += fabsf(low);
+            s_accHigh += fabsf(high);
+            s_samples++;
         }
+#endif
 
 #if defined(BIAMP_TEST_MODE) && (BIAMP_TEST_MODE != 0)
         // Make it obvious: swap channels periodically so bass/treble "bounces".
@@ -262,6 +257,21 @@ static void biampProcessInterleaved(int32_t* lr, int frames, uint32_t fs, uint32
         lr[i * 2] = outL;
         lr[i * 2 + 1] = outR;
     }
+
+#if defined(BIAMP_DIAG_LOG) && (BIAMP_DIAG_LOG != 0)
+    if ((uint32_t)(nowMs - s_lastDiagMs) >= 1000u) {
+        const float denom = (s_samples > 0) ? (1.0f / (float)s_samples) : 0.0f;
+        const float inAvg = s_accIn * denom;
+        const float lowAvg = s_accLow * denom;
+        const float highAvg = s_accHigh * denom;
+        Serial.printf("[BIAMP] bands avg |in|=%.4f |low|=%.4f |high|=%.4f (fc=%luHz fs=%luHz)\n",
+                      (double)inAvg, (double)lowAvg, (double)highAvg,
+                      (unsigned long)s_biamp.fc, (unsigned long)s_biamp.fs);
+        s_lastDiagMs = nowMs;
+        s_samples = 0;
+        s_accIn = s_accLow = s_accHigh = 0.0f;
+    }
+#endif
 }
 } // namespace
 #endif // BIAMP_ENABLE
@@ -3675,9 +3685,7 @@ void IRAM_ATTR Audio::playChunk() {
                                     (int)m_validSamples,
                                     48000u,
                                     (uint32_t)g_biampCrossoverHzForAudio,
-                                    g_biampLowOnLeftForAudio != 0,
-                                    (uint32_t)g_biampTweeterHpHzForAudio,
-                                    (uint8_t)g_biampTweeterHpOrderForAudio);
+                                    g_biampLowOnLeftForAudio != 0);
         }
 #else
         (void)btOut;
@@ -3686,9 +3694,7 @@ void IRAM_ATTR Audio::playChunk() {
                                     (int)m_validSamples,
                                     48000u,
                                     (uint32_t)g_biampCrossoverHzForAudio,
-                                    g_biampLowOnLeftForAudio != 0,
-                                    (uint32_t)g_biampTweeterHpHzForAudio,
-                                    (uint8_t)g_biampTweeterHpOrderForAudio);
+                                    g_biampLowOnLeftForAudio != 0);
         }
 #endif
 #if defined(BIAMP_DIAG_LOG) && (BIAMP_DIAG_LOG != 0) && defined(BIAMP_DISABLE_WHEN_BT) && (BIAMP_DISABLE_WHEN_BT != 0)
@@ -3716,9 +3722,7 @@ void IRAM_ATTR Audio::playChunk() {
                                     (int)m_validSamples,
                                     fs,
                                     (uint32_t)g_biampCrossoverHzForAudio,
-                                    g_biampLowOnLeftForAudio != 0,
-                                    (uint32_t)g_biampTweeterHpHzForAudio,
-                                    (uint8_t)g_biampTweeterHpOrderForAudio);
+                                    g_biampLowOnLeftForAudio != 0);
         }
 #else
         (void)btOut;
@@ -3727,9 +3731,7 @@ void IRAM_ATTR Audio::playChunk() {
                                     (int)m_validSamples,
                                     fs,
                                     (uint32_t)g_biampCrossoverHzForAudio,
-                                    g_biampLowOnLeftForAudio != 0,
-                                    (uint32_t)g_biampTweeterHpHzForAudio,
-                                    (uint8_t)g_biampTweeterHpOrderForAudio);
+                                    g_biampLowOnLeftForAudio != 0);
         }
 #endif
 #if defined(BIAMP_DIAG_LOG) && (BIAMP_DIAG_LOG != 0) && defined(BIAMP_DISABLE_WHEN_BT) && (BIAMP_DISABLE_WHEN_BT != 0)

@@ -41,8 +41,6 @@ volatile uint8_t g_outputDeviceForAudio = 0;
 volatile uint8_t  g_biampEnableForAudio = 0;
 volatile uint8_t  g_biampLowOnLeftForAudio = 1;
 volatile uint16_t g_biampCrossoverHzForAudio = 2500;
-volatile uint8_t  g_biampTweeterHpOrderForAudio = 0;
-volatile uint16_t g_biampTweeterHpHzForAudio = 3500;
 
 #if USE_OTA
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
@@ -141,8 +139,8 @@ void setup() {
   g_biampEnableForAudio = config.store.biampEnable;
   g_biampLowOnLeftForAudio = config.store.biampLowOnLeft;
   g_biampCrossoverHzForAudio = config.store.biampCrossoverHz;
-  g_biampTweeterHpOrderForAudio = config.store.biampTweeterHpOrder;
-  g_biampTweeterHpHzForAudio = config.store.biampTweeterHpHz;
+  // Apply mono state at boot.
+  player.forceMono(config.store.forceMono != 0);
   network.begin();
   if(SDC_CS!=255) {
     display.putRequest(WAITFORSD, 0);
@@ -189,12 +187,20 @@ void loop() {
   telnet.loop();
   btcompanion_loop();
   processControlsEvents();
+  // Runtime audio toggles (avoid doing work every loop unless the value changes).
+  {
+    static uint8_t s_lastMono = 255;
+    const uint8_t wantMono = (uint8_t)(config.store.forceMono ? 1 : 0);
+    if (wantMono != s_lastMono) {
+      s_lastMono = wantMono;
+      player.forceMono(wantMono != 0);
+      Serial.printf("##INFO#:\tforceMono\t%u\n", (unsigned)wantMono);
+    }
+  }
   g_outputDeviceForAudio = config.store.outputDevice;
   g_biampEnableForAudio = config.store.biampEnable;
   g_biampLowOnLeftForAudio = config.store.biampLowOnLeft;
   g_biampCrossoverHzForAudio = config.store.biampCrossoverHz;
-  g_biampTweeterHpOrderForAudio = config.store.biampTweeterHpOrder;
-  g_biampTweeterHpHzForAudio = config.store.biampTweeterHpHz;
 #ifdef USE_DLNA
   // After DLNA build/append: refresh playlist at runtime (main context)
   static uint32_t dlnaReloadAt = 0;

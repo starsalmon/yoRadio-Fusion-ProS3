@@ -60,15 +60,19 @@ platformio device monitor -b 115200
 - **Ambient backlight auto-dimming (BH1750, optional)**:
   - Uses a BH1750 light sensor on the same I2C bus as the MAX17048 (ProS3: GPIO8/9)
   - Auto brightness is smoothed and respects the user’s brightness slider as a **max cap**
-  - Enable/configure via `myoptions.h` (`BH1750_ENABLE`, lux→brightness mapping knobs)
+  - **Build-time**: enable the sensor with `BH1750_ENABLE` in `myoptions.h`
+  - **Runtime** (MQTT/HA): enable + tune ALS mapping without rebuilding (see MQTT section)
 - **Deep sleep power management**:
   - Wake pins: `WAKE_PIN1` + optional `WAKE_PIN2` (RTC GPIO only) via ext1 wake
   - Auto deep sleep (when wake pins are configured): `AUTO_DEEPSLEEP_IDLE_MINUTES`, `AUTO_DEEPSLEEP_BATT_PCT`
 - **Charging bolt (footer)**:
   - Uses **5V sense OR MAX17048 charge-rate OR full battery** to decide whether to show the bolt (more robust across different power-path wiring)
-- **Built-in NeoPixel status LED (ProS3 WS2812)**:
-  - Enabled when `BUILTIN_NEOPIXEL_PIN` is set (ProS3: GPIO18) and `NEO_STATUS_ENABLE 1`
-  - All colors/timing/pulse counts are easy to fine-tune from `myoptions.h` (see “NeoPixel status tuning knobs” below)
+- **NeoStatus LED (NeoPixel / ring)**:
+  - NeoStatus can drive either the ProS3 onboard WS2812 (GPIO18) **or** an external NeoPixel ring
+  - On the PCB build, it drives an **8‑pixel ring on GPIO14** via:
+    - `NEOSTATUS_PIN`
+    - `NEOSTATUS_COUNT`
+  - Animations/colors/timing are easy to fine-tune from `myoptions.h` (see “NeoPixel status tuning knobs” below)
 - **Offline SD playback + footer connectivity UX**:
   - Switch into SD mode without needing Wi‑Fi (avoid unnecessary reboots)
   - Footer IP shows `no IP` when disconnected instead of `0.0.0.0`
@@ -92,7 +96,8 @@ platformio device monitor -b 115200
   - Uses **one I2S stereo stream** and routes **low band** to one channel and **high band** to the other
   - Wiring: both MAX98357 share `I2S_BCLK`/`I2S_LRC`/`I2S_DOUT`, then strap one amp to **Left** and the other to **Right** using the MAX98357 LRC strap pin
   - DSP is **compile-time optional** (`BIAMP_ENABLE=1`), and **auto-bypasses** when Bluetooth output is selected
-  - Runtime tuning (MQTT/HA): enable/disable, low-on-left vs low-on-right, crossover Hz, plus optional **tweeter protection high-pass** (slope + cutoff)
+  - Runtime tuning (MQTT/HA): enable/disable, low-on-left vs low-on-right, crossover Hz
+  - Note: older “tweeter protection HP” fields are retained for EEPROM compatibility but are currently **not used** in the DSP path.
 - **SD/Podcast playback UI**:
   - Optional **track position overlay** (`mm:ss / mm:ss`) shown while playing SD/Podcast
   - Controlled via `myoptions.h`:
@@ -129,6 +134,27 @@ MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes
   - `availability`: `online|offline` (LWT is `offline`)
   - `status`: JSON including playback + station + mode + brightness
 
+- **Screen brightness**
+  - `brightness`: user brightness slider (0..100)
+  - `brightness_current`: effective brightness after ALS/dimming (0..100)
+
+- **ALS / auto brightness (BH1750)**
+  - `als_enable`: `ON|OFF`
+  - `als_lux_current`: live lux reading (integer `lx`)
+  - `als_min_pct`, `als_max_pct`: clamp range (0..100)
+  - `als_update_ms`: update interval (200..10000)
+  - `als_alpha_x100`: smoothing (0..100)
+  - `als_gamma_x100`: response curve (10..250 → gamma 0.10..2.50)
+  - `als_lux_min`, `als_lux_max`: mapping bounds (`lx`)
+
+- **LEDs brightness (NeoStatus + mode button LED)**
+  - `neostatus_brightness_pct`: LED brightness cap (0..100% of compiled brightness)
+  - `neostatus_follow_screen`: `ON|OFF` (scales LED brightness by current backlight level)
+
+- **Audio controls**
+  - `volume`: (0..100), `cmd/volume`
+  - EQ: `bass`, `middle`, `treble`, `balance` (all -16..16) with matching `cmd/*` topics
+
 ### Bi-amp DSP controls (MQTT)
 
 If you build with `BIAMP_ENABLE=1`, you can control the bi-amp DSP crossover at runtime over MQTT (and via Home Assistant discovery).
@@ -137,19 +163,14 @@ If you build with `BIAMP_ENABLE=1`, you can control the bi-amp DSP crossover at 
   - `biamp_enable`: `ON|OFF`
   - `biamp_map`: `Low->Left|Low->Right`
   - `biamp_crossover_hz`: integer (Hz)
-  - `biamp_tweeter_hp_order`: `Off|12dB|24dB`
-  - `biamp_tweeter_hp_hz`: integer (Hz)
 
 - **Command topics**:
   - `cmd/biamp_enable`: `ON|OFF` (also accepts `1|0`, `enable|disable`, `true|false`)
   - `cmd/biamp_map`: `Low->Left|Low->Right` (also accepts `left|right`, `1|0`)
   - `cmd/biamp_crossover_hz`: integer Hz (clamped 50..20000; DSP also clamps relative to sample-rate)
-  - `cmd/biamp_tweeter_hp_order`: `Off|12dB|24dB` (also accepts `0|2|4`)
-  - `cmd/biamp_tweeter_hp_hz`: integer Hz (clamped 50..20000)
  
 Notes:
 - These entities are only published when `BIAMP_ENABLE=1` at build time.
-- Tweeter protection is off by default; for fragile tweeters start with `24dB` at `3500–5000 Hz` and work down.
 
 - **Home Assistant discovery (retained)**:
   - Published under `homeassistant/<component>/<nodeId>/<objectId>/config`
@@ -277,29 +298,43 @@ All the usual “turn on logging” knobs live in `myoptions.h` under `/* DIAGNO
 
 ## NeoPixel status tuning knobs (ProS3)
 
-If you have `BUILTIN_NEOPIXEL_PIN` defined (ProS3: GPIO18), this fork can run a small “NeoStatus” animation engine for a single WS2812 pixel.
+This fork can run a small “NeoStatus” animation engine for either:
+
+- the ProS3 onboard WS2812 (single pixel), or
+- an external NeoPixel ring (e.g. 8px behind the rotary knob).
 
 - **Enable/disable**
-  - `NEO_STATUS_ENABLE 1` (set `0` to disable)
-  - `BUILTIN_NEOPIXEL_STATUS_BRIGHTNESS` (0..255) controls overall brightness (defaults to `BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS` if present)
+  - `NEOSTATUS_ENABLE 1` (set `0` to disable)
+  - `NEOSTATUS_BRIGHTNESS` (0..255) controls overall brightness
+
+- **Select which NeoPixel device NeoStatus drives**
+  - `NEOSTATUS_PIN` (GPIO)
+  - `NEOSTATUS_COUNT` (number of pixels; set to `1` for a single pixel)
+
+- **Ring behavior**
+  - When `NEOSTATUS_COUNT > 1`, NeoStatus maps “pulse sequences” to **spins**:
+    - 1 pulse = 1 spin
+    - 2 pulses = 2 spins
+    - BT SEARCHING/CONNECTED “pulses” become a continuous spin
+  - Spin rate: `NEOSTATUS_SPIN_PERIOD_MS` (default 500ms per full rotation)
+  - Optional: `NEOSTATUS_COLORFUL_ENABLE 1` enables a multi-color “dual comet” effect for sequences
 
 - **Colors** (override in `myoptions.h`)
-  - Preferred “easy to find” names:
-    - `BUILTIN_NEOPIXEL_BOOT_RGB`
-    - `BUILTIN_NEOPIXEL_NET_RGB`
-    - `BUILTIN_NEOPIXEL_SD_START_RGB` (preferred; legacy `BUILTIN_NEOPIXEL_SD_RGB` still supported)
-    - `BUILTIN_NEOPIXEL_RADIO_START_RGB`
-    - `BUILTIN_NEOPIXEL_PODCAST_START_RGB`
-    - `BUILTIN_NEOPIXEL_SPK_SELECT_RGB`
-    - `BUILTIN_NEOPIXEL_WIFI_LOST_RGB`
-    - `BUILTIN_NEOPIXEL_SLEEP_RGB`
-    - `BUILTIN_NEOPIXEL_LOW_BATT_RGB`
-    - `BUILTIN_NEOPIXEL_BT_SEARCH_RGB`
-    - `BUILTIN_NEOPIXEL_BT_CONN_RGB`
-  - Internal equivalent names (also supported): `NEO_*_RGB`
+  - `NEOSTATUS_BOOT_RGB`
+  - `NEOSTATUS_NET_RGB`
+  - `NEOSTATUS_SD_RGB`
+  - `NEOSTATUS_RADIO_START_RGB`
+  - `NEOSTATUS_PODCAST_START_RGB`
+  - `NEOSTATUS_SPK_SELECT_RGB`
+  - `NEOSTATUS_WIFI_LOST_RGB`
+  - `NEOSTATUS_SLEEP_RGB`
+  - `NEOSTATUS_LOW_BATT_RGB`
+  - `NEOSTATUS_BT_SEARCH_RGB`
+  - `NEOSTATUS_BT_CONN_RGB`
 
 - **Timing**
-  - Preferred: `BUILTIN_NEOPIXEL_BOOT_DELAY_MS` (alias of `NEO_BOOT_DELAY_MS`)
+  - `NEOSTATUS_BOOT_DELAY_MS`
+  - `NEOSTATUS_NET_DELAY_MS`
 
 ## Known issues
 
@@ -310,6 +345,8 @@ More info: [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
 - **FLAC**: currently very choppy.
 - **SD playback**: still has edge-case instability; album art is disabled.
 - **Podcast indexing**: indexing cannot be cancelled. Should probably not index during boot.
+  - Cancellation is best-effort: switching modes or starting playback should abort indexing (may take a moment).
+  - Booting directly into Podcast mode intentionally triggers indexing (handy for forcing a refresh).
 
 ## TODO / Roadmap
 

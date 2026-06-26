@@ -53,19 +53,186 @@
 // Brightness used only while clearing the onboard NeoPixel at boot.
 #define BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS 50
 
-#define NEO_STATUS_ENABLE 1 // Enable the NeoStatus plugin
-#define BUILTIN_NEOPIXEL_BOOT_DELAY_MS 2800 // Delay the boot pulses so they align with the splash/logo drawing.
-#define BUILTIN_NEOPIXEL_BOOT_RGB 128, 0, 255
-#define BUILTIN_NEOPIXEL_NET_RGB 0, 255, 80
-#define BUILTIN_NEOPIXEL_SD_RGB 255, 180, 0
-#define BUILTIN_NEOPIXEL_BT_SEARCH_RGB 0, 0, 255
-#define BUILTIN_NEOPIXEL_BT_CONN_RGB 0, 0, 255
-#define BUILTIN_NEOPIXEL_RADIO_START_RGB 255, 255, 255
-#define BUILTIN_NEOPIXEL_PODCAST_START_RGB 255, 0, 200
-#define BUILTIN_NEOPIXEL_SPK_SELECT_RGB 0, 255, 160
-#define BUILTIN_NEOPIXEL_WIFI_LOST_RGB 255, 140, 0
-#define BUILTIN_NEOPIXEL_SLEEP_RGB 128, 0, 255
-#define BUILTIN_NEOPIXEL_LOW_BATT_RGB 255, 0, 0
+// NeoStatus (NeoPixel ring/status LED)
+#define NEOSTATUS_ENABLE 1
+#define NEOSTATUS_BOOT_DELAY_MS 0
+#define NEOSTATUS_NET_DELAY_MS 0     // Optional extra delay before the Wi‑Fi-joined pulse
+
+// NeoStatus output device: NeoPixel ring behind rotary knob (8px) on GPIO14.
+// (Replaces the ProS3 onboard 1px NeoPixel.)
+#define NEOSTATUS_PIN 14
+#define NEOSTATUS_COUNT 8
+
+// Boot animation: green progress wheel (~5s).
+#define NEOSTATUS_BOOT_ANIM_ENABLE 1
+#define NEOSTATUS_BOOT_ANIM_MS 5600
+#define NEOSTATUS_BOOT_ANIM_MIN_PCT 3
+#define NEOSTATUS_BOOT_ANIM_MAX_PCT 85
+
+// Media start/stop tuning
+#define NEOSTATUS_MEDIA_START_SPIN_MS 300
+#define NEOSTATUS_MEDIA_START_BOOST_MS 600
+#define NEOSTATUS_MEDIA_STOP_DECEL_MS 850
+#define NEOSTATUS_MEDIA_STOP_STEPS 4
+#define NEOSTATUS_MEDIA_STOP_HOLD_MS 520
+#define NEOSTATUS_MEDIA_STOP_FADE_MS 650
+
+// NeoPixel device brightness cap (0..255). Applies to ring/pixel animations.
+// Slightly higher default helps low-level fades look smoother on WS2812.
+#define NEOSTATUS_BRIGHTNESS 55
+
+// NeoStatus animation task core (ESP32 dual-core only).
+// Use 1 to avoid fighting Wi‑Fi (usually runs on core 0).
+#define NEOSTATUS_TASK_CORE 1
+
+// Mode/Power button LED (GPIO34) behavior.
+// Hardware: LED anode -> GPIO, cathode -> GND (ACTIVE_HIGH=1 means HIGH = on).
+#define MODE_BUTTON_LED_PIN 34
+#define MODE_BUTTON_LED_ACTIVE_HIGH 1
+// Breathing pattern while NOT playing (only used if MODE_BUTTON_LED_BOOT_BREATHE_MS > 0).
+#define MODE_BUTTON_LED_BREATHE_PERIOD_MS 2500
+#define MODE_BUTTON_LED_BREATHE_MIN_PCT 3
+#define MODE_BUTTON_LED_BREATHE_MAX_PCT 55
+// If 1: when NOT playing, breathe continuously.
+// If 0: when NOT playing, use MODE_BUTTON_LED_IDLE_SOLID_PCT (except optional boot-breathe window).
+#define MODE_BUTTON_LED_IDLE_BREATHE_ENABLE 0
+// If you want "breathe only during boot", set this to e.g. 8000, and keep all
+// other times solid. set to 0 to disable boot breathing effect.
+#define MODE_BUTTON_LED_BOOT_BREATHE_MS 0
+// Solid brightness while playing.
+#define MODE_BUTTON_LED_SOLID_PCT 100
+// Solid brightness while NOT playing (after boot breathe window ends).
+// If you want the same value as playing, keep this equal to MODE_BUTTON_LED_SOLID_PCT.
+#define MODE_BUTTON_LED_IDLE_SOLID_PCT 100
+
+// Mode/Power button LED: quick pulse when MODE button is pressed.
+#define MODE_BUTTON_LED_PRESS_PULSE_ENABLE 1
+#define MODE_BUTTON_LED_PRESS_PULSE_COUNT 2
+#define MODE_BUTTON_LED_PRESS_PULSE_MS 70
+#define MODE_BUTTON_LED_PRESS_PULSE_GAP_MS 55
+#define MODE_BUTTON_LED_PRESS_PULSE_MIN_PCT 0
+#define MODE_BUTTON_LED_PRESS_PULSE_MAX_PCT 100
+
+// Fade time for the mode button LED when going to sleep.
+#define MODE_BUTTON_LED_SLEEP_FADE_MS 450
+
+// Ring animation tuning (applies when NEOSTATUS_COUNT > 1)
+#define NEOSTATUS_SPIN_PERIOD_MS 500 // 1 rotation time (normal event spins)
+#define NEOSTATUS_RING_FADE_MS 160   // tail fade time (higher = longer trail)
+
+// Pulse shape for single-pixel builds (or if you prefer "breathing")
+#define NEOSTATUS_SEQ_PULSE_MS 360
+#define NEOSTATUS_SEQ_GAP_MS 120
+#define NEOSTATUS_SEQ_MIN_PCT 0
+#define NEOSTATUS_SEQ_MAX_PCT 100
+
+// "Now playing" idle animation (dim, slow clockwise spin in media color)
+#define NEOSTATUS_PLAY_ENABLE 1
+#define NEOSTATUS_PLAY_PERIOD_MS 4600
+#define NEOSTATUS_PLAY_MIN_PCT 15
+#define NEOSTATUS_PLAY_MAX_PCT 30
+
+// Make the slow "now playing" animation fade more (bigger = longer tail).
+#define NEOSTATUS_PLAY_RING_FADE_MS 1200
+
+// Podcast indexing animation (rainbow while building RSS playlist).
+#define NEOSTATUS_POD_INDEX_ANIM_ENABLE 1
+#define NEOSTATUS_POD_INDEX_SPIN_PERIOD_MS 300
+#define NEOSTATUS_POD_INDEX_MIN_PCT 0
+#define NEOSTATUS_POD_INDEX_MAX_PCT 85
+
+// Idle glow: show a dim static color when idle (fades down into this).
+#define NEOSTATUS_IDLE_GLOW_ENABLE 1
+#define NEOSTATUS_IDLE_GLOW_PCT 12
+#define NEOSTATUS_IDLE_GLOW_RGB CSS_GREEN
+
+// CSS color names (as "r, g, b" macros).
+// Ref: https://www.cssportal.com/css-color-names/
+#define CSS_BLACK 0, 0, 0
+#define CSS_WHITE 255, 255, 255
+#define CSS_RED 255, 0, 0
+#define CSS_BLUE 0, 0, 255
+#define CSS_GREEN 0, 128, 0
+#define CSS_LIME 0, 255, 0
+#define CSS_TEAL 0, 128, 128
+#define CSS_AQUA 0, 255, 255
+#define CSS_FUCHSIA 255, 0, 255
+#define CSS_YELLOW 255, 255, 0
+#define CSS_ORANGE 255, 165, 0
+#define CSS_GOLD 255, 215, 0
+#define CSS_PURPLE 128, 0, 128
+#define CSS_DEEPPINK 255, 20, 147
+#define CSS_DEEPSKYBLUE 0, 191, 255
+#define CSS_REBECCAPURPLE 102, 51, 153
+#define CSS_CYAN 0, 255, 255
+
+// Volume feedback animation (spins; CW volume up, CCW volume down)
+#define NEOSTATUS_VOL_MAX_SPINS 3
+#define NEOSTATUS_VOL_STEPS_PER_SPIN 1  // 1 = one spin per step, 2 = one spin per 2 steps
+#define NEOSTATUS_VOL_SPIN_PERIOD_MS 500
+#define NEOSTATUS_VOL_MIN_PCT 0
+#define NEOSTATUS_VOL_MAX_PCT 100
+#define NEOSTATUS_VOL_ARM_DELAY_MS 1500  // suppress early boot/config-init volume spins
+#define NEOSTATUS_VOL_SUPPRESS_ON_OUTPUT_SWITCH_MS 1200 // Suppress volume spin when output device toggles (speaker <-> BT).
+
+// NeoStatus diagnostics (Serial)
+#define NEOSTATUS_DIAG_LOG 0 // set to 1 to print which effect fired
+
+// NeoStatus brightness scaling: follow current display brightness percent.
+// If you use an ambient sensor (BH1750 or LIGHT_SENSOR), it updates `config.store.brightness`,
+// so enabling this makes the ring auto-dim/brighten with room lighting.
+#define NEOSTATUS_FOLLOW_SCREEN_BRIGHTNESS 1
+#define NEOSTATUS_FOLLOW_SCREEN_MIN_PCT 6
+#define NEOSTATUS_FOLLOW_SCREEN_MAX_PCT 40
+
+// Event colors (use CSS_* names above)
+#define NEOSTATUS_BOOT_RGB CSS_GREEN
+#define NEOSTATUS_NET_RGB CSS_TEAL
+#define NEOSTATUS_SD_RGB CSS_GOLD
+#define NEOSTATUS_BT_SEARCH_RGB CSS_BLUE
+#define NEOSTATUS_BT_CONN_RGB CSS_BLUE
+#define NEOSTATUS_RADIO_START_RGB CSS_WHITE
+#define NEOSTATUS_PODCAST_START_RGB CSS_DEEPPINK
+#define NEOSTATUS_SPK_SELECT_RGB CSS_CYAN
+#define NEOSTATUS_WIFI_LOST_RGB CSS_ORANGE
+#define NEOSTATUS_SLEEP_RGB CSS_REBECCAPURPLE
+#define NEOSTATUS_LOW_BATT_RGB CSS_RED
+#define NEOSTATUS_VOL_RGB CSS_GREEN
+
+// Spins/pulses per event
+#define NEOSTATUS_BOOT_PULSES 8
+#define NEOSTATUS_NET_PULSES 2
+#define NEOSTATUS_SD_PULSES 2
+#define NEOSTATUS_RADIO_START_PULSES 2
+#define NEOSTATUS_PODCAST_START_PULSES 2
+#define NEOSTATUS_BT_CONNECTED_PULSES 2
+#define NEOSTATUS_BT_AUDIO_PULSES 2
+#define NEOSTATUS_SPK_SELECT_PULSES 2
+#define NEOSTATUS_WIFI_LOST_PULSES 3
+#define NEOSTATUS_SLEEP_PULSES 3
+// Sleep cue pulse shape: each pulse gets longer by +150ms (calmer).
+#define NEOSTATUS_SLEEP_CUE_BASE_MS (NEOSTATUS_SEQ_PULSE_MS + 250)
+#define NEOSTATUS_SLEEP_CUE_RISE_MS 220
+#define NEOSTATUS_SLEEP_CUE_STEP_MS 150
+#define NEOSTATUS_SLEEP_CUE_GAP_MS NEOSTATUS_SEQ_GAP_MS
+#define NEOSTATUS_LOW_BATT_PULSES 3
+
+// Event pulse brightness (start/stop cues, etc). Separate from:
+// - NEOSTATUS_BRIGHTNESS (global NeoPixel brightness cap)
+// - NEOSTATUS_PLAY_MAX_PCT (now-playing idle animation)
+// If some event spins feel too bright, lower this (e.g. 40..70).
+#define NEOSTATUS_EVENT_MAX_PCT 40
+
+// Per-event ring spin speed overrides (optional; defaults to NEOSTATUS_SPIN_PERIOD_MS)
+#define NEOSTATUS_BOOT_SPIN_PERIOD_MS 650
+#define NEOSTATUS_NET_SPIN_PERIOD_MS 350
+#define NEOSTATUS_SD_SPIN_PERIOD_MS 500
+#define NEOSTATUS_RADIO_START_SPIN_PERIOD_MS 500
+#define NEOSTATUS_PODCAST_START_SPIN_PERIOD_MS 500
+#define NEOSTATUS_SPK_SELECT_SPIN_PERIOD_MS 500
+#define NEOSTATUS_WIFI_LOST_SPIN_PERIOD_MS 350
+#define NEOSTATUS_SLEEP_SPIN_PERIOD_MS 300
+#define NEOSTATUS_LOW_BATT_SPIN_PERIOD_MS 200
 
 // Optional cap for the ledstrip plugin (separate from LEDSTRIP_BRIGHTNESS).
 // Uncomment if you ever enable `USE_LEDSTRIP_PLUGIN`.
@@ -99,6 +266,7 @@
 //#define TFT_MOSI  35
 //#define TFT_MISO  37
 
+// TFT backlight brightness pin
 #define BRIGHTNESS_PIN 7
 /*****************************************/
 
@@ -140,6 +308,11 @@
 #define BTN_INTERNALPULLUP    true
 #define BTN_MODE     12
 /********************************************/
+
+/******************************************/
+// --- New hardware (PCB rev) ---
+// NeoStatus + Mode button LED options are grouped near the top of this file.
+/******************************************/
 
 /********************************************/
 /*  I2S DAC  */
@@ -192,7 +365,7 @@
 // 1 = enable logs like:
 //   [BIAMP] fs=44100Hz fc=2500Hz map=low->L btBypass=1
 #ifndef BIAMP_DIAG_LOG
-  #define BIAMP_DIAG_LOG 0
+  #define BIAMP_DIAG_LOG 1
 #endif
 
 // Mute
@@ -243,7 +416,7 @@
 
 // SD resume: when switching into SD mode, auto-play the last SD track.
 // Set to 0 to disable.
-#define SD_AUTORESUME_ON_MODE_SWITCH 0
+#define SD_AUTORESUME_ON_MODE_SWITCH 1
 
 // Station logos + album art (runtime toggle default).
 // Set to 0 if you want them hidden by default after flashing.
@@ -264,6 +437,7 @@
 //   #define WAKE_PIN2  <gpio>
 #define WAKE_PIN1 BTN_MODE
 #define WAKE_PIN2 ENC_BTNB
+#define WAKE_PIN3 IR_PIN
 // --- Auto deep sleep (power-off) rules ---
 // 1) If battery is critically low and not on 5V, deep sleep immediately.
 // 2) If nothing has been playing for a while, deep sleep (wake via WAKE_PIN1/2).
@@ -286,11 +460,11 @@
 // - BH1750 SCL -> GPIO9  (BATTERY_SCL)
 // - BH1750 ADDR: leave low for 0x23 (default) or strap high for 0x5C
 #define BH1750_ENABLE 1
-//#define BH1750_I2C_ADDR 0x23
-//#define BH1750_UPDATE_MS 1000
+#define BH1750_I2C_ADDR 0x23
+#define BH1750_UPDATE_MS 1000
 // Map lux -> brightness% (and smooth).
-//#define BH1750_LUX_MIN 1.0f
-//#define BH1750_LUX_MAX 800.0f
+#define BH1750_LUX_MIN 1.0f
+#define BH1750_LUX_MAX 50.0f
 //#define BH1750_BRIGHTNESS_MIN_PCT 5
 //#define BH1750_BRIGHTNESS_MAX_PCT 100
 //#define BH1750_SMOOTH_ALPHA_X100 25

@@ -247,9 +247,10 @@ void my_audio_info(Audio::msg_t m) {
     case Audio::evt_eof:
     {
       config.vuRefLevel = 0;
-#ifdef USE_DLNA
-      audio_eof();  // TODO Nem mindig érkezik meg az eof.
-#endif
+      // Advance playlists on EOF (SD, and DLNA when enabled).
+      // NOTE: The underlying audio library doesn't always emit evt_eof, so we also keep
+      // a fallback EOF detector in `Player::loop()`.
+      audio_eof();
     } break;
 
     // ----- Log események (hiba, diagnosztika) -----

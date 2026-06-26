@@ -106,6 +106,246 @@ static void mqttPublishBtSinkName(bool force = false) {
 #endif
 }
 
+static void mqttPublishForceMono(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+  static int s_last = -1;
+  const int cur = (int)config.store.forceMono;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "force_mono");
+  mqttClient.publish(t2, 0, true, (cur != 0) ? "ON" : "OFF");
+}
+
+static void mqttPublishNeoStatusBrightnessPct(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+  static int s_last = -1;
+  const int cur = (int)config.store.neoStatusBrightnessPct;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "neostatus_brightness_pct");
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%d", cur);
+  mqttClient.publish(t2, 0, true, buf);
+}
+
+static void mqttPublishNeoStatusFollowScreen(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+  static int s_last = -1;
+  const int cur = (int)config.store.neoStatusFollowScreen;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "neostatus_follow_screen");
+  mqttClient.publish(t2, 0, true, (cur != 0) ? "ON" : "OFF");
+}
+
+static void mqttPublishAlsEnable(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+  static int s_last = -1;
+  const int cur = (int)config.store.alsEnable;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "als_enable");
+  mqttClient.publish(t2, 0, true, (cur != 0) ? "ON" : "OFF");
+}
+
+static void mqttPublishAlsMinMaxPct(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+  static int s_lastMin = -1;
+  static int s_lastMax = -1;
+  const int curMin = (int)config.store.alsMinPct;
+  const int curMax = (int)config.store.alsMaxPct;
+  if (!force && curMin == s_lastMin && curMax == s_lastMax) return;
+  s_lastMin = curMin;
+  s_lastMax = curMax;
+
+  char t2[160];
+  char buf[8];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "als_min_pct");
+  snprintf(buf, sizeof(buf), "%d", curMin);
+  mqttClient.publish(t2, 0, true, buf);
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "als_max_pct");
+  snprintf(buf, sizeof(buf), "%d", curMax);
+  mqttClient.publish(t2, 0, true, buf);
+}
+
+static void mqttPublishAlsTuning(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+  static uint16_t s_lastUpdate = 0xFFFFu;
+  static int s_lastAlpha = -1;
+  static int s_lastGamma = -1;
+  static uint16_t s_lastLuxMin = 0xFFFFu;
+  static uint16_t s_lastLuxMax = 0xFFFFu;
+
+  const uint16_t curUpdate = config.store.alsUpdateMs;
+  const int curAlpha = (int)config.store.alsAlphaX100;
+  const int curGamma = (int)config.store.alsGammaX100;
+  const uint16_t curLuxMin = config.store.alsLuxMin_x10;
+  const uint16_t curLuxMax = config.store.alsLuxMax_x10;
+
+  if (!force &&
+      curUpdate == s_lastUpdate &&
+      curAlpha == s_lastAlpha &&
+      curGamma == s_lastGamma &&
+      curLuxMin == s_lastLuxMin &&
+      curLuxMax == s_lastLuxMax) {
+    return;
+  }
+  s_lastUpdate = curUpdate;
+  s_lastAlpha = curAlpha;
+  s_lastGamma = curGamma;
+  s_lastLuxMin = curLuxMin;
+  s_lastLuxMax = curLuxMax;
+
+  char t2[160];
+  char buf[16];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "als_update_ms");
+  snprintf(buf, sizeof(buf), "%u", (unsigned)curUpdate);
+  mqttClient.publish(t2, 0, true, buf);
+
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "als_alpha_x100");
+  snprintf(buf, sizeof(buf), "%d", curAlpha);
+  mqttClient.publish(t2, 0, true, buf);
+
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "als_gamma_x100");
+  snprintf(buf, sizeof(buf), "%d", curGamma);
+  mqttClient.publish(t2, 0, true, buf);
+
+  // Expose lux bounds as integer lux to HA; internally we store lux*10.
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "als_lux_min");
+  snprintf(buf, sizeof(buf), "%u", (unsigned)(curLuxMin / 10u));
+  mqttClient.publish(t2, 0, true, buf);
+
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "als_lux_max");
+  snprintf(buf, sizeof(buf), "%u", (unsigned)(curLuxMax / 10u));
+  mqttClient.publish(t2, 0, true, buf);
+}
+
+static void mqttPublishBrightnessCurrent(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+  static int s_last = -1;
+  int cur = 0;
+#if (BRIGHTNESS_PIN != 255)
+  cur = (int)backlightPlugin.getCurrentBrightnessPct();
+#else
+  cur = (int)config.store.brightness;
+#endif
+  if (cur < 0) cur = 0;
+  if (cur > 100) cur = 100;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "brightness_current");
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%d", cur);
+  mqttClient.publish(t2, 0, true, buf);
+}
+
+static void mqttPublishBalance(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+  static int s_last = 9999;
+  int cur = (int)config.store.balance;
+  if (cur < -16) cur = -16;
+  if (cur > 16)  cur = 16;
+  if (!force && cur == s_last) return;
+  s_last = cur;
+
+  char t2[160];
+  char buf[16];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "balance");
+  snprintf(buf, sizeof(buf), "%d", cur);
+  mqttClient.publish(t2, 0, true, buf);
+}
+
+static void mqttPublishTone(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+  static int s_lastTreble = 9999;
+  static int s_lastMiddle = 9999;
+  static int s_lastBass = 9999;
+
+  int treble = (int)config.store.trebble;
+  int middle = (int)config.store.middle;
+  int bass   = (int)config.store.bass;
+  if (treble < -16) treble = -16;
+  if (treble > 16)  treble = 16;
+  if (middle < -16) middle = -16;
+  if (middle > 16)  middle = 16;
+  if (bass < -16)   bass = -16;
+  if (bass > 16)    bass = 16;
+
+  if (!force && treble == s_lastTreble && middle == s_lastMiddle && bass == s_lastBass) return;
+  s_lastTreble = treble;
+  s_lastMiddle = middle;
+  s_lastBass = bass;
+
+  char t2[160];
+  char buf[16];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "treble");
+  snprintf(buf, sizeof(buf), "%d", treble);
+  mqttClient.publish(t2, 0, true, buf);
+
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "middle");
+  snprintf(buf, sizeof(buf), "%d", middle);
+  mqttClient.publish(t2, 0, true, buf);
+
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "bass");
+  snprintf(buf, sizeof(buf), "%d", bass);
+  mqttClient.publish(t2, 0, true, buf);
+}
+
 static void mqttPublishBiampEnable(bool force = false) {
   #if defined(MQTT_DISABLE) && MQTT_DISABLE
     (void)force;
@@ -122,6 +362,37 @@ static void mqttPublishBiampEnable(bool force = false) {
   char t2[160];
   snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "biamp_enable");
   mqttClient.publish(t2, 0, true, (cur != 0) ? "ON" : "OFF");
+#else
+  (void)force;
+#endif
+}
+
+static void mqttPublishAlsLuxCurrent(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+
+#if (BRIGHTNESS_PIN != 255)
+#if defined(BH1750_ENABLE) && (BH1750_ENABLE != 0)
+  static uint32_t s_lastLux_x10 = 0xFFFFFFFFu;
+  uint32_t lux_x10 = 0;
+  if (backlightPlugin.isAlsReady()) {
+    lux_x10 = (uint32_t)backlightPlugin.getAlsLux_x10();
+  }
+  if (!force && lux_x10 == s_lastLux_x10) return;
+  s_lastLux_x10 = lux_x10;
+
+  char t2[160];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "als_lux_current");
+  char buf[16];
+  // Publish integer lux (rounded down).
+  snprintf(buf, sizeof(buf), "%lu", (unsigned long)(lux_x10 / 10u));
+  mqttClient.publish(t2, 0, true, buf);
+#else
+  (void)force;
+#endif
 #else
   (void)force;
 #endif
@@ -163,53 +434,6 @@ static void mqttPublishBiampCrossoverHz(bool force = false) {
 
   char t2[160];
   snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "biamp_crossover_hz");
-  char buf[12];
-  snprintf(buf, sizeof(buf), "%u", (unsigned)cur);
-  mqttClient.publish(t2, 0, true, buf);
-#else
-  (void)force;
-#endif
-}
-
-static void mqttPublishBiampTweeterHpOrder(bool force = false) {
-  #if defined(MQTT_DISABLE) && MQTT_DISABLE
-    (void)force;
-    return;
-  #endif
-  if (!mqttClient.connected()) return;
-
-#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
-  static int s_last = -1;
-  const int cur = (int)config.store.biampTweeterHpOrder;
-  if (!force && cur == s_last) return;
-  s_last = cur;
-
-  char t2[160];
-  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "biamp_tweeter_hp_order");
-  const char* v = "Off";
-  if (cur == 2) v = "12dB";
-  else if (cur == 4) v = "24dB";
-  mqttClient.publish(t2, 0, true, v);
-#else
-  (void)force;
-#endif
-}
-
-static void mqttPublishBiampTweeterHpHz(bool force = false) {
-  #if defined(MQTT_DISABLE) && MQTT_DISABLE
-    (void)force;
-    return;
-  #endif
-  if (!mqttClient.connected()) return;
-
-#if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
-  static uint16_t s_last = 0xFFFFu;
-  const uint16_t cur = config.store.biampTweeterHpHz;
-  if (!force && cur == s_last) return;
-  s_last = cur;
-
-  char t2[160];
-  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "biamp_tweeter_hp_hz");
   char buf[12];
   snprintf(buf, sizeof(buf), "%u", (unsigned)cur);
   mqttClient.publish(t2, 0, true, buf);
@@ -387,18 +611,6 @@ static void mqttPublishHADiscovery() {
   }
   // NOTE: no separate volume sensor – the number (slider) below is the single "Volume" entity.
 
-  // Mode: web/sd/dlna
-  {
-    char cfg[520];
-    snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"Mode\",\"unique_id\":\"%s_mode\",\"state_topic\":\"%smode\","
-             "\"icon\":\"mdi:layers-triple\","
-             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
-             "\"device\":%s}",
-             nodeId, MQTT_ROOT_TOPIC, availabilityTopic, dev);
-    pubCfg("sensor", "mode", cfg);
-  }
-
   // Mode as a selector (combined state + control).
   // Prefer this over the legacy "Toggle Mode" button + mode sensor.
   {
@@ -412,7 +624,7 @@ static void mqttPublishHADiscovery() {
 
     char cfg[700];
     snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"Mode\",\"unique_id\":\"%s_mode_select\","
+             "{\"name\":\"Playback Mode\",\"unique_id\":\"%s_mode_select\","
              "\"state_topic\":\"%smode\","
              "\"command_topic\":\"%scmd/playback_mode\","
              "\"options\":%s,"
@@ -443,7 +655,7 @@ static void mqttPublishHADiscovery() {
   {
     char cfg[700];
     snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"BT Sink Name\",\"unique_id\":\"%s_bt_sink_name_text\","
+             "{\"name\":\"Audio BT Name\",\"unique_id\":\"%s_bt_sink_name_text\","
              "\"state_topic\":\"%sbt_sink_name\","
              "\"command_topic\":\"%scmd/bt_sink_name\","
              "\"max\":63,"
@@ -455,12 +667,27 @@ static void mqttPublishHADiscovery() {
   }
 #endif
 
+  // Mono fold-down switch (stereo -> mono).
+  {
+    char cfg[720];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Audio Force Mono\",\"unique_id\":\"%s_force_mono_sw\","
+             "\"state_topic\":\"%sforce_mono\","
+             "\"command_topic\":\"%scmd/force_mono\","
+             "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
+             "\"icon\":\"mdi:circle-half-full\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("switch", "force_mono", cfg);
+  }
+
 #if defined(BIAMP_ENABLE) && (BIAMP_ENABLE != 0)
   // Bi-amp DSP enable switch (combined state + control).
   {
     char cfg[720];
     snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"Bi-amp DSP\",\"unique_id\":\"%s_biamp_enable_sw\","
+             "{\"name\":\"Audio Bi-amp DSP\",\"unique_id\":\"%s_biamp_enable_sw\","
              "\"state_topic\":\"%sbiamp_enable\","
              "\"command_topic\":\"%scmd/biamp_enable\","
              "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
@@ -475,9 +702,10 @@ static void mqttPublishHADiscovery() {
   {
     char cfg[760];
     snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"Bi-amp Map\",\"unique_id\":\"%s_biamp_map_select\","
+             "{\"name\":\"Audio Bi-amp Map\",\"unique_id\":\"%s_biamp_map_select\","
              "\"state_topic\":\"%sbiamp_map\","
              "\"command_topic\":\"%scmd/biamp_map\","
+             "\"entity_category\":\"config\",\"enabled_by_default\":false,"
              "\"options\":[\"Low->Left\",\"Low->Right\"],"
              "\"icon\":\"mdi:swap-horizontal\","
              "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
@@ -490,9 +718,10 @@ static void mqttPublishHADiscovery() {
   {
     char cfg[780];
     snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"Bi-amp Crossover (Hz)\",\"unique_id\":\"%s_biamp_xover_hz\","
+             "{\"name\":\"Audio Bi-amp Crossover (Hz)\",\"unique_id\":\"%s_biamp_xover_hz\","
              "\"state_topic\":\"%sbiamp_crossover_hz\",\"value_template\":\"{{ value|int }}\","
              "\"command_topic\":\"%scmd/biamp_crossover_hz\","
+             "\"entity_category\":\"config\",\"enabled_by_default\":false,"
              "\"min\":200,\"max\":12000,\"step\":50,\"mode\":\"box\","
              "\"icon\":\"mdi:sine-wave\","
              "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
@@ -500,43 +729,13 @@ static void mqttPublishHADiscovery() {
              nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
     pubCfg("number", "biamp_crossover_hz", cfg);
   }
-
-  // Tweeter protection order selector (extra HP on high band only).
-  {
-    char cfg[780];
-    snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"Tweeter HP Slope\",\"unique_id\":\"%s_biamp_tweeter_hp_order\","
-             "\"state_topic\":\"%sbiamp_tweeter_hp_order\","
-             "\"command_topic\":\"%scmd/biamp_tweeter_hp_order\","
-             "\"options\":[\"Off\",\"12dB\",\"24dB\"],"
-             "\"icon\":\"mdi:high-pass-filter\","
-             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
-             "\"device\":%s}",
-             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
-    pubCfg("select", "biamp_tweeter_hp_order", cfg);
-  }
-
-  // Tweeter protection cutoff (Hz).
-  {
-    char cfg[820];
-    snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"Tweeter HP (Hz)\",\"unique_id\":\"%s_biamp_tweeter_hp_hz\","
-             "\"state_topic\":\"%sbiamp_tweeter_hp_hz\",\"value_template\":\"{{ value|int }}\","
-             "\"command_topic\":\"%scmd/biamp_tweeter_hp_hz\","
-             "\"min\":200,\"max\":20000,\"step\":50,\"mode\":\"box\","
-             "\"icon\":\"mdi:high-pass-filter\","
-             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
-             "\"device\":%s}",
-             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
-    pubCfg("number", "biamp_tweeter_hp_hz", cfg);
-  }
 #endif
 
   // --- Buttons ---
   {
     char cfg[520];
     snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"Sleep\",\"unique_id\":\"%s_btn_sleep\",\"command_topic\":\"%scmd/sleep\","
+             "{\"name\":\"System Sleep\",\"unique_id\":\"%s_btn_sleep\",\"command_topic\":\"%scmd/sleep\","
              "\"payload_press\":\"ON\",\"icon\":\"mdi:sleep\","
              "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
              "\"device\":%s}",
@@ -545,12 +744,12 @@ static void mqttPublishHADiscovery() {
   }
   const struct { const char* id; const char* name; const char* payload; const char* icon; } buttons[] = {
     // Use the same command names as the CommandHandler/web UI ("start"/"stop") for reliability.
-    {"prev", "Previous", "prev", "mdi:skip-previous"},
-    {"next", "Next", "next", "mdi:skip-next"},
-    {"toggle", "Play/Pause", "toggle", "mdi:play-pause"},
-    {"stop", "Stop", "stop", "mdi:stop"},
-    {"start", "Play", "start", "mdi:play"},
-    {"reboot", "Reboot", "reboot", "mdi:restart"},
+    {"prev", "Playback Previous", "prev", "mdi:skip-previous"},
+    {"next", "Playback Next", "next", "mdi:skip-next"},
+    {"toggle", "Playback Play/Pause", "toggle", "mdi:play-pause"},
+    {"stop", "Playback Stop", "stop", "mdi:stop"},
+    {"start", "Playback Play", "start", "mdi:play"},
+    {"reboot", "System Reboot", "reboot", "mdi:restart"},
     // Legacy: mode is now exposed as a select (combined state+command).
   };
   for (const auto& b : buttons) {
@@ -568,7 +767,7 @@ static void mqttPublishHADiscovery() {
   {
     char cfg[650];
     snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"Volume\",\"unique_id\":\"%s_volume_number\","
+             "{\"name\":\"Audio Volume\",\"unique_id\":\"%s_volume_number\","
              "\"state_topic\":\"%svolume\",\"value_template\":\"{{ value|int }}\","
              "\"command_topic\":\"%scmd/volume\","
              "\"min\":0,\"max\":100,\"step\":1,\"mode\":\"slider\","
@@ -583,7 +782,7 @@ static void mqttPublishHADiscovery() {
   {
     char cfg[650];
     snprintf(cfg, sizeof(cfg),
-             "{\"name\":\"Brightness\",\"unique_id\":\"%s_brightness_number\","
+             "{\"name\":\"Screen Brightness\",\"unique_id\":\"%s_brightness_number\","
              "\"state_topic\":\"%sbrightness\",\"value_template\":\"{{ value|int }}\","
              "\"command_topic\":\"%scmd/brightness\","
              "\"min\":0,\"max\":100,\"step\":1,\"mode\":\"slider\","
@@ -592,6 +791,238 @@ static void mqttPublishHADiscovery() {
              "\"device\":%s}",
              nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
     pubCfg("number", "brightness", cfg);
+  }
+
+  // Current (effective) screen brightness after ALS/dimming (read-only).
+  {
+    char cfg[740];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Screen Brightness (Current)\",\"unique_id\":\"%s_brightness_current\","
+             "\"state_topic\":\"%sbrightness_current\",\"value_template\":\"{{ value|int }}\","
+             "\"unit_of_measurement\":\"%%\","
+             "\"entity_category\":\"diagnostic\","
+             "\"icon\":\"mdi:brightness-auto\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("sensor", "brightness_current", cfg);
+  }
+
+  // Current ALS lux reading (read-only).
+#if (BRIGHTNESS_PIN != 255)
+#if defined(BH1750_ENABLE) && (BH1750_ENABLE != 0)
+  {
+    char cfg[780];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"ALS Lux (Current)\",\"unique_id\":\"%s_als_lux_current\","
+             "\"state_topic\":\"%sals_lux_current\",\"value_template\":\"{{ value|int }}\","
+             "\"unit_of_measurement\":\"lx\","
+             "\"entity_category\":\"diagnostic\","
+             "\"icon\":\"mdi:white-balance-sunny\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("sensor", "als_lux_current", cfg);
+  }
+#endif
+#endif
+
+  // NeoStatus LED brightness cap (0-100% of compiled brightness).
+  {
+    char cfg[720];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"LEDs Brightness\",\"unique_id\":\"%s_neostatus_brightness_pct\","
+             "\"state_topic\":\"%sneostatus_brightness_pct\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/neostatus_brightness_pct\","
+             "\"min\":0,\"max\":100,\"step\":1,\"mode\":\"slider\","
+             "\"icon\":\"mdi:led-strip-variant\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "neostatus_brightness_pct", cfg);
+  }
+  // NeoStatus follow current backlight brightness (tracks ALS).
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"LEDs Brightness Follow Screen\",\"unique_id\":\"%s_neostatus_follow_screen_sw\","
+             "\"state_topic\":\"%sneostatus_follow_screen\","
+             "\"command_topic\":\"%scmd/neostatus_follow_screen\","
+             "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
+             "\"icon\":\"mdi:brightness-auto\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("switch", "neostatus_follow_screen", cfg);
+  }
+
+  // ALS (auto brightness) toggle + tuning.
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"ALS Auto Brightness\",\"unique_id\":\"%s_als_enable_sw\","
+             "\"state_topic\":\"%sals_enable\","
+             "\"command_topic\":\"%scmd/als_enable\","
+             "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
+             "\"icon\":\"mdi:brightness-auto\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("switch", "als_enable", cfg);
+  }
+  {
+    char cfg[820];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"ALS Min Brightness\",\"unique_id\":\"%s_als_min_pct\","
+             "\"state_topic\":\"%sals_min_pct\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/als_min_pct\","
+             "\"entity_category\":\"config\",\"enabled_by_default\":false,"
+             "\"min\":0,\"max\":100,\"step\":1,\"mode\":\"box\","
+             "\"icon\":\"mdi:brightness-4\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "als_min_pct", cfg);
+  }
+  {
+    char cfg[820];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"ALS Max Brightness\",\"unique_id\":\"%s_als_max_pct\","
+             "\"state_topic\":\"%sals_max_pct\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/als_max_pct\","
+             "\"entity_category\":\"config\",\"enabled_by_default\":false,"
+             "\"min\":0,\"max\":100,\"step\":1,\"mode\":\"box\","
+             "\"icon\":\"mdi:brightness-7\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "als_max_pct", cfg);
+  }
+  {
+    char cfg[860];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"ALS Update (ms)\",\"unique_id\":\"%s_als_update_ms\","
+             "\"state_topic\":\"%sals_update_ms\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/als_update_ms\","
+             "\"entity_category\":\"config\",\"enabled_by_default\":false,"
+             "\"min\":200,\"max\":10000,\"step\":100,\"mode\":\"box\","
+             "\"icon\":\"mdi:timer-outline\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "als_update_ms", cfg);
+  }
+  {
+    char cfg[860];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"ALS Smoothing (alpha x100)\",\"unique_id\":\"%s_als_alpha_x100\","
+             "\"state_topic\":\"%sals_alpha_x100\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/als_alpha_x100\","
+             "\"entity_category\":\"config\",\"enabled_by_default\":false,"
+             "\"min\":0,\"max\":100,\"step\":1,\"mode\":\"box\","
+             "\"icon\":\"mdi:chart-bell-curve\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "als_alpha_x100", cfg);
+  }
+  {
+    char cfg[860];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"ALS Gamma (x100)\",\"unique_id\":\"%s_als_gamma_x100\","
+             "\"state_topic\":\"%sals_gamma_x100\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/als_gamma_x100\","
+             "\"entity_category\":\"config\",\"enabled_by_default\":false,"
+             "\"min\":10,\"max\":250,\"step\":1,\"mode\":\"box\","
+             "\"icon\":\"mdi:gamma\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "als_gamma_x100", cfg);
+  }
+  {
+    char cfg[860];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"ALS Lux Min\",\"unique_id\":\"%s_als_lux_min\","
+             "\"state_topic\":\"%sals_lux_min\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/als_lux_min\","
+             "\"entity_category\":\"config\",\"enabled_by_default\":false,"
+             "\"min\":0,\"max\":5000,\"step\":1,\"mode\":\"box\","
+             "\"unit_of_measurement\":\"lx\","
+             "\"icon\":\"mdi:white-balance-sunny\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "als_lux_min", cfg);
+  }
+  {
+    char cfg[860];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"ALS Lux Max\",\"unique_id\":\"%s_als_lux_max\","
+             "\"state_topic\":\"%sals_lux_max\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/als_lux_max\","
+             "\"entity_category\":\"config\",\"enabled_by_default\":false,"
+             "\"min\":1,\"max\":20000,\"step\":10,\"mode\":\"box\","
+             "\"unit_of_measurement\":\"lx\","
+             "\"icon\":\"mdi:weather-sunny-alert\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "als_lux_max", cfg);
+  }
+
+  // --- EQ / tone controls ---
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Audio Balance\",\"unique_id\":\"%s_balance_number\","
+             "\"state_topic\":\"%sbalance\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/balance\","
+             "\"min\":-16,\"max\":16,\"step\":1,\"mode\":\"slider\","
+             "\"icon\":\"mdi:scale-balance\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "balance", cfg);
+  }
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Audio EQ Treble\",\"unique_id\":\"%s_treble_number\","
+             "\"state_topic\":\"%streble\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/treble\","
+             "\"min\":-16,\"max\":16,\"step\":1,\"mode\":\"slider\","
+             "\"icon\":\"mdi:waveform\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "treble", cfg);
+  }
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Audio EQ Middle\",\"unique_id\":\"%s_middle_number\","
+             "\"state_topic\":\"%smiddle\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/middle\","
+             "\"min\":-16,\"max\":16,\"step\":1,\"mode\":\"slider\","
+             "\"icon\":\"mdi:waveform\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "middle", cfg);
+  }
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Audio EQ Bass\",\"unique_id\":\"%s_bass_number\","
+             "\"state_topic\":\"%sbass\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/bass\","
+             "\"min\":-16,\"max\":16,\"step\":1,\"mode\":\"slider\","
+             "\"icon\":\"mdi:waveform\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "bass", cfg);
   }
 
   // Station number as a numeric input (1..N).
@@ -698,10 +1129,55 @@ void onMqttConnect(bool sessionPresent) {
   snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/brightness");
   mqttClient.subscribe(topic, 2);
   zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/balance");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/treble");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/middle");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/bass");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
   snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/playback_mode");
   mqttClient.subscribe(topic, 2);
   zeroBuffer();
   snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/station_number");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/force_mono");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/neostatus_brightness_pct");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/neostatus_follow_screen");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/als_enable");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/als_min_pct");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/als_max_pct");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/als_update_ms");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/als_alpha_x100");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/als_gamma_x100");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/als_lux_min");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/als_lux_max");
   mqttClient.subscribe(topic, 2);
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   zeroBuffer();
@@ -722,12 +1198,6 @@ void onMqttConnect(bool sessionPresent) {
   zeroBuffer();
   snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_crossover_hz");
   mqttClient.subscribe(topic, 2);
-  zeroBuffer();
-  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_tweeter_hp_order");
-  mqttClient.subscribe(topic, 2);
-  zeroBuffer();
-  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_tweeter_hp_hz");
-  mqttClient.subscribe(topic, 2);
 #endif
 
   mqttPublishAvailability(true);
@@ -738,13 +1208,16 @@ void onMqttConnect(bool sessionPresent) {
   mqttPublishVolume();
   mqttPublishPlaylist();
   mqttPublishBattery();
+  mqttPublishBrightnessCurrent(true);
+  mqttPublishAlsLuxCurrent(true);
+  mqttPublishBalance(true);
+  mqttPublishTone(true);
   mqttPublishOutputDevice(true);
   mqttPublishBtSinkName(true);
+  mqttPublishForceMono(true);
   mqttPublishBiampEnable(true);
   mqttPublishBiampMap(true);
   mqttPublishBiampCrossoverHz(true);
-  mqttPublishBiampTweeterHpOrder(true);
-  mqttPublishBiampTweeterHpHz(true);
   // Ensure HA gets an initial value immediately on connect.
   mqttPublishTrackTime(true);
   mqttPublishStationNumber(true);
@@ -803,11 +1276,14 @@ void mqttPublishStatus() {
     mqttPublishStationNumber(false);
     mqttPublishOutputDevice(false);
     mqttPublishBtSinkName(false);
+    mqttPublishNeoStatusBrightnessPct(false);
+    mqttPublishNeoStatusFollowScreen(false);
+    mqttPublishAlsEnable(false);
+    mqttPublishAlsMinMaxPct(false);
+    mqttPublishAlsTuning(false);
     mqttPublishBiampEnable(false);
     mqttPublishBiampMap(false);
     mqttPublishBiampCrossoverHz(false);
-    mqttPublishBiampTweeterHpOrder(false);
-    mqttPublishBiampTweeterHpHz(false);
   }
 }
 
@@ -868,6 +1344,16 @@ void mqttLoop() {
   mqttPublishStationNumber(false);
   mqttPublishOutputDevice(false);
   mqttPublishBtSinkName(false);
+  mqttPublishForceMono(false);
+  mqttPublishBrightnessCurrent(false);
+  mqttPublishAlsLuxCurrent(false);
+  mqttPublishBalance(false);
+  mqttPublishTone(false);
+  mqttPublishNeoStatusBrightnessPct(false);
+  mqttPublishNeoStatusFollowScreen(false);
+  mqttPublishAlsEnable(false);
+  mqttPublishAlsMinMaxPct(false);
+  mqttPublishAlsTuning(false);
 }
 
 void mqttPublishPlaylist() {
@@ -965,6 +1451,240 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       mqttPublishStatus();
 
       player.sendCommand({PR_PLAY, (uint16_t)sb});
+      return;
+    }
+  }
+
+  // Dedicated command topic: <root>cmd/force_mono (HA switch)
+  {
+    char monoTopic[160];
+    snprintf(monoTopic, sizeof(monoTopic), "%s%s", MQTT_ROOT_TOPIC, "cmd/force_mono");
+    if (strcmp(topic, monoTopic) == 0) {
+      const size_t n = (len < 15) ? len : 15;
+      char buf[16];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+
+      const bool wantOn =
+        (strcasecmp(s, "on") == 0) ||
+        (strcasecmp(s, "true") == 0) ||
+        (strcasecmp(s, "enable") == 0) ||
+        (strcmp(s, "1") == 0);
+      const bool wantOff =
+        (strcasecmp(s, "off") == 0) ||
+        (strcasecmp(s, "false") == 0) ||
+        (strcasecmp(s, "disable") == 0) ||
+        (strcmp(s, "0") == 0);
+      if (!wantOn && !wantOff) return;
+
+      const uint8_t want = wantOn ? 1u : 0u;
+      if (config.store.forceMono == want) {
+        mqttPublishForceMono(true);
+        return;
+      }
+      config.saveValue(&config.store.forceMono, want);
+      mqttPublishForceMono(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+
+  // Dedicated command topic: <root>cmd/neostatus_brightness_pct (HA number)
+  {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/neostatus_brightness_pct");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 15) ? len : 15;
+      char buf[16];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+      int v = atoi(s);
+      if (v < 0) v = 0;
+      if (v > 100) v = 100;
+      const uint8_t want = (uint8_t)v;
+      if (config.store.neoStatusBrightnessPct == want) {
+        mqttPublishNeoStatusBrightnessPct(true);
+        return;
+      }
+      config.saveValue(&config.store.neoStatusBrightnessPct, want);
+      mqttPublishNeoStatusBrightnessPct(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+
+  // Dedicated command topic: <root>cmd/neostatus_follow_screen (HA switch)
+  {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/neostatus_follow_screen");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 15) ? len : 15;
+      char buf[16];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+      const bool wantOn =
+        (strcasecmp(s, "on") == 0) ||
+        (strcasecmp(s, "true") == 0) ||
+        (strcasecmp(s, "enable") == 0) ||
+        (strcmp(s, "1") == 0);
+      const bool wantOff =
+        (strcasecmp(s, "off") == 0) ||
+        (strcasecmp(s, "false") == 0) ||
+        (strcasecmp(s, "disable") == 0) ||
+        (strcmp(s, "0") == 0);
+      if (!wantOn && !wantOff) return;
+      const uint8_t want = wantOn ? 1u : 0u;
+      if (config.store.neoStatusFollowScreen == want) {
+        mqttPublishNeoStatusFollowScreen(true);
+        return;
+      }
+      config.saveValue(&config.store.neoStatusFollowScreen, want);
+      mqttPublishNeoStatusFollowScreen(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+
+  // Dedicated command topic: <root>cmd/als_enable (HA switch)
+  {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/als_enable");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 15) ? len : 15;
+      char buf[16];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+      const bool wantOn =
+        (strcasecmp(s, "on") == 0) ||
+        (strcasecmp(s, "true") == 0) ||
+        (strcasecmp(s, "enable") == 0) ||
+        (strcmp(s, "1") == 0);
+      const bool wantOff =
+        (strcasecmp(s, "off") == 0) ||
+        (strcasecmp(s, "false") == 0) ||
+        (strcasecmp(s, "disable") == 0) ||
+        (strcmp(s, "0") == 0);
+      if (!wantOn && !wantOff) return;
+      const uint8_t want = wantOn ? 1u : 0u;
+      if (config.store.alsEnable == want) {
+        mqttPublishAlsEnable(true);
+        return;
+      }
+      config.saveValue(&config.store.alsEnable, want);
+      mqttPublishAlsEnable(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+
+  // Dedicated command topics: ALS tuning numbers.
+  auto handleAlsNumber = [&](const char* suffix, int minV, int maxV, int* outValue) -> bool {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s%s", MQTT_ROOT_TOPIC, "cmd/", suffix);
+    if (strcmp(topic, t) != 0) return false;
+    const size_t n = (len < 15) ? len : 15;
+    char buf[16];
+    strncpy(buf, payload, n);
+    buf[n] = '\0';
+    char* s = buf;
+    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+    int v = atoi(s);
+    if (v < minV) v = minV;
+    if (v > maxV) v = maxV;
+    if (outValue) *outValue = v;
+    return true;
+  };
+
+  {
+    int v = 0;
+    if (handleAlsNumber("als_min_pct", 0, 100, &v)) {
+      uint8_t want = (uint8_t)v;
+      if (want > config.store.alsMaxPct) want = config.store.alsMaxPct;
+      if (config.store.alsMinPct == want) { mqttPublishAlsMinMaxPct(true); return; }
+      config.saveValue(&config.store.alsMinPct, want);
+      mqttPublishAlsMinMaxPct(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+  {
+    int v = 0;
+    if (handleAlsNumber("als_max_pct", 0, 100, &v)) {
+      uint8_t want = (uint8_t)v;
+      if (want < config.store.alsMinPct) want = config.store.alsMinPct;
+      if (config.store.alsMaxPct == want) { mqttPublishAlsMinMaxPct(true); return; }
+      config.saveValue(&config.store.alsMaxPct, want);
+      mqttPublishAlsMinMaxPct(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+  {
+    int v = 0;
+    if (handleAlsNumber("als_update_ms", 200, 10000, &v)) {
+      const uint16_t want = (uint16_t)v;
+      if (config.store.alsUpdateMs == want) { mqttPublishAlsTuning(true); return; }
+      config.saveValue(&config.store.alsUpdateMs, want);
+      mqttPublishAlsTuning(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+  {
+    int v = 0;
+    if (handleAlsNumber("als_alpha_x100", 0, 100, &v)) {
+      const uint8_t want = (uint8_t)v;
+      if (config.store.alsAlphaX100 == want) { mqttPublishAlsTuning(true); return; }
+      config.saveValue(&config.store.alsAlphaX100, want);
+      mqttPublishAlsTuning(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+  {
+    int v = 0;
+    if (handleAlsNumber("als_gamma_x100", 10, 250, &v)) {
+      const uint8_t want = (uint8_t)v;
+      if (config.store.alsGammaX100 == want) { mqttPublishAlsTuning(true); return; }
+      config.saveValue(&config.store.alsGammaX100, want);
+      mqttPublishAlsTuning(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+  {
+    int v = 0;
+    if (handleAlsNumber("als_lux_min", 0, 20000, &v)) {
+      uint16_t want = (uint16_t)min(6553, v) * 10u; // 0..65530
+      if (want > config.store.alsLuxMax_x10) want = config.store.alsLuxMax_x10;
+      if (config.store.alsLuxMin_x10 == want) { mqttPublishAlsTuning(true); return; }
+      config.saveValue(&config.store.alsLuxMin_x10, want);
+      mqttPublishAlsTuning(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+  {
+    int v = 0;
+    if (handleAlsNumber("als_lux_max", 0, 20000, &v)) {
+      uint16_t want = (uint16_t)min(6553, v) * 10u; // 0..65530
+      if (want < config.store.alsLuxMin_x10) want = config.store.alsLuxMin_x10;
+      if (config.store.alsLuxMax_x10 == want) { mqttPublishAlsTuning(true); return; }
+      config.saveValue(&config.store.alsLuxMax_x10, want);
+      mqttPublishAlsTuning(true);
+      mqttPublishStatus();
       return;
     }
   }
@@ -1152,64 +1872,6 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     }
   }
 
-  // Dedicated command topic: <root>cmd/biamp_tweeter_hp_order (HA select)
-  {
-    char t[160];
-    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_tweeter_hp_order");
-    if (strcmp(topic, t) == 0) {
-      const size_t n = (len < 31) ? len : 31;
-      char buf[32];
-      strncpy(buf, payload, n);
-      buf[n] = '\0';
-      // Trim whitespace
-      char* s = buf;
-      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
-
-      int order = -1;
-      if (strcasecmp(s, "off") == 0 || strcmp(s, "0") == 0) order = 0;
-      else if (strcasecmp(s, "12db") == 0 || strcasecmp(s, "12") == 0 || strcmp(s, "2") == 0) order = 2;
-      else if (strcasecmp(s, "24db") == 0 || strcasecmp(s, "24") == 0 || strcmp(s, "4") == 0) order = 4;
-      if (order < 0) return;
-
-      const uint8_t want = (uint8_t)order;
-      if (config.store.biampTweeterHpOrder == want) {
-        mqttPublishBiampTweeterHpOrder(true);
-        return;
-      }
-      config.saveValue(&config.store.biampTweeterHpOrder, want);
-      mqttPublishBiampTweeterHpOrder(true);
-      mqttPublishStatus();
-      return;
-    }
-  }
-
-  // Dedicated command topic: <root>cmd/biamp_tweeter_hp_hz (HA number)
-  {
-    char t[160];
-    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/biamp_tweeter_hp_hz");
-    if (strcmp(topic, t) == 0) {
-      const size_t n = (len < 15) ? len : 15;
-      char buf[16];
-      strncpy(buf, payload, n);
-      buf[n] = '\0';
-      // Trim whitespace
-      char* s = buf;
-      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
-
-      int hz = atoi(s);
-      if (hz < 50) hz = 50;
-      if (hz > 20000) hz = 20000;
-      const uint16_t want = (uint16_t)hz;
-      if (config.store.biampTweeterHpHz == want) {
-        mqttPublishBiampTweeterHpHz(true);
-        return;
-      }
-      config.saveValue(&config.store.biampTweeterHpHz, want);
-      mqttPublishBiampTweeterHpHz(true);
-      mqttPublishStatus();
-      return;
-    }
-  }
 #endif
 
   // Dedicated command topic: <root>cmd/playback_mode (HA select)
@@ -1292,6 +1954,77 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       config.setBrightness(true);
       mqttPublishStatus();
 #endif
+      return;
+    }
+  }
+
+  // Dedicated command topic: <root>cmd/balance (HA number, -16..16)
+  {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/balance");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 15) ? len : 15;
+      char buf[16];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      // Trim whitespace
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+      int v = atoi(s);
+      if (v < -16) v = -16;
+      if (v > 16)  v = 16;
+      const int8_t want = (int8_t)v;
+      if (config.store.balance == want) {
+        mqttPublishBalance(true);
+        return;
+      }
+      config.setBalance(want);
+      mqttPublishBalance(true);
+      mqttPublishStatus();
+      return;
+    }
+  }
+
+  // Dedicated command topics: treble/middle/bass (HA numbers, -16..16)
+  {
+    auto parseTone = [&](const char* suffix, int8_t* out) -> bool {
+      if (!out) return false;
+      char t[160];
+      snprintf(t, sizeof(t), "%s%s%s", MQTT_ROOT_TOPIC, "cmd/", suffix);
+      if (strcmp(topic, t) != 0) return false;
+      const size_t n = (len < 15) ? len : 15;
+      char buf[16];
+      strncpy(buf, payload, n);
+      buf[n] = '\0';
+      char* s = buf;
+      while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+      int v = atoi(s);
+      if (v < -16) v = -16;
+      if (v > 16)  v = 16;
+      *out = (int8_t)v;
+      return true;
+    };
+
+    int8_t v = 0;
+    if (parseTone("treble", &v)) {
+      if (config.store.trebble == v) { mqttPublishTone(true); return; }
+      config.setTone(config.store.bass, config.store.middle, v);
+      mqttPublishTone(true);
+      mqttPublishStatus();
+      return;
+    }
+    if (parseTone("middle", &v)) {
+      if (config.store.middle == v) { mqttPublishTone(true); return; }
+      config.setTone(config.store.bass, v, config.store.trebble);
+      mqttPublishTone(true);
+      mqttPublishStatus();
+      return;
+    }
+    if (parseTone("bass", &v)) {
+      if (config.store.bass == v) { mqttPublishTone(true); return; }
+      config.setTone(v, config.store.middle, config.store.trebble);
+      mqttPublishTone(true);
+      mqttPublishStatus();
       return;
     }
   }

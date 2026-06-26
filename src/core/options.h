@@ -37,13 +37,13 @@ STORE YOUR SETTINGS IN THE *** myoptions.h *** FILE.
   #define SPEAKER_UNMUTE_DELAY_MS 1000u
 #endif
 
-// Built-in NeoPixel status LED (ProS3 etc.). Define in `myoptions.h`:
-//   #define NEO_STATUS_ENABLE 0   // to disable
-#ifndef NEO_STATUS_ENABLE
-  #define NEO_STATUS_ENABLE 1
+// NeoStatus (NeoPixel status plugin). Define in `myoptions.h`:
+//   #define NEOSTATUS_ENABLE 0   // to disable
+#ifndef NEOSTATUS_ENABLE
+  #define NEOSTATUS_ENABLE 1
 #endif
 
-#if NEO_STATUS_ENABLE && defined(BUILTIN_NEOPIXEL_PIN) && (BUILTIN_NEOPIXEL_PIN != 255)
+#if NEOSTATUS_ENABLE && defined(BUILTIN_NEOPIXEL_PIN) && (BUILTIN_NEOPIXEL_PIN != 255)
   #define USE_NEOSTATUS_PLUGIN
 #endif
 /*******************************************************
@@ -329,6 +329,9 @@ The connection tables are located here https://github.com/e2002/yoradio#connecti
 #endif
 #ifndef WAKE_PIN2
   #define WAKE_PIN2     255   // Wake Pin 2 (for IR remote wakeup. Only RTC GPIO: GPIO0-GPIO21)
+#endif
+#ifndef WAKE_PIN3
+  #define WAKE_PIN3     255   // Wake Pin 3 (additional wake source). Only RTC GPIO: GPIO0-GPIO21
 #endif
 #ifndef LIGHT_SENSOR
   #define LIGHT_SENSOR  255   // Light sensor

@@ -2117,13 +2117,6 @@ void Display::_utf8_clean(char *s)
 
 void Display::_time(bool redraw) {
   
-#if LIGHT_SENSOR!=255
-  if(config.store.dspon) {
-    config.store.brightness = AUTOBACKLIGHT(analogRead(LIGHT_SENSOR));
-    config.setBrightness();
-  }
-#endif
-
   // If the clock widget is compiled out, we can still drive the date widget (if present)
   // using the same validity criteria.
   if (!_clock) {

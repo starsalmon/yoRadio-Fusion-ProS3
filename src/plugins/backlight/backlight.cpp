@@ -88,17 +88,25 @@ static bool bhReadLux_x10(uint16_t* outLux_x10) {
 }
 
 static uint8_t bhLuxToBrightnessPct(uint16_t lux_x10, uint8_t userCapPct) {
+  // Prefer runtime tuning via config.store (MQTT/HA), fall back to compile-time defaults.
+  const uint16_t luxMin_x10 = (config.store.alsLuxMin_x10 != 0) ? config.store.alsLuxMin_x10 : (uint16_t)lroundf(BH1750_LUX_MIN * 10.0f);
+  const uint16_t luxMax_x10 = (config.store.alsLuxMax_x10 != 0) ? config.store.alsLuxMax_x10 : (uint16_t)lroundf(BH1750_LUX_MAX * 10.0f);
+  const uint8_t  pctMin = config.store.alsMinPct;
+  const uint8_t  pctMax = config.store.alsMaxPct;
+  const float    gamma = (float)config.store.alsGammaX100 / 100.0f;
+
   float lux = (float)lux_x10 / 10.0f;
-  if (lux < BH1750_LUX_MIN) lux = BH1750_LUX_MIN;
-  if (lux > BH1750_LUX_MAX) lux = BH1750_LUX_MAX;
+  float luxMin = (float)luxMin_x10 / 10.0f;
+  float luxMax = (float)luxMax_x10 / 10.0f;
+  if (lux < luxMin) lux = luxMin;
+  if (lux > luxMax) lux = luxMax;
 
   float n = 0.0f;
-  if (BH1750_LUX_MAX > BH1750_LUX_MIN) {
-    n = (lux - BH1750_LUX_MIN) / (BH1750_LUX_MAX - BH1750_LUX_MIN);
+  if (luxMax > luxMin) {
+    n = (lux - luxMin) / (luxMax - luxMin);
   }
-  n = powf(n, (float)BH1750_GAMMA);
-  float pct = (float)BH1750_BRIGHTNESS_MIN_PCT +
-              n * (float)(BH1750_BRIGHTNESS_MAX_PCT - BH1750_BRIGHTNESS_MIN_PCT);
+  n = powf(n, gamma);
+  float pct = (float)pctMin + n * (float)((int)pctMax - (int)pctMin);
 
   int ip = (int)lroundf(pct);
   if (ip < 0) ip = 0;
@@ -185,8 +193,7 @@ void BacklightPlugin::wake() {
 }
 
 void BacklightPlugin::tick() {
-
-    if (!config.store.blDimEnable) return;
+    const bool dimEnabled = (config.store.blDimEnable != 0);
 
     // baseline brightness rögzítés
     if (!brightnessCaptured) {
@@ -203,8 +210,12 @@ void BacklightPlugin::tick() {
     displayMode_e m = display.mode();
     if (m != lastMode) {
         lastMode = m;
-        if (state == DIMMED || state == FADING) wake();
-        else activity();
+        // If dimming is disabled, treat any mode change as "activity" (no fade state machine).
+        if (!dimEnabled) activity();
+        else {
+            if (state == DIMMED || state == FADING) wake();
+            else activity();
+        }
     }
 
     uint32_t now = millis();
@@ -212,13 +223,14 @@ void BacklightPlugin::tick() {
 #if defined(BH1750_ENABLE) && (BH1750_ENABLE != 0)
     // Ambient auto-brightness: update once per second (or configured interval),
     // adjust the "normal" (awake) brightness smoothly.
-    if (bh1750Ready && (s_lastBhReadMs == 0 || (uint32_t)(now - s_lastBhReadMs) >= (uint32_t)BH1750_UPDATE_MS)) {
+    if (config.store.alsEnable && bh1750Ready &&
+        (s_lastBhReadMs == 0 || (uint32_t)(now - s_lastBhReadMs) >= (uint32_t)config.store.alsUpdateMs)) {
         s_lastBhReadMs = now;
         uint16_t lux_x10 = 0;
         if (bhReadLux_x10(&lux_x10)) {
             // Exponential smoothing on lux (integer domain).
             if (bh1750Lux_x10 == 0) bh1750Lux_x10 = lux_x10;
-            const uint32_t a = (uint32_t)BH1750_SMOOTH_ALPHA_X100;
+            const uint32_t a = (uint32_t)config.store.alsAlphaX100;
             bh1750Lux_x10 = (uint16_t)((((uint32_t)bh1750Lux_x10 * (100u - a)) + ((uint32_t)lux_x10 * a)) / 100u);
 
             // Use the user's current brightness as a cap (if enabled).
@@ -226,7 +238,7 @@ void BacklightPlugin::tick() {
             bhTargetBrightness = bhLuxToBrightnessPct(bh1750Lux_x10, userCap);
 
             // If we're not dimmed, gently move current brightness toward ambient target.
-            if (state == WAIT) {
+            if (!dimEnabled || state == WAIT) {
                 const int cur = (int)currentBrightness;
                 const int tgt = (int)normalBrightness;
                 // Aim for the ambient target but never exceed the user baseline/cap.
@@ -268,6 +280,9 @@ void BacklightPlugin::tick() {
         }
     }
 #endif
+
+    // In "ambient only" mode (dimming disabled), we're done.
+    if (!dimEnabled) return;
 
     switch (state) {
 
@@ -336,6 +351,12 @@ void BacklightPlugin::on_setup() {
     // Continuous H-Resolution mode (1 lx, 120ms typical)
     const bool ok3 = bhWrite1(0x10);
     bh1750Ready = ok1 && ok2 && ok3;
+#if BH1750_DIAG_LOG
+    Serial.printf("[BH1750] init addr=0x%02X ok=%d\n", (unsigned)BH1750_I2C_ADDR, (int)bh1750Ready);
+    if (!bh1750Ready) {
+        Serial.println("[BH1750] init failed (check wiring, addr strap, and I2C pins)");
+    }
+#endif
 #endif
 }
 

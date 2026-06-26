@@ -12,6 +12,7 @@
 #include "controls.h"
 #include "commandhandler.h"
 #include "timekeeper.h"
+#include "../pluginsManager/pluginsManager.h"
 #include "../displays/dspcore.h"
 #include "../displays/widgets/widgetsconfig.h" //BitrateFormat
 #include "../displays/fonts/clockfont_api.h"
@@ -268,6 +269,7 @@ webserver.on("/playlist/dlna", HTTP_GET, [](AsyncWebServerRequest *request) {
     config.loadStation(config.store.lastDlnaStation);
 
     if (player_on_station_change) player_on_station_change();
+    pm.on_station_change();
     netserver.requestOnChange(GETINDEX, 0);
   }
   
@@ -299,6 +301,7 @@ webserver.on("/playlist/web", HTTP_GET, [](AsyncWebServerRequest *request) {
     config.loadStation(config.lastStation());
 
     if (player_on_station_change) player_on_station_change();
+    pm.on_station_change();
     netserver.requestOnChange(GETINDEX, 0);
   }
 

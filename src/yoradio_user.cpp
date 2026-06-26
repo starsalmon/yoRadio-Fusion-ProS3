@@ -34,6 +34,9 @@ void yoradio_on_setup() {
 #if defined(WAKE_PIN2)
     Serial.printf("WAKE_PIN2=%d\n", (int)WAKE_PIN2);
 #endif
+#if defined(WAKE_PIN3)
+    Serial.printf("WAKE_PIN3=%d\n", (int)WAKE_PIN3);
+#endif
 #if defined(AUTO_DEEPSLEEP_IDLE_MINUTES)
     Serial.printf("AUTO_DEEPSLEEP_IDLE_MINUTES=%d\n", (int)AUTO_DEEPSLEEP_IDLE_MINUTES);
 #endif

@@ -55,7 +55,7 @@
   #define ESP_ARDUINO_3 1
 #endif
 
-#define CONFIG_VERSION  22
+#define CONFIG_VERSION  24
 
 enum playMode_e : uint8_t {  //DLNA mod
   PM_WEB    = 0,
@@ -275,6 +275,31 @@ struct config_t
   // 0 disables. 2 = add a 2nd-order (12 dB/oct) HP. 4 = add a 4th-order (24 dB/oct) HP.
   uint8_t   biampTweeterHpOrder; // 0/2/4
   uint16_t  biampTweeterHpHz;    // e.g. 3500
+
+  // Runtime mono fold-down (stereo -> mono). Independent of BIAMP.
+  // 0 = stereo (default), 1 = mono.
+  uint8_t   forceMono;
+
+  // NeoStatus LED brightness (0..100% cap).
+  uint8_t   neoStatusBrightnessPct;
+  // If 1: scale NeoStatus brightness by current screen brightness (auto/ALS/manual).
+  uint8_t   neoStatusFollowScreen;
+
+  // Ambient light sensor (ALS) auto-brightness (Backlight plugin).
+  // If 1: automatically adjust backlight toward target from ALS.
+  uint8_t   alsEnable;
+  // Brightness bounds for ALS mapping (percent).
+  uint8_t   alsMinPct;
+  uint8_t   alsMaxPct;
+  // Update interval (ms) for ALS reads (e.g. 1000).
+  uint16_t  alsUpdateMs;
+  // Smoothing alpha 0..100 (higher = faster response).
+  uint8_t   alsAlphaX100;
+  // Gamma x100 (e.g. 60 = 0.60). <100 brighter at low lux; >100 darker at low lux.
+  uint8_t   alsGammaX100;
+  // Lux clamp (x10) for BH1750 mapping (e.g. 10=1.0 lux, 8000=800.0 lux).
+  uint16_t  alsLuxMin_x10;
+  uint16_t  alsLuxMax_x10;
 };
 
 #if IR_PIN != 255

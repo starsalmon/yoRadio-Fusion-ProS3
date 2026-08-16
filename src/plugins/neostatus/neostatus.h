@@ -5,8 +5,8 @@
 // Register the built-in NeoPixel status plugin (if enabled).
 void neostatusPluginInit();
 
-// Optional helper pulses that can be triggered from non-plugin code paths
-// (e.g. right before deep sleep).
+// Optional helper cues that can be triggered from non-plugin code paths
+// (e.g. right before deep sleep or on low-battery warnings).
 void neostatusPulseSleep();
 void neostatusPulseLowBattery();
 
@@ -14,7 +14,6 @@ void neostatusPulseLowBattery();
 uint16_t neostatusSleepCueMs();
 
 // Arm NeoStatus for deep sleep (prevent further writes) without forcing any LED state.
-// Useful if another subsystem wants to fade a GPIO LED before sleeping.
 void neostatusArmForDeepSleep();
 
 // Best-effort: force NeoStatus LEDs fully off and hold the data pin low.

@@ -382,12 +382,9 @@ void Config::_setupVersion(){
       break;
     }
     case 23: {
-      // NeoStatus runtime brightness knobs + ALS (BH1750/analog) tuning.
-      // Percent scale of the compiled-in NeoStatus brightness (0..100).
-      // Default 100% preserves existing behavior.
+      // NeoStatus runtime knobs + ALS (BH1750/analog) tuning.
       saveValue(&store.neoStatusBrightnessPct, (uint8_t)100, false);
       saveValue(&store.neoStatusFollowScreen, (uint8_t)0, false);
-
       saveValue(&store.alsEnable, (uint8_t)0, false);
       saveValue(&store.alsMinPct, (uint8_t)5, false);
       saveValue(&store.alsMaxPct, (uint8_t)100, false);
@@ -455,7 +452,9 @@ void Config::changeMode(int newmode) { // DLNA mod
     const uint8_t oldMode = getMode();
     bool pir = player.isRunning();
     const bool willIndexPodcasts =
-        (oldMode != PM_PODCAST && newmode == PM_PODCAST && podcasts_isIndexDue(3u * 60u * 60u)); // 3 hours
+        (PODCAST_INDEX_ENABLE &&
+         oldMode != PM_PODCAST && newmode == PM_PODCAST &&
+         podcasts_isIndexDue(3u * 60u * 60u)); // 3 hours
 
     // If we are leaving Podcast mode, cancel any in-progress RSS build immediately so the
     // UI can switch back to radio/SD without waiting for a long network parse to finish.
@@ -469,16 +468,8 @@ void Config::changeMode(int newmode) { // DLNA mod
         return;
     }
 
-    // Always give immediate visual feedback on entering Podcast mode, even when we are
-    // not going to run a full RSS index/build (which can make mode switching feel "dead").
-    if (!willIndexPodcasts && oldMode != PM_PODCAST && newmode == PM_PODCAST && _bootDone && display.ready()) {
-        display.resetQueue();
-        setStation("Podcasts");
-        setTitle("Loading...");
-        display.putRequest(NEWSTATION);
-        display.putRequest(NEWTITLE);
-        delay(1);
-    }
+    // NOTE: Avoid writing "Podcast" UI state before the mode is actually committed.
+    // If something resets mid-transition, we'd otherwise show "Indexing..." while still in SD.
 
     // If we're not connected (SoftAP / LOST), switching into SD mode should NOT reboot.
     // Rebooting here also "locks" the device into SD mode on subsequent boots.
@@ -487,18 +478,7 @@ void Config::changeMode(int newmode) { // DLNA mod
         network.status = SDREADY;
     }
 
-    // Make Podcast indexing UI appear immediately on mode entry, even if we're not currently
-    // playing (or if stop/connect work below blocks briefly).
-    if (willIndexPodcasts && _bootDone && display.ready()) {
-        display.resetQueue();
-        setStation("Podcasts");
-        setTitle("Indexing podcasts...");
-        display.putRequest(NEWMODE, SDCHANGE);
-        display.putRequest(SDFILEINDEX, 0);
-        display.putRequest(NEWSTATION);
-        display.putRequest(NEWTITLE);
-        delay(1);
-    }
+    // Podcast indexing UI is handled after mode commit inside initPlaylistMode().
 
     // IMPORTANT: if we're leaving SD while SD playback is active, stop first *before*
     // unmounting the card. Without this, subsequent mode playback can fail.
@@ -528,18 +508,6 @@ void Config::changeMode(int newmode) { // DLNA mod
     // If we're switching into Podcast mode from WEB/DLNA while something is playing,
     // stop first so we don't keep streaming audio in the background.
     if (oldMode != PM_SDCARD && newmode == PM_PODCAST && pir) {
-        // If we're going to index, show the UI before we do any blocking stop work.
-        if (willIndexPodcasts && display.ready()) {
-            display.resetQueue();
-            setStation("Podcasts");
-            setTitle("Indexing podcasts...");
-            display.putRequest(NEWMODE, SDCHANGE);
-            display.putRequest(SDFILEINDEX, 0);
-            display.putRequest(NEWSTATION);
-            display.putRequest(NEWTITLE);
-            // Give the display task a moment to render before we start blocking stop/connect work.
-            vTaskDelay(pdMS_TO_TICKS(25));
-        }
         player.lockOutput = true;
         player.sendCommand({PR_STOP, 0});
         uint32_t stopStart = millis();
@@ -816,9 +784,13 @@ void Config::initPlaylistMode() {
     if (getMode() == PM_PODCAST) {
       // Throttle expensive RSS indexing. Within the interval we just use the
       // cached episode list and index file.
-      const bool doIndex = podcasts_isIndexDue(3u * 60u * 60u); // 3 hours
+      const bool doIndex = PODCAST_INDEX_ENABLE && podcasts_isIndexDue(3u * 60u * 60u); // 3 hours
       if (doIndex) {
-        // Show progress on the player screen while indexing.
+        // Build RSS playlist and wait for it to complete.
+        //
+        // NOTE: This is intentionally blocking for stability. A background build can race
+        // with initPodcastPlaylist()/index rebuild and cause crashes/reboots on some targets.
+        // We'll reintroduce an "exit indexing" UX later with proper synchronization.
         if (display.ready()) {
           display.putRequest(NEWMODE, SDCHANGE);
           display.putRequest(SDFILEINDEX, 0);

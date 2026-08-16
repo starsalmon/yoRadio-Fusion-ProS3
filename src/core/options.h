@@ -20,6 +20,15 @@ STORE YOUR SETTINGS IN THE *** myoptions.h *** FILE.
   #include "../../mqttoptions.h"
 #endif
 
+// Mode button LED defaults (used outside NeoStatus too).
+// These are intentionally defined here so `myoptions.h` can stay minimal.
+#ifndef MODE_BUTTON_LED_SOLID_PCT
+  #define MODE_BUTTON_LED_SOLID_PCT 100u
+#endif
+#ifndef MODE_BUTTON_LED_IDLE_SOLID_PCT
+  #define MODE_BUTTON_LED_IDLE_SOLID_PCT MODE_BUTTON_LED_SOLID_PCT
+#endif
+
 // Serial logging knobs (set in `myoptions.h`).
 #ifndef IR_WAKE_DIAG_LOG
   #define IR_WAKE_DIAG_LOG 0
@@ -35,6 +44,18 @@ STORE YOUR SETTINGS IN THE *** myoptions.h *** FILE.
 // Override in `myoptions.h` if you want a different value.
 #ifndef SPEAKER_UNMUTE_DELAY_MS
   #define SPEAKER_UNMUTE_DELAY_MS 1000u
+#endif
+
+// Podcast RSS indexing (episode list rebuild).
+// Temporarily disable if indexing is causing reboots; you can still use cached lists.
+#ifndef PODCAST_INDEX_ENABLE
+  #define PODCAST_INDEX_ENABLE 1
+#endif
+
+// SD album art (JPEG next to track file, e.g. cover.jpg).
+// Experimental; disable for maximum SD playback stability.
+#ifndef SD_ALBUM_ART_ENABLE
+  #define SD_ALBUM_ART_ENABLE 0
 #endif
 
 // NeoStatus (NeoPixel status plugin). Define in `myoptions.h`:

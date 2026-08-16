@@ -16,6 +16,7 @@ char audioI2SVers[] = "\
 *****************************************************************************************************************************************************/
 
 #include "Audio.h"
+#include "../core/sdlock.h"
 #include "aac_decoder/aac_decoder.h"
 #include "flac_decoder/flac_decoder.h"
 #include "mp3_decoder/mp3_decoder.h"
@@ -6398,7 +6399,12 @@ int32_t Audio::audioFileRead(uint8_t* buff, size_t len) {
 
     if (!buff && !len) { // read one byte
         if (m_dataMode == AUDIO_LOCALFILE) {
-            res = m_audiofile.read();
+            if (sdlock_take(pdMS_TO_TICKS(2000))) {
+                res = m_audiofile.read();
+                sdlock_give();
+            } else {
+                res = -1;
+            }
             if (res >= 0) m_audioFilePosition++;
         } else {
             res = m_client->read();
@@ -6408,7 +6414,12 @@ int32_t Audio::audioFileRead(uint8_t* buff, size_t len) {
         uint32_t t = millis();
         while (len > 0) {
             if (m_dataMode == AUDIO_LOCALFILE) {
-                readed_bytes = m_audiofile.read(buff + offset, len);
+                if (sdlock_take(pdMS_TO_TICKS(2000))) {
+                    readed_bytes = m_audiofile.read(buff + offset, len);
+                    sdlock_give();
+                } else {
+                    readed_bytes = -1;
+                }
 
                 if (readed_bytes >= 0) {
                     m_audioFilePosition += readed_bytes;
@@ -6443,18 +6454,20 @@ int32_t Audio::audioFileSeek(uint32_t position, size_t len) {
     int32_t res = -1;
 
     if (m_dataMode == AUDIO_LOCALFILE) {
+        if (!sdlock_take(pdMS_TO_TICKS(2000))) return -1;
         uint32_t actualPos = m_audiofile.position(); // starts with 1
         if (actualPos != m_audioFilePosition) {
             AUDIO_LOG_DEBUG("actualPos != m_audioFilePosition %lu != %lu", actualPos, m_audioFilePosition);
             m_audioFilePosition = actualPos;
         }
-        if (!m_audiofile) return -1;
+        if (!m_audiofile) { sdlock_give(); return -1; }
         if (position > m_audiofile.size()) {
             AUDIO_LOG_WARN("position larger than size %lu > %lu", position, m_audiofile.size());
             position = m_audiofile.size();
         }
         bool r = m_audiofile.seek(position);
         m_audioFilePosition = m_audiofile.position();
+        sdlock_give();
         if (r == false) {
             AUDIO_LOG_ERROR("something went wrong");
             return -1;

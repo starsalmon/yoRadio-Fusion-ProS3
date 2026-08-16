@@ -20,7 +20,7 @@ static volatile bool s_cancelBuild = false;
 // The RSS parsing/build path uses HTTPClient + String heavy operations.
 // On PROS3 this can overflow smaller task stacks (stack canary in "podBuild").
 // Increase to avoid boot-loop when indexing on startup.
-#define PODBUILD_STACK 16384
+#define PODBUILD_STACK 32768
 #endif
 
 static inline bool epochLooksValid(uint32_t epoch) {

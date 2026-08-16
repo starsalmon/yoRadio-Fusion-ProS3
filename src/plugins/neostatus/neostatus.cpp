@@ -131,7 +131,8 @@ namespace {
   #ifdef NEOSTATUS_BOOT_ANIM_MS
     #define NEO_BOOT_ANIM_MS NEOSTATUS_BOOT_ANIM_MS
   #else
-    #define NEO_BOOT_ANIM_MS 5000u
+    // Match the previously-tuned boot progress feel.
+    #define NEO_BOOT_ANIM_MS 5600u
   #endif
 #endif
 #ifndef NEO_BOOT_ANIM_MIN_PCT
@@ -261,7 +262,8 @@ namespace {
   #define NEO_VOL_MAX_SPINS NEOSTATUS_VOL_MAX_SPINS
 #endif
 #ifndef NEO_VOL_MAX_SPINS
-  #define NEO_VOL_MAX_SPINS 6u
+  // Match the previously-tuned volume animation behavior.
+  #define NEO_VOL_MAX_SPINS 3u
 #endif
 #if !defined(NEO_VOL_STEPS_PER_SPIN) && defined(NEOSTATUS_VOL_STEPS_PER_SPIN)
   #define NEO_VOL_STEPS_PER_SPIN NEOSTATUS_VOL_STEPS_PER_SPIN
@@ -274,7 +276,8 @@ namespace {
   #define NEO_VOL_SPIN_PERIOD_MS NEOSTATUS_VOL_SPIN_PERIOD_MS
 #endif
 #ifndef NEO_VOL_SPIN_PERIOD_MS
-  #define NEO_VOL_SPIN_PERIOD_MS NEO_SPIN_PERIOD_MS
+  // Keep volume spin cadence stable even if other spin periods change.
+  #define NEO_VOL_SPIN_PERIOD_MS 500u
 #endif
 #if !defined(NEO_VOL_MIN_PCT) && defined(NEOSTATUS_VOL_MIN_PCT)
   #define NEO_VOL_MIN_PCT NEOSTATUS_VOL_MIN_PCT
@@ -352,7 +355,8 @@ namespace {
   #ifdef NEOSTATUS_IDLE_GLOW_PCT
     #define NEO_IDLE_GLOW_PCT NEOSTATUS_IDLE_GLOW_PCT
   #else
-    #define NEO_IDLE_GLOW_PCT 5u
+    // Make sure the idle glow is actually visible at typical caps.
+    #define NEO_IDLE_GLOW_PCT 12u
   #endif
 #endif
 
@@ -487,6 +491,24 @@ namespace {
 #ifndef NEO_BT_CONN_RGB
   // Requested: make all BT colors identical (pure blue).
   #define NEO_BT_CONN_RGB    0, 0, 255
+#endif
+
+// Two-tone BT palette (A = "connect/search", B = "audio"). User requested
+// the same two colors for all BT events; only speed changes per event.
+#ifndef NEO_BT_RGB_A
+  #ifdef NEOSTATUS_BT_CONN_RGB
+    #define NEO_BT_RGB_A NEOSTATUS_BT_CONN_RGB
+  #else
+    #define NEO_BT_RGB_A NEO_BT_CONN_RGB
+  #endif
+#endif
+#ifndef NEO_BT_RGB_B
+  #ifdef NEOSTATUS_BT_AUDIO_RGB
+    #define NEO_BT_RGB_B NEOSTATUS_BT_AUDIO_RGB
+  #else
+    // Fallback: slightly deeper blue.
+    #define NEO_BT_RGB_B 0, 0, 255
+  #endif
 #endif
 #ifndef NEO_RADIO_START_RGB
   #define NEO_RADIO_START_RGB 255, 255, 255
@@ -745,6 +767,11 @@ namespace {
   #define NEO_BOOT_DELAY_MS 2800u
 #endif
 
+#ifndef NEO_NET_DELAY_MS
+  // Optional delay before the Wi‑Fi-joined cue (typically none).
+  #define NEO_NET_DELAY_MS 0u
+#endif
+
 enum class Mode : uint8_t {
   OFF = 0,
   BT_SEARCHING,
@@ -764,6 +791,7 @@ enum class SeqStyle : uint8_t {
   SolidStrobe,  // base-color flash at start of each spin
   SolidScanner, // reverse direction mid-spin (base color)
   GreenWave,    // green-focused wave/chase
+  SolidDualFixed, // primary + fixed accent opposite (no auto-complement)
 };
 
 static inline uint8_t clampU8(int v) {
@@ -1291,7 +1319,8 @@ public:
     if (bt != _lastBt) {
       if (bt == BtCompanionLinkState::AUDIO) {
         // Short confirmation "spin" on AUDIO.
-        startSeq({NEO_BT_CONN_RGB}, NEO_BT_AUDIO_PULSES, seqPulseMsDefault(), 90u, 1u, 75u);
+        startSeqEx({NEO_BT_RGB_A}, NEO_BT_AUDIO_PULSES, seqPulseMsDefault(), 90u, 1u, 75u, 0u, true, SeqStyle::SolidDualFixed);
+        _seqAccent = Rgb{NEO_BT_RGB_B};
       }
       _lastBt = bt;
     }
@@ -1467,6 +1496,7 @@ private:
   // Pulse-sequence engine (N smooth pulses, with gaps).
   bool _seqActive = false;
   Rgb _seqRgb{0, 0, 0};
+  Rgb _seqAccent{0, 0, 0}; // used only for SeqStyle::SolidDualFixed
   uint32_t _seqStartMs = 0;
   uint16_t _seqPulseMs = 0;
   uint16_t _seqGapMs = 0;
@@ -1551,6 +1581,7 @@ private:
   void startSeqNow(uint32_t startMs, Rgb rgb, uint8_t pulses, uint16_t pulseMs, uint16_t gapMs, uint8_t minPct, uint8_t maxPct, bool clockwise, SeqStyle style) {
     _seqActive = (pulses > 0 && pulseMs > 0);
     _seqRgb = rgb;
+    _seqAccent = Rgb{0, 0, 0};
     _seqStartMs = startMs;
     _seqPulseMs = pulseMs;
     _seqGapMs = gapMs;
@@ -1579,6 +1610,7 @@ private:
     }
     _seqActive = true;
     _seqRgb = rgb;
+    _seqAccent = Rgb{0, 0, 0};
     _seqStartMs = now;
     _seqPulseMs = (uint16_t)NEO_VOL_SPIN_PERIOD_MS;
     _seqGapMs = 0;
@@ -1629,10 +1661,10 @@ private:
     (void)bt;
     switch (m) {
       case Mode::BT_SEARCHING:
-        renderPulse(now, {NEO_BT_SEARCH_RGB}, NEO_BT_SEARCH_PERIOD_MS, 1, 65);
+        renderPulseDual(now, {NEO_BT_RGB_A}, {NEO_BT_RGB_B}, NEO_BT_SEARCH_PERIOD_MS, 1, 65);
         return;
       case Mode::BT_CONNECTED_WAIT_AUDIO:
-        renderPulse(now, {NEO_BT_CONN_RGB}, NEO_BT_CONNECTED_PERIOD_MS, 1, 80);
+        renderPulseDual(now, {NEO_BT_RGB_A}, {NEO_BT_RGB_B}, NEO_BT_CONNECTED_PERIOD_MS, 1, 80);
         return;
       case Mode::OFF:
       default:
@@ -2071,6 +2103,13 @@ private:
         ringHit(i0, br0, _seqRgb);
         ringHit(i1, br1, _seqRgb);
       }
+    } else if (_seqStyle == SeqStyle::SolidDualFixed) {
+      ringHit(i0, br0, _seqRgb);
+      ringHit(i1, br1, _seqRgb);
+      const uint16_t o0 = (uint16_t)((i0 + (n / 2u)) % n);
+      const uint16_t o1 = (uint16_t)((i1 + (n / 2u)) % n);
+      ringHit(o0, (uint8_t)((uint16_t)br0 * 2u / 3u), _seqAccent);
+      ringHit(o1, (uint8_t)((uint16_t)br1 * 2u / 3u), _seqAccent);
     } else {
       // Consistent multi-color: primary event color + an accent opposite.
       ringHit(i0, br0, _seqRgb);
@@ -2128,6 +2167,40 @@ private:
     _pxG = scale8(rgb.g, br);
     _pxB = scale8(rgb.b, br);
     pixelShow();
+  }
+
+  // Two-tone pulse/spin: primary color on the moving head, secondary color opposite.
+  // Used for BT so all BT events share the same 2-color palette.
+  void renderPulseDual(uint32_t now, Rgb primary, Rgb secondary, uint32_t periodMs, uint8_t minPct, uint8_t maxPct) {
+    if (_px.numPixels() > 1) {
+      const uint16_t n = (uint16_t)_px.numPixels();
+      const uint8_t maxBr = clampU8((int)maxPct * 255 / 100);
+      if (periodMs == 0 || n == 0) return;
+
+      const uint32_t pos16 = (uint32_t)((uint64_t)(now % periodMs) * (uint64_t)n * 65536ULL / (uint64_t)periodMs);
+      const uint16_t i0 = (uint16_t)((pos16 >> 16) % n);
+      const uint16_t frac = (uint16_t)(pos16 & 0xFFFFu);
+      const uint16_t i1 = (uint16_t)((i0 + 1u) % n);
+
+      uint8_t w0 = (uint8_t)((uint32_t)(65535u - frac) >> 8);
+      uint8_t w1 = (uint8_t)((uint32_t)frac >> 8);
+      w0 = _px.gamma8(w0);
+      w1 = _px.gamma8(w1);
+      const uint8_t br0 = (uint8_t)(((uint16_t)w0 * (uint16_t)maxBr + 127u) / 255u);
+      const uint8_t br1 = (uint8_t)(((uint16_t)w1 * (uint16_t)maxBr + 127u) / 255u);
+
+      ringDecay((uint16_t)NEO_RING_FADE_MS);
+      ringHit(i0, br0, primary);
+      ringHit(i1, br1, primary);
+      const uint16_t o0 = (uint16_t)((i0 + (n / 2u)) % n);
+      const uint16_t o1 = (uint16_t)((i1 + (n / 2u)) % n);
+      ringHit(o0, (uint8_t)((uint16_t)br0 * 2u / 3u), secondary);
+      ringHit(o1, (uint8_t)((uint16_t)br1 * 2u / 3u), secondary);
+      ringShow();
+      return;
+    }
+    // Single pixel: just use the primary color (no “opposite”).
+    renderPulse(now, primary, periodMs, minPct, maxPct);
   }
 
   void ringDecay(uint16_t fadeMs) {

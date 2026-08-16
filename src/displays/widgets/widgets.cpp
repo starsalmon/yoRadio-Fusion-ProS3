@@ -2596,6 +2596,14 @@ void RgbImageWidget::setImage(const uint16_t* img, uint16_t w, uint16_t h) {
   if (_active && !_locked) _draw();
 }
 
+void RgbImageWidget::setUseColorKey(bool enable, uint16_t key) {
+  if (_useKey == enable && _key == key) return;
+  if (_active && !_locked) _clear();
+  _useKey = enable;
+  _key = key;
+  if (_active && !_locked) _draw();
+}
+
 void RgbImageWidget::_clear(){
   if (!_active) return;
   if (!_hasDrawn) return;

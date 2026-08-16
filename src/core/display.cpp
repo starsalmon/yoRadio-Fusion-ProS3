@@ -20,6 +20,7 @@
 #include "../myoptions.h"
 #include "sdmanager.h"
 #include "bt_companion.h"
+#include "album_art.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
@@ -1832,14 +1833,62 @@ void Display::_updateStationLogo() {
   }
 
   if (config.getMode() == PM_SDCARD) {
-    // SD album art removed (JPEG decoding was unstable on this target).
-    // Keep the image widget hidden in SD mode for now.
+  #if SD_ALBUM_ART_ENABLE
+    // SD album art: decoded off-task and delivered as an RGB565 buffer.
+    // Match station-logo sizing rules so layout and reserved areas stay consistent.
+    const uint16_t* px = nullptr;
+    uint16_t w = 0, h = 0;
+    const bool has = album_art_get_current(&px, &w, &h);
+
+    auto hide = [&]() {
+      if (_stationLogo->locked()) return;
+      if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
+      _stationLogoLastKey[0] = '\0';
+      _stationLogoUsedDefault = false;
+      _stationLogo->unlock();
+      _stationLogo->setImage(nullptr, 0, 0); // clears previous area while unlocked
+      _stationLogo->lock(true);
+      _stationLogoW = 0;
+      _stationLogoH = 0;
+      _stationLogoX = -1;
+      _stationLogoY = -1;
+      _stationLogoMoveW = -1;
+      _stationLogoLastPixels = nullptr;
+    };
+
+    if (!has || !px || w == 0 || h == 0) {
+      hide();
+      return;
+    }
+
+    // Album art has no magenta transparency.
+    _stationLogo->setUseColorKey(false);
+
+    // Avoid churn if nothing changed.
+    if (_stationLogoLastPixels == px && _stationLogoW == w && _stationLogoH == h && !_stationLogo->locked()) {
+      return;
+    }
+
+    if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
+    _stationLogoLastKey[0] = '\0';
+    _stationLogoUsedDefault = false;
+
+    _stationLogo->lock(true);
+    _stationLogoW = w;
+    _stationLogoH = h;
+    _layoutStationLogo();
+    _stationLogo->unlock();
+    _stationLogo->setImage(px, w, h);
+    _stationLogoLastPixels = px;
+    return;
+  #else
+    // SD album art disabled: keep the logo slot hidden for stability.
     if (_stationLogo->locked()) return;
     if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
     _stationLogoLastKey[0] = '\0';
     _stationLogoUsedDefault = false;
     _stationLogo->unlock();
-    _stationLogo->setImage(nullptr, 0, 0);
+    _stationLogo->setImage(nullptr, 0, 0); // clears previous area while unlocked
     _stationLogo->lock(true);
     _stationLogoW = 0;
     _stationLogoH = 0;
@@ -1848,6 +1897,7 @@ void Display::_updateStationLogo() {
     _stationLogoMoveW = -1;
     _stationLogoLastPixels = nullptr;
     return;
+  #endif
   }
 
   const bool isWeb = (config.getMode() == PM_WEB);

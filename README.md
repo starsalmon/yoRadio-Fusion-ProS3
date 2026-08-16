@@ -72,7 +72,11 @@ platformio device monitor -b 115200
   - On the PCB build, it drives an **8‑pixel ring on GPIO14** via:
     - `NEOSTATUS_PIN`
     - `NEOSTATUS_COUNT`
-  - Animations/colors/timing are easy to fine-tune from `myoptions.h` (see “NeoPixel status tuning knobs” below)
+  - This fork currently keeps NeoStatus intentionally minimal (to avoid a tangled config surface):
+    - Boot animation
+    - Volume spin feedback
+    - Podcast RSS indexing animation
+    - Mode/Power button LED handling
 - **Offline SD playback + footer connectivity UX**:
   - Switch into SD mode without needing Wi‑Fi (avoid unnecessary reboots)
   - Footer IP shows `no IP` when disconnected instead of `0.0.0.0`
@@ -146,10 +150,6 @@ MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes
   - `als_alpha_x100`: smoothing (0..100)
   - `als_gamma_x100`: response curve (10..250 → gamma 0.10..2.50)
   - `als_lux_min`, `als_lux_max`: mapping bounds (`lx`)
-
-- **LEDs brightness (NeoStatus + mode button LED)**
-  - `neostatus_brightness_pct`: LED brightness cap (0..100% of compiled brightness)
-  - `neostatus_follow_screen`: `ON|OFF` (scales LED brightness by current backlight level)
 
 - **Audio controls**
   - `volume`: (0..100), `cmd/volume`

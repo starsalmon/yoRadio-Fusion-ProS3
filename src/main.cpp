@@ -333,11 +333,6 @@ void loop() {
         player.sendCommand({PR_STOP, 0});
         delay(150);
         Serial.flush();
-      #ifdef USE_NEOSTATUS_PLUGIN
-        // Low battery warning right before forced sleep.
-        neostatusPulseLowBattery();
-        delay(1600);
-      #endif
         config.doSleepW();
       }
     }

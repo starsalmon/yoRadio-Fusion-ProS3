@@ -280,9 +280,10 @@ struct config_t
   // 0 = stereo (default), 1 = mono.
   uint8_t   forceMono;
 
-  // NeoStatus LED brightness (0..100% cap).
+  // NeoStatus LED runtime knobs (EEPROM-compatible fields).
+  // neoStatusBrightnessPct: 0..100 (MQTT slider). 0% must turn LEDs fully off.
   uint8_t   neoStatusBrightnessPct;
-  // If 1: scale NeoStatus brightness by current screen brightness (auto/ALS/manual).
+  // neoStatusFollowScreen: 0/1 (MQTT switch). Scales within neoStatusBrightnessPct.
   uint8_t   neoStatusFollowScreen;
 
   // Ambient light sensor (ALS) auto-brightness (Backlight plugin).

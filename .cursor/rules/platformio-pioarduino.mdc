@@ -1,0 +1,26 @@
+---
+description: PlatformIO — use pinned pioarduino platform (no zip URL)
+globs: platformio.ini
+alwaysApply: false
+---
+
+# PlatformIO — pioarduino / Arduino 3.x
+
+For ESP32 Arduino projects that need **pioarduino** (Arduino-ESP32 3.x), **never** use the GitHub platform zip URL. Pin the cached install:
+
+```ini
+platform = espressif32@55.3.36
+platform_packages =
+    platformio/framework-arduinoespressif32@https://github.com/espressif/arduino-esp32/releases/download/3.3.6/esp32-core-3.3.6.tar.xz
+    platformio/framework-arduinoespressif32-libs@https://github.com/espressif/arduino-esp32/releases/download/3.3.6/esp32-core-3.3.6-libs.tar.xz
+```
+
+Put this on a shared `[env:…_base]` or `[env]` section; child envs use `extends`.
+
+**Exceptions (leave as-is):**
+
+- `lego-rover-esp32` — `espressif32@6.9.0` (fleet-validated)
+- `tracked-bot` `nodemcu-32s` — `espressif32@6.7.0` (classic ESP32)
+- `vibration-recorder` — `framework = espidf` (not Arduino)
+
+First build after a clean `~/.platformio` can sit on `Processing …` for several minutes while large packages download; later builds start in seconds.

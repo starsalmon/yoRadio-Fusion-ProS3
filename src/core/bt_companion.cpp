@@ -617,10 +617,22 @@ void btcompanion_setRxVolume(uint8_t volume) {
   g *= 0.9f * ((float)BT_RX_VOL_GAIN_PCT / 100.0f);
   if (g > 1.0f) g = 1.0f;
   if (g < 0.0f) g = 0.0f;
-  uint8_t avrcp = (uint8_t)lroundf(g * 127.0f);
+  // HiGrow b3b2fec applies TWO gains for VOL v (0..127): the ESP32-A2DP default exponential
+  // volume control E(v) = (1.4^(12v/127-12) - 1.4^-12)/(1 - 1.4^-12), then a linear v/127
+  // in its stream reader. Pick the largest v whose total gain E(v)*v/127 <= g.
+  auto higrowGain = [](int vv) -> float {
+    const float z = powf(1.4f, -12.0f);
+    const float e = (powf(1.4f, (float)vv * 12.0f / 127.0f - 12.0f) - z) / (1.0f - z);
+    return e * (float)vv / 127.0f;
+  };
+  uint8_t avrcp = 0;
+  for (int vv = 127; vv >= 0; --vv) {
+    if (higrowGain(vv) <= g + 1e-6f) { avrcp = (uint8_t)vv; break; }
+  }
   if (v > 0 && avrcp == 0) avrcp = 1;
   char buf[24];
   snprintf(buf, sizeof(buf), "VOL %u", (unsigned)avrcp);
+  Serial.printf("[BTC] RX volume %u%% -> VOL %u (gain %.3f)\n", (unsigned)v, (unsigned)avrcp, (double)g);
   sendLine(buf);
 }
 

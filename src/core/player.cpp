@@ -336,6 +336,7 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
       }
       #ifdef USE_SD
       case PR_CHECKSD: {
+        if (sdman.indexing()) break;
         if(config.getMode()==PM_SDCARD){
           if(!sdman.cardPresent()){
             sdman.stop();

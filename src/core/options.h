@@ -190,6 +190,12 @@ The connection tables are located here https://github.com/e2002/yoradio#connecti
 #ifndef SD_HSPI
   #define SD_HSPI       false  // use HSPI for SD (miso=12, mosi=13, clk=14) instead of VSPI (by default)
 #endif
+#ifndef SD_SHARE_TFT_SPI
+  #define SD_SHARE_TFT_SPI 0  // SD + TFT on same SPI bus (requires sd_spi_shared + display mutex)
+#endif
+#ifndef SD_FORCE_REINDEX
+  #define SD_FORCE_REINDEX 0  // set 1 once in myoptions.h to rebuild SD playlist after SPI fixes
+#endif
 #if SDC_CS!=255
   #define USE_SD
 #endif

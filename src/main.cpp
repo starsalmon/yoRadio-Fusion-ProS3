@@ -126,7 +126,6 @@ void setup() {
   config.init();
   clock_tts_setup();
 
-  display.init();
   player.init();
 
   // Apply last output device selection (speaker vs BT companion) before any auto-play.
@@ -142,12 +141,20 @@ void setup() {
   // Apply mono state at boot.
   player.forceMono(config.store.forceMono != 0);
   network.begin();
+#if SDC_CS != 255 && defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI
+  if (config.getMode() == PM_PODCAST) Serial.print("##[BOOT]#\tPodcast index\t");
+  else Serial.print("##[BOOT]#\tSD search\t");
+  config.initPlaylistMode();
+  display.init();
+#else
+  display.init();
   if(SDC_CS!=255) {
     display.putRequest(WAITFORSD, 0);
     if (config.getMode() == PM_PODCAST) Serial.print("##[BOOT]#\tPodcast index\t");
     else Serial.print("##[BOOT]#\tSD search\t");
   }
   config.initPlaylistMode();
+#endif
   netserver.begin();
   telnet.begin();
   initControls();

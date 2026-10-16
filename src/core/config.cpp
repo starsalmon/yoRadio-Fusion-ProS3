@@ -742,10 +742,32 @@ void Config::changeMode(int newmode) { // DLNA mod
 
 void Config::initSDPlaylist() {
 #ifdef USE_SD
-  //store.countStation = 0;
-  //bool doIndex = !sdman.exists(INDEX_SD_PATH);
-  //if(doIndex) sdman.indexSDPlaylist();
-  sdman.indexSDPlaylist();
+  if (display.ready() && display.mode() != SDCHANGE) {
+    display.putRequest(NEWMODE, SDCHANGE);
+    const uint32_t t0 = millis();
+    while (display.mode() != SDCHANGE && (uint32_t)(millis() - t0) < 800u) {
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+  }
+  bool forceIndex = false;
+#if SD_FORCE_REINDEX
+  forceIndex = true;
+#endif
+  const bool needIndex =
+      forceIndex || !sdman.exists(INDEX_SD_PATH) || !sdman.exists(PLAYLIST_SD_PATH);
+  if (needIndex) {
+    sdman.indexSDPlaylist();
+  } else {
+    File idx = sdman.open(INDEX_SD_PATH, "r");
+    const bool bad = (!idx || idx.size() < 4);
+    if (idx) idx.close();
+    if (bad) sdman.indexSDPlaylist();
+    else Serial.println("##[SD]#\tusing cached index");
+  }
+  if (playlistLength() == 0 && sdman.ready) {
+    Serial.println("##[SD]#\tempty index — rescanning card");
+    sdman.indexSDPlaylist();
+  }
   if (SDPLFS()->exists(INDEX_SD_PATH)) {
     File index = SDPLFS()->open(INDEX_SD_PATH, "r");
     //store.countStation = index.size() / 4;

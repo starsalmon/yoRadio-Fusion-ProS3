@@ -12,7 +12,10 @@
 #include "display.h"
 #include "player.h"
 
-#if defined(SD_SPIPINS) || SD_HSPI
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && defined(DSP_HSPI) && DSP_HSPI
+extern SPIClass SPI2;
+#define SDREALSPI SPI2
+#elif defined(SD_SPIPINS) || SD_HSPI
 SPIClass  SDSPI(HSPI);
 #define SDREALSPI SDSPI
 #else
@@ -26,6 +29,12 @@ SPIClass  SDSPI(HSPI);
 SDManager sdman(FSImplPtr(new VFSImpl()));
 
 bool SDManager::start(){
+#if defined(TFT_CS) && (TFT_CS != 255)
+  pinMode(TFT_CS, OUTPUT);
+  digitalWrite(TFT_CS, HIGH);
+#endif
+  pinMode(SDC_CS, OUTPUT);
+  digitalWrite(SDC_CS, HIGH);
   ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
   vTaskDelay(10);
   if(!ready) ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
@@ -43,7 +52,11 @@ void SDManager::stop(){
 #include "diskio_impl.h"
 bool SDManager::cardPresent() {
 
-  if(!ready) return false;
+  if (_indexing) return true;
+  if (!ready) return false;
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI
+  return true;
+#endif
   if(sectorSize()<1) {
     return false;
   }
@@ -91,7 +104,7 @@ void SDManager::listSD(File &plSDfile, File &plSDindex, const char* dirname, uin
     char* filePath;
     while (true) {
         vTaskDelay(2);
-        player.loop();
+        taskYIELD();
         bool isDir;
         String fileName = root.getNextFileName(&isDir);
         if (fileName.isEmpty()) break;
@@ -130,8 +143,12 @@ void SDManager::listSD(File &plSDfile, File &plSDindex, const char* dirname, uin
                 plSDfile.printf("%s\t%s\t0\n", fn, filePath);
                 plSDindex.write((uint8_t*)&pos, 4);
                 Serial.print(".");
-                if(display.mode()==SDCHANGE) display.putRequest(SDFILEINDEX, _sdFCount+1);
                 _sdFCount++;
+#if !(defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI)
+                if (display.mode() == SDCHANGE) {
+                  display.putRequest(SDFILEINDEX, _sdFCount);
+                }
+#endif
                 if (_sdFCount % 64 == 0) Serial.println();
             }
         }
@@ -142,20 +159,38 @@ void SDManager::listSD(File &plSDfile, File &plSDindex, const char* dirname, uin
 
 void SDManager::indexSDPlaylist() {
   _sdFCount = 0;
+  _indexing = true;
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && defined(TFT_CS) && (TFT_CS != 255)
+  pinMode(TFT_CS, OUTPUT);
+  digitalWrite(TFT_CS, HIGH);
+#endif
+  vTaskDelay(pdMS_TO_TICKS(50));
   if(exists(PLAYLIST_SD_PATH)) remove(PLAYLIST_SD_PATH);
   if(exists(INDEX_SD_PATH)) remove(INDEX_SD_PATH);
   File playlist = open(PLAYLIST_SD_PATH, "w", true);
   if (!playlist) {
+    _indexing = false;
     return;
   }
   File index = open(INDEX_SD_PATH, "w", true);
+  if (!index) {
+    playlist.close();
+    _indexing = false;
+    return;
+  }
   listSD(playlist, index, "/", SD_MAX_LEVELS);
   index.flush();
   index.close();
   playlist.flush();
   playlist.close();
   Serial.println();
+  Serial.printf("##[SD]#\tindex done tracks=%lu\n", (unsigned long)_sdFCount);
   delay(50);
+  _indexing = false;
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI
+  if (display.ready() && display.mode() == SDCHANGE) {
+    display.putRequest(SDFILEINDEX, (int)_sdFCount);
+  }
+#endif
 }
 #endif
-

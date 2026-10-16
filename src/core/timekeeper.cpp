@@ -7,6 +7,9 @@
 #include "display.h"
 #include "player.h"
 #include "netserver.h"
+#if SDC_CS != 255
+#include "sdmanager.h"
+#endif
 #include "rtcsupport.h"
 #include "../displays/tools/l10n.h"
 #include "../pluginsManager/pluginsManager.h"
@@ -330,9 +333,13 @@ void TimeKeeper::_upRSSI() {
     }
   }
 #ifdef USE_SD
-  if (display.mode() != SDCHANGE) {
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI
+  /* cardPresent() cannot probe raw sectors on the same bus as the TFT. */
+#else
+  if (display.mode() != SDCHANGE && !sdman.indexing()) {
     player.sendCommand({PR_CHECKSD, 0});
   }
+#endif
 #endif
   player.sendCommand({PR_VUTONUS, 0});
 }

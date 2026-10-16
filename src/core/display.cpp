@@ -1051,6 +1051,10 @@ void Display::loop() {
   }
   if(displayQueue==NULL || _locked) return;
 
+#if SDC_CS != 255
+  if (sdman.indexing()) return;
+#endif
+
   _pager->loop();
 #ifdef USE_NEXTION
   nextion.loop();

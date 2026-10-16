@@ -16,6 +16,10 @@ class psFrameBuffer;
 class DspCore: public yoDisplay {
   public:
     DspCore();
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+    void startWrite() override;
+    void endWrite() override;
+#endif
     void initDisplay();
     void clearDsp(bool black=false);
     void printClock(){}

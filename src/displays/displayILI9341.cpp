@@ -2,6 +2,9 @@
 #if DSP_MODEL==DSP_ILI9341
 #include "dspcore.h"
 #include "../core/config.h"
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+#include "../core/spidog.h"
+#endif
 
 #ifndef TFT_SPI_FREQ
 // Default matches Adafruit_SPITFT SPI_DEFAULT_FREQ (40MHz).
@@ -14,7 +17,22 @@ DspCore::DspCore(): Adafruit_ILI9341(&SPI2, TFT_DC, TFT_CS, TFT_RST) {}
 DspCore::DspCore(): Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST) {}
 #endif
 
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+void DspCore::startWrite() {
+  sdog.begin();
+  sdog.takeMutex();
+  yoDisplay::startWrite();
+}
+void DspCore::endWrite() {
+  yoDisplay::endWrite();
+  sdog.giveMutex();
+}
+#endif
+
 void DspCore::initDisplay() {
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+  sdog.begin();
+#endif
   begin(TFT_SPI_FREQ);
   Serial.printf("##[BOOT]#\tTFT_SPI_FREQ\t%lu\n", (unsigned long)TFT_SPI_FREQ);
   

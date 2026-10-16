@@ -324,6 +324,10 @@
 /* SD CARD */
 
 #define SDC_CS    1
+// TFT (ILI9341) and microSD share the default SPI bus on UM ProS3 — mutex + sd_diskio patch required.
+#define SD_SHARE_TFT_SPI 1
+// Set to 1 once after flashing SPI-sharing fixes to force a full card rescan.
+#define SD_FORCE_REINDEX 0
 // SD card SPI clock (Hz). You can run TFT much faster than SD even on the same bus.
 // Start conservative for stability; increase only if verified stable.
 #define SDSPISPEED 10000000

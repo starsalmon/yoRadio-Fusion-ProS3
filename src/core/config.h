@@ -378,6 +378,8 @@ class Config {
     uint16_t screensaverPlayingTicks;
     bool     isScreensaver;
     int      newConfigMode;
+    // Play mode to restore when leaving PM_BLUETOOTH via MODE double-click (not persisted).
+    uint8_t  playModeBeforeBluetooth = PM_WEB;
     char      tmpBuf[BUFLEN];
     char     tmpBuf2[BUFLEN];
     char       ipBuf[16];

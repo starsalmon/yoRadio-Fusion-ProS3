@@ -511,6 +511,7 @@ void Config::changeMode(int newmode) { // DLNA mod
             Serial.println("##[ERROR]# Failed to release I2S bus for BT RX");
             return;
         }
+        playModeBeforeBluetooth = oldMode;
         player.setSpeakerForceMuted(false);
         setStation("Bluetooth");
         setTitle("Pair your phone");

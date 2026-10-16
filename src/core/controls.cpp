@@ -893,10 +893,16 @@ void onBtnDoubleClick(int id) {
         break;
       }
     case EVT_BTNMODE: {
-        // MODE double-click is intentionally left unused (spare for future).
-        // Still notify plugins so the mode-button LED pulse triggers.
-        controlEvt_e evt = EVT_BTNMODE;
-        pm.on_btn_click(evt);
+        pm.on_btn_click(EVT_BTNMODE);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+        if (config.getMode() == PM_BLUETOOTH) {
+          uint8_t back = config.playModeBeforeBluetooth;
+          if (back == PM_BLUETOOTH || back > MAX_PLAY_MODE) back = PM_WEB;
+          config.changeMode((int)back);
+        } else {
+          config.changeMode(PM_BLUETOOTH);
+        }
+#endif
         break;
       }
     default:

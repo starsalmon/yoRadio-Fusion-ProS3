@@ -71,6 +71,7 @@ static uint8_t s_pingTries = 0;
 static bool s_rxExitCompleteFlag = false;
 
 static void sendLine(const char *s);
+static void wakePulse();
 
 static void rxHandoverAdvance() {
   const uint32_t now = millis();
@@ -90,6 +91,9 @@ static void rxHandoverAdvance() {
         // HiGrow needs ~1 s to boot out of deep sleep: retry PING every 500 ms, up to ~5 s.
         if ((uint32_t)(now - s_rxStepAtMs) < 500u) break;
         if (++s_pingTries < 10) {
+          // A SLEEP sent just before entry can race the first wake pulse (HiGrow still
+          // shutting down). Re-pulse wake every other retry; harmless while it's awake.
+          if ((s_pingTries & 1u) == 0u) wakePulse();
           sendLine("PING");
           s_rxStepAtMs = now;
           break;

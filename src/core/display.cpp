@@ -848,6 +848,9 @@ if (newmode == _mode ||
       _meta->moveBack();
     #endif
     _meta->setAlign(metaConf.widget.align);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    if (config.getMode() == PM_BLUETOOTH) _meta->setText("Bluetooth"); else
+#endif
     _meta->setText(config.station.name);
     // Switching away to dialogs (e.g. volume) can clear the shared title widgets.
     // Ensure the player view always restores the current title from config state.
@@ -1062,6 +1065,18 @@ void Display::loop() {
 #endif
 
   _pager->loop();
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  // BT mode: the logo is the only thing in the station-logo slot. Other widgets
+  // (title/clock/footer redraws) can clear it, so re-blit it periodically.
+  if (_mode == PLAYER && config.getMode() == PM_BLUETOOTH && _stationLogo && !_stationLogo->locked()) {
+    static uint32_t s_btLogoBlitMs = 0;
+    const uint32_t nowMs = millis();
+    if ((uint32_t)(nowMs - s_btLogoBlitMs) >= 500u) {
+      s_btLogoBlitMs = nowMs;
+      _stationLogo->reblit();
+    }
+  }
+#endif
 #ifdef USE_NEXTION
   nextion.loop();
 #endif

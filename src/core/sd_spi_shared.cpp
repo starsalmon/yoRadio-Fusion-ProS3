@@ -5,7 +5,7 @@
 #include <Arduino.h>
 #include "spidog.h"
 
-void yoradio_sd_spi_acquire() {
+extern "C" void yoradio_sd_spi_acquire() {
   sdog.begin();
   sdog.takeMutex();
 #if defined(TFT_CS) && (TFT_CS != 255)
@@ -14,7 +14,7 @@ void yoradio_sd_spi_acquire() {
 #endif
 }
 
-void yoradio_sd_spi_release() {
+extern "C" void yoradio_sd_spi_release() {
   sdog.giveMutex();
 }
 

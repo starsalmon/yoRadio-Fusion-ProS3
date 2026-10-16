@@ -517,14 +517,12 @@ void Config::changeMode(int newmode) { // DLNA mod
         setTitle("Pair your phone");
         btcompanion_enterRxMode(btcompanion_rxLocalName());
         btcompanion_setRxVolume(store.volume);
+        player.setOutputPins(false);
     }
 
     if (oldMode == PM_BLUETOOTH && newmode != PM_BLUETOOTH) {
         btcompanion_exitRxMode();
-        if (!player.reclaimI2sBusFromCompanion()) {
-            Serial.println("##[WARN]# I2S bus reclaim failed after BT RX");
-        }
-        player.setSpeakerForceMuted(store.outputDevice == 1);
+        // I2S GPIO reclaim runs from main loop after HiGrow releases the bus (non-blocking UART).
         setTitle(LANG::const_PlStopped);
     }
 #else

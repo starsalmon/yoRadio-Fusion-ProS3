@@ -35,3 +35,5 @@ void btcompanion_setRxLocalName(const char* name);
 const char* btcompanion_rxLocalName();
 // Map yoRadio volume (0..255) to companion AVRCP volume (0..127).
 void btcompanion_setRxVolume(uint8_t volume);
+// True once after MODE TX handover finishes (consume from main loop to reclaim I2S).
+bool btcompanion_rxExitComplete();

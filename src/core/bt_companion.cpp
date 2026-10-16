@@ -56,6 +56,96 @@ static int s_rxAudio = -1;
 static BtCompanionLinkState s_rxLink = BtCompanionLinkState::OFF;
 static uint32_t s_lastRxUiMs = 0;
 
+enum class RxHandoverStep : uint8_t {
+  None = 0,
+  EnterWake,
+  EnterPing,
+  EnterHandover,
+  EnterModeRx,
+  ExitModeTx,
+};
+static RxHandoverStep s_rxStep = RxHandoverStep::None;
+static uint32_t s_rxStepAtMs = 0;
+static uint32_t s_rxPingBaselineMs = 0;
+static bool s_rxExitCompleteFlag = false;
+
+static void rxHandoverAdvance() {
+  const uint32_t now = millis();
+  switch (s_rxStep) {
+    case RxHandoverStep::None:
+      break;
+    case RxHandoverStep::EnterWake:
+      if ((uint32_t)(now - s_rxStepAtMs) >= 250u) {
+        s_rxPingBaselineMs = s_lastPongMs;
+        sendLine("PING");
+        s_rxStep = RxHandoverStep::EnterPing;
+        s_rxStepAtMs = now;
+      }
+      break;
+    case RxHandoverStep::EnterPing:
+      if (s_lastPongMs != s_rxPingBaselineMs || (uint32_t)(now - s_rxStepAtMs) >= 600u) {
+        sendLine("HANDOVER PROS3_RELEASED");
+        s_rxStep = RxHandoverStep::EnterHandover;
+        s_rxStepAtMs = now;
+      }
+      break;
+    case RxHandoverStep::EnterHandover:
+      if (s_uartLastComplete.indexOf("OK HIGROW_ARMED") >= 0) {
+        s_uartLastComplete = "";
+        char buf[96];
+        snprintf(buf, sizeof(buf), "MODE RX %s", s_rxLocalName);
+        sendLine(buf);
+        s_rxStep = RxHandoverStep::EnterModeRx;
+        s_rxStepAtMs = now;
+      } else if ((uint32_t)(now - s_rxStepAtMs) >= 2000u) {
+        Serial.println("[BT2] RX handover: HIGROW_ARMED timeout");
+        char buf[96];
+        snprintf(buf, sizeof(buf), "MODE RX %s", s_rxLocalName);
+        sendLine(buf);
+        s_rxStep = RxHandoverStep::EnterModeRx;
+        s_rxStepAtMs = now;
+      }
+      break;
+    case RxHandoverStep::EnterModeRx:
+      if (s_uartLastComplete.indexOf("BUS_HIGROW_MASTER") >= 0) {
+        s_uartLastComplete = "";
+        sendLine("STATUS");
+        display.putRequest(DRAWVOL);
+        s_rxStep = RxHandoverStep::None;
+      } else if ((uint32_t)(now - s_rxStepAtMs) >= 5000u) {
+        Serial.println("[BT2] RX handover: BUS_HIGROW_MASTER timeout");
+        sendLine("STATUS");
+        s_rxStep = RxHandoverStep::None;
+      }
+      break;
+    case RxHandoverStep::ExitModeTx:
+      if (s_uartLastComplete.indexOf("BUS_HIGROW_RELEASED") >= 0) {
+        s_uartLastComplete = "";
+        sendLine("SLEEP");
+        s_rxActive = false;
+        s_rxConn = -1;
+        s_rxAudio = -1;
+        s_rxLink = BtCompanionLinkState::OFF;
+        s_rxTitle[0] = s_rxArtist[0] = '\0';
+        s_rxStep = RxHandoverStep::None;
+        s_rxExitCompleteFlag = true;
+        display.putRequest(DRAWVOL);
+      } else if ((uint32_t)(now - s_rxStepAtMs) >= 4000u) {
+        Serial.println("[BT2] RX exit: BUS_HIGROW_RELEASED timeout");
+        sendLine("SLEEP");
+        s_rxActive = false;
+        s_rxConn = -1;
+        s_rxAudio = -1;
+        s_rxLink = BtCompanionLinkState::OFF;
+        s_rxTitle[0] = s_rxArtist[0] = '\0';
+        s_rxStep = RxHandoverStep::None;
+        s_rxExitCompleteFlag = true;
+        display.putRequest(DRAWVOL);
+      }
+      break;
+  }
+}
+
 static void maybeUpdateRxLinkState() {
   BtCompanionLinkState next = BtCompanionLinkState::OFF;
   if (!s_rxActive) next = BtCompanionLinkState::OFF;
@@ -382,11 +472,12 @@ void btcompanion_toggle() { btcompanion_setEnabled(!s_enabled); }
 
 void btcompanion_loop() {
   pumpRx();
+  rxHandoverAdvance();
 
   // Poll STATUS while enabled so UI can show searching/connected.
   if (s_rxActive) {
     const uint32_t now = millis();
-    const uint32_t period = (s_rxLink == BtCompanionLinkState::AUDIO) ? 3000u : 800u;
+    const uint32_t period = (s_rxLink == BtCompanionLinkState::AUDIO) ? 5000u : 2000u;
     if (s_lastStatusReqMs == 0 || (uint32_t)(now - s_lastStatusReqMs) >= period) {
       s_lastStatusReqMs = now;
       sendLine("STATUS");
@@ -462,7 +553,7 @@ void btcompanion_setRxVolume(uint8_t volume) {
 
 void btcompanion_enterRxMode(const char* localName) {
   if (localName && localName[0]) btcompanion_setRxLocalName(localName);
-  if (s_rxActive) return;
+  if (s_rxActive && s_rxStep == RxHandoverStep::None) return;
 
   if (s_enabled) btcompanion_setEnabled(false);
 
@@ -471,38 +562,26 @@ void btcompanion_enterRxMode(const char* localName) {
   s_rxTitle[0] = s_rxArtist[0] = '\0';
   s_rxLink = BtCompanionLinkState::SEARCHING;
   s_rxActive = true;
+  s_rxExitCompleteFlag = false;
 
   wakePulse();
-  delay(250);
-  sendLine("PING");
-  (void)waitForPong(800);
-
-  sendLine("HANDOVER PROS3_RELEASED");
-  if (!waitForUartContains("OK HIGROW_ARMED", 1500u)) {
-    Serial.println("[BT2] RX handover: missing HIGROW_ARMED");
-  }
-
-  char buf[96];
-  snprintf(buf, sizeof(buf), "MODE RX %s", s_rxLocalName);
-  sendLine(buf);
-  if (!waitForUartContains("BUS_HIGROW_MASTER", 4000u)) {
-    Serial.println("[BT2] RX handover: missing BUS_HIGROW_MASTER");
-  }
-  sendLine("STATUS");
+  s_rxStep = RxHandoverStep::EnterWake;
+  s_rxStepAtMs = millis();
   display.putRequest(DRAWVOL);
 }
 
 void btcompanion_exitRxMode() {
-  if (!s_rxActive) return;
+  if (!s_rxActive && s_rxStep == RxHandoverStep::None) return;
+  if (s_rxStep == RxHandoverStep::ExitModeTx) return;
   sendLine("MODE TX");
-  (void)waitForUartContains("BUS_HIGROW_RELEASED", 3000u);
-  s_rxActive = false;
-  s_rxConn = -1;
-  s_rxAudio = -1;
-  s_rxLink = BtCompanionLinkState::OFF;
-  s_rxTitle[0] = s_rxArtist[0] = '\0';
-  sendLine("SLEEP");
-  display.putRequest(DRAWVOL);
+  s_rxStep = RxHandoverStep::ExitModeTx;
+  s_rxStepAtMs = millis();
+}
+
+bool btcompanion_rxExitComplete() {
+  if (!s_rxExitCompleteFlag) return false;
+  s_rxExitCompleteFlag = false;
+  return true;
 }
 
 #else  // BT_COMPANION_ENABLE
@@ -526,6 +605,7 @@ void btcompanion_getRxMetadata(char*, size_t, char*, size_t) {}
 void btcompanion_setRxLocalName(const char*) {}
 const char* btcompanion_rxLocalName() { return ""; }
 void btcompanion_setRxVolume(uint8_t) {}
+bool btcompanion_rxExitComplete() { return false; }
 
 #endif
 

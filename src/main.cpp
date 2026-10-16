@@ -174,6 +174,7 @@ void setup() {
   if (config.getMode() == PM_BLUETOOTH) {
     player.releaseI2sBusToCompanion();
     player.setSpeakerForceMuted(false);
+    player.setOutputPins(false);
     btcompanion_enterRxMode(btcompanion_rxLocalName());
     btcompanion_setRxVolume(config.store.volume);
   }
@@ -196,6 +197,14 @@ void loop() {
   timekeeper.loop1();
   telnet.loop();
   btcompanion_loop();
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (btcompanion_rxExitComplete()) {
+    if (!player.reclaimI2sBusFromCompanion()) {
+      Serial.println("##[WARN]# I2S bus reclaim failed after BT RX");
+    }
+    player.setSpeakerForceMuted(config.store.outputDevice == 1);
+  }
+#endif
   processControlsEvents();
   // Runtime audio toggles (avoid doing work every loop unless the value changes).
   {
@@ -242,10 +251,9 @@ void loop() {
   // SD playback should stay usable even when WiFi fails and we fall back to SoftAP.
   // (network.status == SDREADY is only set when booting in SD mode; it does not
   // represent "SD available" in all cases.)
-  if (network.status == CONNECTED || network.status==SDREADY || config.getMode() == PM_SDCARD) {
-    if (config.getMode() != PM_BLUETOOTH) {
-      player.loop();
-    }
+  if (network.status == CONNECTED || network.status==SDREADY || config.getMode() == PM_SDCARD ||
+      config.getMode() == PM_BLUETOOTH) {
+    player.loop();
 #ifdef BT_COMPANION_ENABLE
     // Keep the companion informed if content changes the PCM sample rate.
     // This is especially important for podcasts (often 48kHz).

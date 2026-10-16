@@ -27,10 +27,14 @@
 #ifndef BT_COMPANION_SINK_NAME
 #define BT_COMPANION_SINK_NAME "HiFi-IIS"
 #endif
+#ifndef BT_COMPANION_RX_LOCAL_NAME
+#define BT_COMPANION_RX_LOCAL_NAME "yoRadio Fusion"
+#endif
 
 static HardwareSerial s_btUart(BT_COMPANION_UART_PORT);
 static bool s_enabled = false;
 static String s_line;
+static String s_uartLastComplete;
 static volatile uint32_t s_lastPongMs = 0;
 static volatile uint32_t s_lastStatusMs = 0;
 static uint32_t s_lastStatusReqMs = 0;
@@ -43,6 +47,26 @@ static int s_conn = -1;
 static int s_audio = -1;
 static BtCompanionLinkState s_link = BtCompanionLinkState::OFF;
 static char s_sinkName[64] = BT_COMPANION_SINK_NAME;
+static bool s_rxActive = false;
+static char s_rxLocalName[64] = BT_COMPANION_RX_LOCAL_NAME;
+static char s_rxTitle[96] = "";
+static char s_rxArtist[96] = "";
+static int s_rxConn = -1;
+static int s_rxAudio = -1;
+static BtCompanionLinkState s_rxLink = BtCompanionLinkState::OFF;
+static uint32_t s_lastRxUiMs = 0;
+
+static void maybeUpdateRxLinkState() {
+  BtCompanionLinkState next = BtCompanionLinkState::OFF;
+  if (!s_rxActive) next = BtCompanionLinkState::OFF;
+  else if (s_rxConn == 2 && (s_rxAudio == 2 || s_rxAudio == 1)) next = BtCompanionLinkState::AUDIO;
+  else if (s_rxConn == 2) next = BtCompanionLinkState::CONNECTED;
+  else next = BtCompanionLinkState::SEARCHING;
+  if (next != s_rxLink) {
+    s_rxLink = next;
+    display.putRequest(DRAWVOL);
+  }
+}
 
 static void maybeUpdateLinkState() {
   BtCompanionLinkState next = BtCompanionLinkState::OFF;
@@ -78,6 +102,7 @@ static void pumpRx() {
       // recognize PONG/STATUS lines.
       while (out.length() > 0 && (uint8_t)out[0] < 0x20) out.remove(0, 1);
       if (out.length() == 0) continue;
+      s_uartLastComplete = out;
       // Avoid spamming Serial with periodic STATUS responses.
       if (!out.startsWith("STATUS ")) {
         Serial.print("[BT2] ");
@@ -85,20 +110,53 @@ static void pumpRx() {
       }
       if (out == "PONG") s_lastPongMs = millis();
       if (out.startsWith("STATUS ")) {
-        // Example:
-        // STATUS conn=2 audio=2 bt=1 ring=... i2sB=... underrunB=... overrunB=... peak=... dc=...
         auto readInt = [&](const char *key, int &dst) -> void {
           const int idx = out.indexOf(key);
           if (idx < 0) return;
           int start = idx + (int)strlen(key);
           int end = start;
-          while (end < (int)out.length() && isdigit((unsigned char)out[end])) end++;
+          while (end < (int)out.length() && (isdigit((unsigned char)out[end]) || out[end] == '-')) end++;
           dst = out.substring(start, end).toInt();
         };
-        readInt("conn=", s_conn);
-        readInt("audio=", s_audio);
-        s_lastStatusMs = millis();
-        maybeUpdateLinkState();
+        auto readStr = [&](const char *key, char *dst, size_t dstLen) -> void {
+          if (!dst || dstLen == 0) return;
+          const int idx = out.indexOf(key);
+          if (idx < 0) return;
+          int start = idx + (int)strlen(key);
+          while (start < (int)out.length() && out[start] == ' ') start++;
+          int end = start;
+          while (end < (int)out.length() && out[end] != ' ') end++;
+          String v = out.substring(start, end);
+          v.trim();
+          strlcpy(dst, v.c_str(), dstLen);
+        };
+        if (out.indexOf("mode=rx") >= 0) {
+          readInt("conn=", s_rxConn);
+          readInt("audio=", s_rxAudio);
+          s_lastStatusMs = millis();
+          maybeUpdateRxLinkState();
+          s_lastRxUiMs = millis();
+          display.putRequest(NEWTITLE);
+        } else {
+          readInt("conn=", s_conn);
+          readInt("audio=", s_audio);
+          s_lastStatusMs = millis();
+          maybeUpdateLinkState();
+        }
+      }
+      if (out.startsWith("META ")) {
+        auto readMeta = [&](const char *key, char *dst, size_t dstLen) {
+          const int idx = out.indexOf(key);
+          if (idx < 0) return;
+          int start = idx + (int)strlen(key);
+          String v = out.substring(start);
+          v.trim();
+          strlcpy(dst, v.c_str(), dstLen);
+        };
+        readMeta("title=", s_rxTitle, sizeof(s_rxTitle));
+        readMeta("artist=", s_rxArtist, sizeof(s_rxArtist));
+        s_lastRxUiMs = millis();
+        display.putRequest(NEWTITLE);
       }
       continue;
     }
@@ -141,6 +199,20 @@ void btcompanion_forceSleep() {
   sendLine("DISCONNECT");
   delay(80);
   sendLine("SLEEP");
+}
+
+static bool waitForUartContains(const char *needle, uint32_t timeoutMs) {
+  if (!needle || !needle[0]) return false;
+  const uint32_t start = millis();
+  while ((uint32_t)(millis() - start) < timeoutMs) {
+    pumpRx();
+    if (s_uartLastComplete.indexOf(needle) >= 0) {
+      s_uartLastComplete = "";
+      return true;
+    }
+    delay(10);
+  }
+  return false;
 }
 
 static bool waitForPong(uint32_t timeoutMs) {
@@ -312,7 +384,14 @@ void btcompanion_loop() {
   pumpRx();
 
   // Poll STATUS while enabled so UI can show searching/connected.
-  if (s_enabled) {
+  if (s_rxActive) {
+    const uint32_t now = millis();
+    const uint32_t period = (s_rxLink == BtCompanionLinkState::AUDIO) ? 3000u : 800u;
+    if (s_lastStatusReqMs == 0 || (uint32_t)(now - s_lastStatusReqMs) >= period) {
+      s_lastStatusReqMs = now;
+      sendLine("STATUS");
+    }
+  } else if (s_enabled) {
     const uint32_t now = millis();
     // While not connected, poll faster. Once connected, slow down.
     const uint32_t period = (s_link == BtCompanionLinkState::AUDIO) ? 3000u : 800u;
@@ -355,6 +434,77 @@ void btcompanion_loop() {
 
 BtCompanionLinkState btcompanion_linkState() { return s_link; }
 
+bool btcompanion_rxActive() { return s_rxActive; }
+
+void btcompanion_setRxLocalName(const char* name) {
+  if (!name || !name[0]) return;
+  strlcpy(s_rxLocalName, name, sizeof(s_rxLocalName));
+}
+
+const char* btcompanion_rxLocalName() { return s_rxLocalName; }
+
+void btcompanion_getRxMetadata(char* title, size_t titleLen, char* artist, size_t artistLen) {
+  if (title && titleLen) strlcpy(title, s_rxTitle, titleLen);
+  if (artist && artistLen) strlcpy(artist, s_rxArtist, artistLen);
+}
+
+BtCompanionLinkState btcompanion_rxLinkState() { return s_rxLink; }
+
+void btcompanion_setRxVolume(uint8_t volume) {
+  if (!s_rxActive) return;
+  uint8_t v = volume;
+  if (v > 21) v = 21;
+  const uint8_t avrcp = (uint8_t)((v * 127u) / 21u);
+  char buf[24];
+  snprintf(buf, sizeof(buf), "VOL %u", (unsigned)avrcp);
+  sendLine(buf);
+}
+
+void btcompanion_enterRxMode(const char* localName) {
+  if (localName && localName[0]) btcompanion_setRxLocalName(localName);
+  if (s_rxActive) return;
+
+  if (s_enabled) btcompanion_setEnabled(false);
+
+  s_rxConn = -1;
+  s_rxAudio = -1;
+  s_rxTitle[0] = s_rxArtist[0] = '\0';
+  s_rxLink = BtCompanionLinkState::SEARCHING;
+  s_rxActive = true;
+
+  wakePulse();
+  delay(250);
+  sendLine("PING");
+  (void)waitForPong(800);
+
+  sendLine("HANDOVER PROS3_RELEASED");
+  if (!waitForUartContains("OK HIGROW_ARMED", 1500u)) {
+    Serial.println("[BT2] RX handover: missing HIGROW_ARMED");
+  }
+
+  char buf[96];
+  snprintf(buf, sizeof(buf), "MODE RX %s", s_rxLocalName);
+  sendLine(buf);
+  if (!waitForUartContains("BUS_HIGROW_MASTER", 4000u)) {
+    Serial.println("[BT2] RX handover: missing BUS_HIGROW_MASTER");
+  }
+  sendLine("STATUS");
+  display.putRequest(DRAWVOL);
+}
+
+void btcompanion_exitRxMode() {
+  if (!s_rxActive) return;
+  sendLine("MODE TX");
+  (void)waitForUartContains("BUS_HIGROW_RELEASED", 3000u);
+  s_rxActive = false;
+  s_rxConn = -1;
+  s_rxAudio = -1;
+  s_rxLink = BtCompanionLinkState::OFF;
+  s_rxTitle[0] = s_rxArtist[0] = '\0';
+  sendLine("SLEEP");
+  display.putRequest(DRAWVOL);
+}
+
 #else  // BT_COMPANION_ENABLE
 
 void btcompanion_init() {}
@@ -368,6 +518,14 @@ const char* btcompanion_sinkName() { return ""; }
 void btcompanion_requestConnect() {}
 void btcompanion_setPcmSampleRate(uint32_t) {}
 BtCompanionLinkState btcompanion_linkState() { return BtCompanionLinkState::OFF; }
+bool btcompanion_rxActive() { return false; }
+void btcompanion_enterRxMode(const char*) {}
+void btcompanion_exitRxMode() {}
+BtCompanionLinkState btcompanion_rxLinkState() { return BtCompanionLinkState::OFF; }
+void btcompanion_getRxMetadata(char*, size_t, char*, size_t) {}
+void btcompanion_setRxLocalName(const char*) {}
+const char* btcompanion_rxLocalName() { return ""; }
+void btcompanion_setRxVolume(uint8_t) {}
 
 #endif
 

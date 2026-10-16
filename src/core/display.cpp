@@ -464,8 +464,9 @@ void Display::_buildPager(){
             return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
           };
           const uint16_t btBlue = rgb565(0, 130, 252);
-          const bool btOut = (config.store.outputDevice == 1);
-          const BtCompanionLinkState ls = btcompanion_linkState();
+          const bool btRxIn = (config.getMode() == PM_BLUETOOTH);
+          const bool btOut = btRxIn || (config.store.outputDevice == 1);
+          const BtCompanionLinkState ls = btRxIn ? btcompanion_rxLinkState() : btcompanion_linkState();
 
           const uint8_t* bbmp = ICON_BT_DISABLED_17x16;
           uint16_t bfg = config.theme.vol;
@@ -2099,6 +2100,18 @@ static void formatHms(uint32_t sec, char* out, size_t outSz) {
 }
 
 void Display::_title() {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    char t[96];
+    char a[96];
+    btcompanion_getRxMetadata(t, sizeof(t), a, sizeof(a));
+    if (t[0]) {
+      _title1->setText(t);
+      if (_title2) _title2->setText(a[0] ? a : "");
+      return;
+    }
+  }
+#endif
   // If title is empty but the player is running, fall back to station name
   if (strlen(config.station.title) == 0 && player.isRunning()) {
     strlcpy(config.station.title, config.station.name, sizeof(config.station.title));
@@ -2331,8 +2344,9 @@ void Display::_volume() {
             return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
           };
           const uint16_t btBlue = rgb565(0, 130, 252);
-          const bool btOut = (config.store.outputDevice == 1);
-          const BtCompanionLinkState ls = btcompanion_linkState();
+          const bool btRxIn = (config.getMode() == PM_BLUETOOTH);
+          const bool btOut = btRxIn || (config.store.outputDevice == 1);
+          const BtCompanionLinkState ls = btRxIn ? btcompanion_rxLinkState() : btcompanion_linkState();
           const uint8_t* bbmp = ICON_BT_DISABLED_17x16;
           uint16_t bfg = config.theme.vol;
           if (btOut) {

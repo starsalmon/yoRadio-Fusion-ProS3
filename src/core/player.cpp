@@ -9,6 +9,7 @@
 #include "timekeeper.h"
 #include "podcasts.h"
 #include "podcast_resume.h"
+#include "bt_companion.h"
 #include <time.h> /* ----- Auto On-Off Timer ----- */
 #include "../displays/tools/l10n.h"
 #include "../pluginsManager/pluginsManager.h"
@@ -309,7 +310,15 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
       }
       case PR_VOL: {
         config.setVolume(requestP.payload);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+        if (config.getMode() == PM_BLUETOOTH) {
+          btcompanion_setRxVolume((uint8_t)requestP.payload);
+        } else {
+          Audio::setVolume(volToI2S(requestP.payload));
+        }
+#else
         Audio::setVolume(volToI2S(requestP.payload));
+#endif
         break;
       }
       #ifdef USE_SD
@@ -570,6 +579,23 @@ void Player::setSpeakerForceMuted(bool v) {
 void Player::scheduleSpeakerUnmute(uint32_t delayMs) {
   _speakerUnmutePending = true;
   _speakerUnmuteAtMs = millis() + delayMs;
+}
+
+bool Player::releaseI2sBusToCompanion() {
+#if I2S_DOUT == 255
+  return false;
+#else
+  stopSong();
+  return releaseI2sGpioBus(I2S_BCLK, I2S_LRC, I2S_DOUT);
+#endif
+}
+
+bool Player::reclaimI2sBusFromCompanion() {
+#if I2S_DOUT == 255
+  return false;
+#else
+  return restoreI2sGpioBus(I2S_BCLK, I2S_LRC, I2S_DOUT);
+#endif
 }
 
 void Player::_play(uint16_t stationId) {

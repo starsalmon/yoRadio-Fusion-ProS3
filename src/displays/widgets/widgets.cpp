@@ -2731,6 +2731,10 @@ void PlayModeWidget::_draw() {
       icon = ICON_MODE_DLNA_24x17;
       iconW = ICON_MODE_DLNA_W;
       iconH = ICON_MODE_DLNA_H;
+    } else if (_mode == 4) {  // Bluetooth input
+      icon = ICON_BT_17x16;
+      iconW = 17;
+      iconH = 16;
     } else {  // WEB (and unknown)
       icon = ICON_MODE_WEB_17x17;
       iconW = ICON_MODE_WEB_W;

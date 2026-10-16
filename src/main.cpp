@@ -170,12 +170,22 @@ void setup() {
   #endif
   if (config.getMode()==PM_SDCARD) player.initHeaders(config.station.url);
   player.lockOutput=false;
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    player.releaseI2sBusToCompanion();
+    player.setSpeakerForceMuted(false);
+    btcompanion_enterRxMode(btcompanion_rxLocalName());
+    btcompanion_setRxVolume(config.store.volume);
+  }
+#endif
   if (config.store.smartstart == 1) {
     // Only auto-play when we actually have a usable playback path:
     // - CONNECTED: web streaming is possible
     // - PM_SDCARD: SD playback is possible (even if we're currently in SoftAP mode)
     if (network.status == CONNECTED || config.getMode() == PM_SDCARD) {
-      player.sendCommand({PR_PLAY, config.lastStation()});
+      if (config.getMode() != PM_BLUETOOTH) {
+        player.sendCommand({PR_PLAY, config.lastStation()});
+      }
     }
   }
   Audio::audio_info_callback =  my_audio_info;   // "audio_change" audiohandlers.h ban kezelve.
@@ -233,7 +243,9 @@ void loop() {
   // (network.status == SDREADY is only set when booting in SD mode; it does not
   // represent "SD available" in all cases.)
   if (network.status == CONNECTED || network.status==SDREADY || config.getMode() == PM_SDCARD) {
-    player.loop();
+    if (config.getMode() != PM_BLUETOOTH) {
+      player.loop();
+    }
 #ifdef BT_COMPANION_ENABLE
     // Keep the companion informed if content changes the PCM sample rate.
     // This is especially important for podcasts (often 48kHz).

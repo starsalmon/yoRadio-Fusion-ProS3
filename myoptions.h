@@ -302,6 +302,8 @@
 #define BT_COMPANION_WAKE_PIN  38
 #define BT_COMPANION_WAKE_PULSE_MS 600
 #define BT_COMPANION_SINK_NAME "HiFi-IIS"
+// Discoverable name when ProS3 is in Bluetooth receive (input) mode.
+#define BT_COMPANION_RX_LOCAL_NAME "yoRadio Fusion"
 /********************************************/
 
 /*****************************************/

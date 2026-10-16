@@ -207,7 +207,6 @@ void Config::init() {
   EEPROM.commit();
 
   // Clamp play mode (fork adds PM_PODCAST=2; DLNA is handled via playlistSource).
-  store.play_mode = store.play_mode & 0b11;
   if (store.play_mode > MAX_PLAY_MODE) store.play_mode = PM_WEB;
   _initHW();
   if (!SPIFFS.begin(true)) {
@@ -424,7 +423,23 @@ void Config::toggleMode() {
     return;
   }
 
-  // Podcast (and unknown)
+  if (getMode() == PM_PODCAST) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    changeMode(PM_BLUETOOTH);
+#else
+    changeMode(PM_WEB);
+#endif
+    return;
+  }
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (getMode() == PM_BLUETOOTH) {
+    changeMode(PM_WEB);
+    return;
+  }
+#endif
+
+  // Podcast (and unknown) -> web
   changeMode(PM_WEB);
 }
 
@@ -438,7 +453,15 @@ void Config::changeMode(int newmode) { // DLNA mod
             newmode = (SDC_CS != 255) ? PM_SDCARD : PM_PODCAST;
         } else if (getMode() == PM_SDCARD) {
             newmode = PM_PODCAST;
-        } else { // Podcast (and unknown)
+        } else if (getMode() == PM_PODCAST) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+            newmode = PM_BLUETOOTH;
+#else
+            newmode = PM_WEB;
+#endif
+        } else if (getMode() == PM_BLUETOOTH) {
+            newmode = PM_WEB;
+        } else { // unknown
             newmode = PM_WEB;
         }
     }
@@ -467,6 +490,45 @@ void Config::changeMode(int newmode) { // DLNA mod
         Serial.println("##[ERROR]# Podcast mode requires Wi-Fi");
         return;
     }
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    if (newmode == PM_BLUETOOTH && oldMode != PM_BLUETOOTH) {
+        if (pir) {
+            player.lockOutput = true;
+            player.sendCommand({PR_STOP, 0});
+            uint32_t stopStart = millis();
+            while (player.isRunning() && (millis() - stopStart) < 1200) {
+                player.loop();
+                delay(10);
+            }
+            if (player.isRunning()) player.stopSong();
+            player.lockOutput = false;
+        }
+        if (store.outputDevice == 1) {
+            btcompanion_setEnabled(false);
+        }
+        if (!player.releaseI2sBusToCompanion()) {
+            Serial.println("##[ERROR]# Failed to release I2S bus for BT RX");
+            return;
+        }
+        player.setSpeakerForceMuted(false);
+        setStation("Bluetooth");
+        setTitle("Pair your phone");
+        btcompanion_enterRxMode(btcompanion_rxLocalName());
+        btcompanion_setRxVolume(store.volume);
+    }
+
+    if (oldMode == PM_BLUETOOTH && newmode != PM_BLUETOOTH) {
+        btcompanion_exitRxMode();
+        if (!player.reclaimI2sBusFromCompanion()) {
+            Serial.println("##[WARN]# I2S bus reclaim failed after BT RX");
+        }
+        player.setSpeakerForceMuted(store.outputDevice == 1);
+        setTitle(LANG::const_PlStopped);
+    }
+#else
+    if (newmode == PM_BLUETOOTH) return;
+#endif
 
     // NOTE: Avoid writing "Podcast" UI state before the mode is actually committed.
     // If something resets mid-transition, we'd otherwise show "Indexing..." while still in SD.
@@ -601,7 +663,10 @@ void Config::changeMode(int newmode) { // DLNA mod
 
     // For non-podcast modes, line 2 should indicate the stopped state when nothing is playing.
     // (Podcast mode uses line 2 for episode titles while browsing.)
-    if (getMode() != PM_PODCAST && !player.isRunning()) {
+    if (getMode() == PM_BLUETOOTH) {
+      setStation("Bluetooth");
+      setTitle("Pair your phone");
+    } else if (getMode() != PM_PODCAST && !player.isRunning()) {
       setTitle(LANG::const_PlStopped);
     }
 
@@ -620,7 +685,7 @@ void Config::changeMode(int newmode) { // DLNA mod
     #endif
     // When entering Podcast mode, do not auto-resume old playback.
     // (Podcast mode is list-driven; also avoids keeping SD audio alive.)
-    if (pir && getMode() != PM_PODCAST) {
+    if (pir && getMode() != PM_PODCAST && getMode() != PM_BLUETOOTH) {
       #ifdef USE_DLNA
         uint16_t st = (getMode() == PM_SDCARD) ? store.lastSdStation
                                                : (store.playlistSource == PL_SRC_DLNA ? store.lastDlnaStation : store.lastStation);
@@ -767,6 +832,14 @@ void Config::setSDpos(uint32_t val){
 
 void Config::initPlaylistMode() {
   uint16_t _lastStation = 0;
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (getMode() == PM_BLUETOOTH) {
+    setStation("Bluetooth");
+    setTitle("Pair your phone");
+    return;
+  }
+#endif
 
 #ifdef USE_SD
   if (getMode() == PM_SDCARD) {

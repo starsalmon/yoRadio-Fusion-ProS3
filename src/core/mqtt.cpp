@@ -1236,6 +1236,7 @@ void mqttPublishStatus() {
     if (config.getMode() == PM_SDCARD) mode = "SD Card";
 #endif
     if (config.getMode() == PM_PODCAST) mode = "Podcast";
+    else if (config.getMode() == PM_BLUETOOTH) mode = "Bluetooth";
 #ifdef USE_DLNA
     if (config.getMode() == PM_WEB && config.store.playlistSource == PL_SRC_DLNA) mode = "DLNA";
 #endif

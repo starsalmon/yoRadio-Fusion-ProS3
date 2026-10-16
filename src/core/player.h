@@ -76,6 +76,8 @@ class Player: public Audio {
     void setSpeakerForceMuted(bool v);
     void scheduleSpeakerUnmute(uint32_t delayMs);
     bool speakerForceMuted() const { return _speakerForceMuted; }
+    bool releaseI2sBusToCompanion();
+    bool reclaimI2sBusFromCompanion();
     void setResumeFilePos(uint32_t pos) { _resumeFilePos = pos; }
     uint32_t podcastResumeHintSec() const {
       if (_podcastResumeHintUntilMs == 0) return 0u;

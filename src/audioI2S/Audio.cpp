@@ -6252,7 +6252,52 @@ exit:
     startAudioTask();
 
     m_f_I2S_init = result;
+    if (result) {
+        m_pinBclk = BCLK;
+        m_pinLrc = LRC;
+        m_pinDout = DOUT;
+        m_i2sBusReleased = false;
+    }
     return m_f_I2S_init;
+}
+// —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+bool Audio::releaseI2sGpioBus(uint8_t BCLK, uint8_t LRC, uint8_t DOUT) {
+    if (!m_f_I2S_init) return false;
+    I2Sstop();
+    i2s_std_gpio_config_t gpio_cfg = {};
+    gpio_cfg.bclk = I2S_GPIO_UNUSED;
+    gpio_cfg.ws = I2S_GPIO_UNUSED;
+    gpio_cfg.dout = I2S_GPIO_UNUSED;
+    gpio_cfg.din = I2S_GPIO_UNUSED;
+    gpio_cfg.mclk = I2S_GPIO_UNUSED;
+    (void)i2s_channel_reconfig_std_gpio(m_i2s_tx_handle, &gpio_cfg);
+    const int pins[] = {(int)BCLK, (int)LRC, (int)DOUT};
+    for (int p : pins) {
+        if (p < 0) continue;
+        gpio_reset_pin((gpio_num_t)p);
+        pinMode(p, INPUT);
+        gpio_pullup_dis((gpio_num_t)p);
+        gpio_pulldown_dis((gpio_num_t)p);
+    }
+    m_i2sBusReleased = true;
+    return true;
+}
+
+bool Audio::restoreI2sGpioBus(uint8_t BCLK, uint8_t LRC, uint8_t DOUT) {
+    if (!m_f_I2S_init) return false;
+    i2s_std_gpio_config_t gpio_cfg = {};
+    gpio_cfg.bclk = (gpio_num_t)BCLK;
+    gpio_cfg.ws = (gpio_num_t)LRC;
+    gpio_cfg.dout = (gpio_num_t)DOUT;
+    gpio_cfg.din = I2S_GPIO_UNUSED;
+    gpio_cfg.mclk = I2S_GPIO_UNUSED;
+    if (i2s_channel_reconfig_std_gpio(m_i2s_tx_handle, &gpio_cfg) != ESP_OK) return false;
+    I2Sstart();
+    m_pinBclk = BCLK;
+    m_pinLrc = LRC;
+    m_pinDout = DOUT;
+    m_i2sBusReleased = false;
+    return true;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 uint32_t Audio::getFileSize() { // returns the size of webfile or local file

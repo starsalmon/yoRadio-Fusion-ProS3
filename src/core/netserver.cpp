@@ -719,6 +719,9 @@ void NetServer::processQueue(){
       if (config.getMode() == PM_PODCAST) {
           sprintf(wsBuf, "{\"playermode\": \"modepodcast\"}");
       } else
+      if (config.getMode() == PM_BLUETOOTH) {
+          sprintf(wsBuf, "{\"playermode\": \"modebluetooth\"}");
+      } else
       if (config.getMode() == PM_SDCARD) {
           sprintf(wsBuf, "{\"playermode\": \"modesd\"}");
         } else {

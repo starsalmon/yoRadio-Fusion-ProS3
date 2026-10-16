@@ -33,8 +33,12 @@ SDManager sdman(FSImplPtr(new VFSImpl()));
 
 bool SDManager::start(){
 #if defined(TFT_CS) && (TFT_CS != 255)
-  pinMode(TFT_CS, OUTPUT);
-  digitalWrite(TFT_CS, HIGH);
+  // Only before the TFT driver owns the pin (boot). After that, never drive TFT_CS from here:
+  // start() runs from mode-switch tasks while the display may be mid-transaction.
+  if (!display.ready()) {
+    pinMode(TFT_CS, OUTPUT);
+    digitalWrite(TFT_CS, HIGH);
+  }
 #endif
   pinMode(SDC_CS, OUTPUT);
   digitalWrite(SDC_CS, HIGH);

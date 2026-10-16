@@ -8,10 +8,9 @@
 extern "C" void yoradio_sd_spi_acquire() {
   sdog.begin();
   sdog.takeMutex();
-#if defined(TFT_CS) && (TFT_CS != 255)
-  pinMode(TFT_CS, OUTPUT);
-  digitalWrite(TFT_CS, HIGH);
-#endif
+  // Do NOT touch TFT_CS here. Adafruit_SPITFT raises CS at endWrite(); forcing it from the SD
+  // task (pinMode+digitalWrite before beginTransaction) could yank CS in the middle of a TFT
+  // command issued outside this lock (sendCommand/invert/flip/sleep) -> panel desync/white screen.
 }
 
 extern "C" void yoradio_sd_spi_release() {

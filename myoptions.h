@@ -301,6 +301,8 @@
 #define BT_COMPANION_UART_RX   44
 #define BT_COMPANION_WAKE_PIN  38
 #define BT_COMPANION_WAKE_PULSE_MS 600
+// BT receive loudness trim vs web/SD (100 = same curve as local sources; raise if BT is quieter).
+#define BT_RX_VOL_GAIN_PCT 100
 #define BT_COMPANION_SINK_NAME "HiFi-IIS"
 // Discoverable name when ProS3 is in Bluetooth receive (input) mode.
 #define BT_COMPANION_RX_LOCAL_NAME "yoRadio Fusion"

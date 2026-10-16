@@ -21,6 +21,10 @@
 #ifndef BT_COMPANION_WAKE_PIN
 #define BT_COMPANION_WAKE_PIN 38
 #endif
+#ifndef BT_RX_VOL_GAIN_PCT
+// Trim BT receive level vs local sources (100 = match the yoRadio volume curve).
+#define BT_RX_VOL_GAIN_PCT 100
+#endif
 #ifndef BT_COMPANION_WAKE_PULSE_MS
 #define BT_COMPANION_WAKE_PULSE_MS 80
 #endif
@@ -571,9 +575,18 @@ BtCompanionLinkState btcompanion_rxLinkState() { return s_rxLink; }
 
 void btcompanion_setRxVolume(uint8_t volume) {
   if (!s_rxActive) return;
+  // yoRadio volume is 0..100 (setVolumeSteps(100)). Previously this clamped to 0..21, so any
+  // volume above 21% sent full scale (VOL 127) and BT was far louder than local sources.
+  // Mirror Audio::calculateVolumeLimits() so the same knob position gives a similar level.
   uint8_t v = volume;
-  if (v > 21) v = 21;
-  const uint8_t avrcp = (uint8_t)((v * 127u) / 21u);
+  if (v > 100) v = 100;
+  const float t = (float)v / 100.0f;
+  float g = (t < 0.5f) ? (t * t * 1.3f) : (0.3f + ((t - 0.5f) / 0.5f) * 0.7f);
+  g *= 0.9f * ((float)BT_RX_VOL_GAIN_PCT / 100.0f);
+  if (g > 1.0f) g = 1.0f;
+  if (g < 0.0f) g = 0.0f;
+  uint8_t avrcp = (uint8_t)lroundf(g * 127.0f);
+  if (v > 0 && avrcp == 0) avrcp = 1;
   char buf[24];
   snprintf(buf, sizeof(buf), "VOL %u", (unsigned)avrcp);
   sendLine(buf);

@@ -37,6 +37,16 @@ void DspCore::clearDsp(bool black){ fillScreen(black?0:config.theme.background);
 void DspCore::flip(){ TftBusLock l; setRotation(config.store.flipscreen?1:3); }
 void DspCore::invert(){ TftBusLock l; invertDisplay(config.store.invertdisplay); }
 void DspCore::sleep(void){ TftBusLock l; sendCommand(ILI9341_SLPIN); delay(150); sendCommand(ILI9341_DISPOFF); delay(150);}
-void DspCore::wake(void){ TftBusLock l; sendCommand(ILI9341_DISPON); delay(150); sendCommand(ILI9341_SLPOUT); delay(150);}
+void DspCore::wake(void){ TftBusLock l; sendCommand(ILI9341_SLPOUT); delay(120); sendCommand(ILI9341_DISPON); delay(20);}
+// Re-assert the registers that, if lost (reset/DISPOFF/SLPIN), leave this normally-white panel white.
+// Does not touch GRAM, so it is invisible when the panel is already fine.
+void DspCore::refreshRegs(){
+  TftBusLock l;
+  sendCommand(ILI9341_SLPOUT); delay(5);
+  uint8_t pf = 0x55; sendCommand(ILI9341_PIXFMT, &pf, 1);
+  setRotation(config.store.flipscreen?1:3);
+  invertDisplay(config.store.invertdisplay);
+  sendCommand(ILI9341_DISPON);
+}
 
 #endif

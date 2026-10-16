@@ -17,6 +17,7 @@ class DspCore: public yoDisplay {
   public:
     DspCore();
     void initDisplay();
+    void refreshRegs();   // ILI9341: re-assert power/format registers (safety net)
     void clearDsp(bool black=false);
     void printClock(){}
     #ifdef DSP_OLED

@@ -51,7 +51,7 @@ void MyNetwork::WiFiReconnected(WiFiEvent_t event, WiFiEventInfo_t info){
   player.lockOutput = false;
   delay(100);
   display.putRequest(NEWMODE, PLAYER);
-  if(config.getMode()==PM_SDCARD) {
+  if(config.getMode()==PM_SDCARD || config.getMode()==PM_BLUETOOTH) {  // offline-capable modes
     network.status=CONNECTED;
     display.putRequest(NEWIP, 0);
     display.putRequest(DSPRSSI, WiFi.RSSI());
@@ -70,7 +70,7 @@ void MyNetwork::WiFiReconnected(WiFiEvent_t event, WiFiEventInfo_t info){
 void MyNetwork::WiFiLostConnection(WiFiEvent_t event, WiFiEventInfo_t info){
   if(!network.beginReconnect){
     Serial.printf("Lost connection, reconnecting to %s...\n", config.ssids[config.store.lastSSID-1].ssid);
-    if(config.getMode()==PM_SDCARD) {
+    if(config.getMode()==PM_SDCARD || config.getMode()==PM_BLUETOOTH) {  // keep playing, no LOST screen
       network.status=SDREADY;
       display.putRequest(NEWIP, 0);
       display.putRequest(DSPRSSI, 0);
@@ -160,7 +160,8 @@ void MyNetwork::begin() {
     raiseSoftAP();
     return;
   }
-  if(config.getMode()!=PM_SDCARD){
+  // SD and BT play without Wi-Fi: don't block boot; search for Wi-Fi in the background.
+  if(config.getMode()!=PM_SDCARD && config.getMode()!=PM_BLUETOOTH){
     if(!wifiBegin()){
       raiseSoftAP();
       Serial.println("##[BOOT]#\tdone");

@@ -1061,6 +1061,31 @@ void Display::loop() {
   // Bisect vs main: no display-side bus lock. SPIClass already serialises transactions
   // (paramLock); only skip drawing while SD indexing holds the bus for a long scan.
   if (sdman.indexing()) return;
+#if DSP_MODEL==DSP_ILI9341
+  // White-screen safety net (MISO isn't wired, so the panel can't be read back):
+  //  - every 30 s on the player page: re-assert power/format registers (invisible)
+  //  - on every play-mode change: full panel re-init + redraw
+  if (_mode == PLAYER && config.store.dspon) {
+    static uint32_t s_regRefreshMs = 0;
+    static int s_lastPlayMode = -1;
+    const uint32_t nowMs = millis();
+    const int pmode = (int)config.getMode();
+    if (s_lastPlayMode >= 0 && pmode != s_lastPlayMode) {
+      Serial.printf("[DSP] play mode %d->%d: panel re-init\n", s_lastPlayMode, pmode);
+      dsp.initDisplay();
+      _pager->setPage(pages[PG_PLAYER]);
+      // Already on the display task: redraw directly (don't post to our own queue).
+      _station();
+      _title();
+      _volume();
+      s_regRefreshMs = nowMs;
+    } else if ((uint32_t)(nowMs - s_regRefreshMs) >= 30000u) {
+      s_regRefreshMs = nowMs;
+      dsp.refreshRegs();
+    }
+    s_lastPlayMode = pmode;
+  }
+#endif
 #endif
 
   _pager->loop();

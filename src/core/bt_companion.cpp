@@ -2,6 +2,7 @@
 
 #include "options.h"
 #include "display.h"
+#include "config.h"
 
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
 
@@ -64,6 +65,7 @@ enum class RxHandoverStep : uint8_t {
   None = 0,
   EnterWake,
   EnterPing,
+  EnterStatusCheck,
   EnterHandover,
   EnterModeRx,
   ExitModeTx,
@@ -72,6 +74,11 @@ static RxHandoverStep s_rxStep = RxHandoverStep::None;
 static uint32_t s_rxStepAtMs = 0;
 static uint32_t s_rxPingBaselineMs = 0;
 static uint8_t s_pingTries = 0;
+// Last HiGrow STATUS: mode=rx and bt=1 (A2DP sink running => HiGrow is I2S master).
+static bool s_hgModeRx = false;
+static int s_hgRxSink = -1;
+static uint32_t s_rxStatusBaselineMs = 0;
+static uint32_t s_lastStatusMsFwd = 0;
 static bool s_rxExitCompleteFlag = false;
 
 static void sendLine(const char *s);
@@ -108,12 +115,33 @@ static void rxHandoverAdvance() {
         s_pingTries = 0;
         Serial.println("[BT2] RX handover: PONG ok");
       }
-      {
+      // Keep-connected: if the HiGrow is already in RX with the sink up (e.g. ProS3 rebooted),
+      // don't restart it (that drops the phone). Ask for STATUS first.
+      s_rxStatusBaselineMs = s_lastStatusMsFwd;
+      sendLine("STATUS");
+      s_rxStep = RxHandoverStep::EnterStatusCheck;
+      s_rxStepAtMs = now;
+      break;
+    case RxHandoverStep::EnterStatusCheck: {
+      const bool fresh = (s_lastStatusMsFwd != s_rxStatusBaselineMs);
+      if (fresh && s_hgModeRx && s_hgRxSink == 1) {
+        // ProS3 I2S pins were already released before enterRxMode(); HiGrow stays master.
+        Serial.println("[BT2] RX handover: HiGrow already RX master, keeping phone connected");
+        btcompanion_setRxVolume(config.store.volume);  // resync volume
+        sendLine("STATUS");  // also makes the HiGrow replay cached META
+        display.putRequest(DRAWVOL);
+        display.putRequest(NEWSTATION);
+        display.putRequest(NEWTITLE);
+        s_rxStep = RxHandoverStep::None;
+        break;
+      }
+      if (fresh || (uint32_t)(now - s_rxStepAtMs) >= 800u) {
         sendLine("HANDOVER PROS3_RELEASED");
         s_rxStep = RxHandoverStep::EnterHandover;
         s_rxStepAtMs = now;
       }
       break;
+    }
     case RxHandoverStep::EnterHandover:
       if (s_uartLastComplete.indexOf("OK HIGROW_ARMED") >= 0) {
         s_uartLastComplete = "";
@@ -134,6 +162,7 @@ static void rxHandoverAdvance() {
     case RxHandoverStep::EnterModeRx:
       if (s_uartLastComplete.indexOf("BUS_HIGROW_MASTER") >= 0) {
         s_uartLastComplete = "";
+        btcompanion_setRxVolume(config.store.volume);  // VOL sent before wake may have been lost
         sendLine("STATUS");
         display.putRequest(DRAWVOL);
         s_rxStep = RxHandoverStep::None;
@@ -249,6 +278,9 @@ static void pumpRx() {
           v.trim();
           strlcpy(dst, v.c_str(), dstLen);
         };
+        s_hgModeRx = (out.indexOf("mode=rx") >= 0);
+        if (s_hgModeRx) { int b = -1; readInt("bt=", b); s_hgRxSink = b; } else { s_hgRxSink = -1; }
+        s_lastStatusMsFwd = millis();
         if (out.indexOf("mode=rx") >= 0) {
           readInt("conn=", s_rxConn);
           readInt("audio=", s_rxAudio);

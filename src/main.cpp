@@ -162,8 +162,9 @@ void setup() {
   btcompanion_setEnabled(config.store.outputDevice == 1);
   // Prime companion with the current PCM sample rate (best-effort).
   btcompanion_setPcmSampleRate(player.getSampleRate());
-  if (config.store.outputDevice != 1) {
+  if (config.store.outputDevice != 1 && config.getMode() != PM_BLUETOOTH) {
     // Ensure companion isn't left streaming if ProS3 rebooted.
+    // (Not when booting into BT RX: the HiGrow may still be connected to the phone.)
     btcompanion_forceSleep();
   }
 #endif

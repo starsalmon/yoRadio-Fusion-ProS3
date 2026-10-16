@@ -1058,10 +1058,9 @@ void Display::loop() {
   if(displayQueue==NULL || _locked) return;
 
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+  // Bisect vs main: no display-side bus lock. SPIClass already serialises transactions
+  // (paramLock); only skip drawing while SD indexing holds the bus for a long scan.
   if (sdman.indexing()) return;
-  // Hold the shared SPI bus for the whole draw pass. Non-blocking: if SD owns it, skip this frame.
-  if (!yoradio_sd_spi_try_acquire_for_display()) return;
-  struct SdBusGuard { ~SdBusGuard() { yoradio_sd_spi_release_for_display(); } } _sdBusGuard;
 #endif
 
   _pager->loop();

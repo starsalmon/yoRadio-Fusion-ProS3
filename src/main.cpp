@@ -126,6 +126,8 @@ void setup() {
   config.init();
   clock_tts_setup();
 
+  display.init();   // main's boot order: display first
+
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   btcompanion_init();
 #endif
@@ -144,23 +146,13 @@ void setup() {
   g_biampCrossoverHzForAudio = config.store.biampCrossoverHz;
   // Apply mono state at boot.
   player.forceMono(config.store.forceMono != 0);
-#if SDC_CS != 255 && defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI
-  if (config.getMode() == PM_PODCAST) Serial.print("##[BOOT]#\tPodcast index\t");
-  else Serial.print("##[BOOT]#\tSD search\t");
-  Serial.flush();
-  config.initPlaylistMode();
-#endif
-  display.init();
-#if SDC_CS != 255 && !(defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI)
-  display.putRequest(WAITFORSD, 0);
-  if (config.getMode() == PM_PODCAST) Serial.print("##[BOOT]#\tPodcast index\t");
-  else Serial.print("##[BOOT]#\tSD search\t");
-  Serial.flush();
-  config.initPlaylistMode();
-#elif SDC_CS == 255
-  config.initPlaylistMode();
-#endif
   network.begin();
+  if(SDC_CS!=255) {
+    display.putRequest(WAITFORSD, 0);
+    if (config.getMode() == PM_PODCAST) Serial.print("##[BOOT]#\tPodcast index\t");
+    else Serial.print("##[BOOT]#\tSD search\t");
+  }
+  config.initPlaylistMode();
   netserver.begin();
   telnet.begin();
   initControls();

@@ -170,7 +170,7 @@
 //#define DSP_MODEL DSP_GC9A01A
 //#define HUN_LCD
 /*****************************************/
-#define TFT_SPI_FREQ 40000000UL
+#define TFT_SPI_FREQ 60000000UL
 //#define DSP_HSPI 1
 #define TFT_DC 5
 #define TFT_CS 4

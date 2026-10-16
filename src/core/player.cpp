@@ -556,7 +556,7 @@ void Player::setOutputPins(bool isPlaying) {
   if(REAL_LEDBUILTIN!=255) digitalWrite(REAL_LEDBUILTIN, LED_INVERT?!isPlaying:isPlaying);
   bool _ml = false;
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
-  // Bluetooth receive: HiGrow drives I2S; player is stopped but amps must stay enabled.
+  // BT receive: HiGrow drives I2S; keep 5V DAC rail (MUTE_PIN) on even though player is stopped.
   if (config.getMode() == PM_BLUETOOTH) {
     _ml = !MUTE_VAL;
   } else

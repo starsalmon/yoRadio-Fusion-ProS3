@@ -69,6 +69,8 @@ static uint32_t s_rxStepAtMs = 0;
 static uint32_t s_rxPingBaselineMs = 0;
 static bool s_rxExitCompleteFlag = false;
 
+static void sendLine(const char *s);
+
 static void rxHandoverAdvance() {
   const uint32_t now = millis();
   switch (s_rxStep) {

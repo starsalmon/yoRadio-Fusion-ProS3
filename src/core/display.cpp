@@ -1578,114 +1578,79 @@ static void spiffsKeyFromStationName(const char* stationName, char* outKey, size
 }
 
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
-// Bluetooth brand blue #0082FC -> RGB565 0x041F (station-logo slot: 64x64 or 80x80).
-static constexpr uint16_t kBtBadgeBlue = 0x041F;
-static constexpr uint16_t kBtBadgeBlueDim = 0x0318;
-static constexpr uint16_t kBtBadgeGray = 0x39E7;
-static constexpr uint16_t kBtRuneWhite = 0xFFFF;
-static constexpr uint16_t kBtRuneDim = 0xDEFB;
+#include "../displays/bitmaps/bt_official_logo_data.h"
+
 static constexpr uint16_t kLogoColorKey = 0xF81F;
 
-static bool readBtIconPixel(const uint8_t *bmp, int x, int y) {
-  if (!bmp || x < 0 || x >= 17 || y < 0 || y >= 16) return false;
-  const int byteIdx = y * 3 + (x / 8);
-  const int bit = 7 - (x % 8);
-  return ((bmp[byteIdx] >> bit) & 0x01) != 0;
+static uint16_t dimRgb565(uint16_t c, float dim) {
+  if (dim >= 0.999f) return c;
+  const uint8_t r = (uint8_t)((((c >> 11) & 0x1F) * 255u) / 31u);
+  const uint8_t g = (uint8_t)((((c >> 5) & 0x3F) * 255u) / 63u);
+  const uint8_t b = (uint8_t)(((c & 0x1F) * 255u) / 31u);
+  const uint8_t r2 = (uint8_t)((float)r * dim);
+  const uint8_t g2 = (uint8_t)((float)g * dim);
+  const uint8_t b2 = (uint8_t)((float)b * dim);
+  return (uint16_t)(((r2 & 0xF8) << 8) | ((g2 & 0xFC) << 3) | (b2 >> 3));
 }
 
-static const uint8_t *btRxRuneMaskBmp(BtCompanionLinkState link) {
-  switch (link) {
-    case BtCompanionLinkState::AUDIO:
-      return ICON_BT_CONNECTED_17x16;
-    case BtCompanionLinkState::CONNECTED:
-      return ICON_BT_17x16;
-    case BtCompanionLinkState::SEARCHING:
-      return ICON_BT_SEARCHING_17x16;
-    default:
-      return ICON_BT_DISABLED_17x16;
+static uint16_t blendRgb565(uint16_t bg, uint16_t fg, uint8_t alpha) {
+  if (alpha >= 255) return fg;
+  if (alpha == 0) return bg;
+  const uint32_t a = alpha;
+  const uint32_t ia = 255u - a;
+  const uint32_t br = (bg >> 11) & 0x1F;
+  const uint32_t bg6 = (bg >> 5) & 0x3F;
+  const uint32_t bb = bg & 0x1F;
+  const uint32_t fr = (fg >> 11) & 0x1F;
+  const uint32_t fg6 = (fg >> 5) & 0x3F;
+  const uint32_t fb = fg & 0x1F;
+  const uint32_t r = (br * ia + fr * a) / 255u;
+  const uint32_t g = (bg6 * ia + fg6 * a) / 255u;
+  const uint32_t b = (bb * ia + fb * a) / 255u;
+  return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+static uint16_t *buildBtRxStationLogo(uint16_t slotW, uint16_t slotH, uint16_t bgRgb565,
+                                      BtCompanionLinkState link) {
+  if (slotW == 0 || slotH == 0) return nullptr;
+
+  const uint16_t *logoRgb = nullptr;
+  const uint8_t *logoA = nullptr;
+  uint16_t logoW = 0;
+  uint16_t logoH = 0;
+  if (slotH == BT_OFFICIAL_LOGO_H_64 && slotW == BT_OFFICIAL_LOGO_H_64) {
+    logoW = BT_OFFICIAL_LOGO_W_64;
+    logoH = BT_OFFICIAL_LOGO_H_64;
+    logoRgb = bt_official_logo_rgb_64;
+    logoA = bt_official_logo_a_64;
+  } else if (slotH == BT_OFFICIAL_LOGO_H_80 && slotW == BT_OFFICIAL_LOGO_H_80) {
+    logoW = BT_OFFICIAL_LOGO_W_80;
+    logoH = BT_OFFICIAL_LOGO_H_80;
+    logoRgb = bt_official_logo_rgb_80;
+    logoA = bt_official_logo_a_80;
+  } else {
+    return nullptr;
   }
-}
 
-static float clamp01(float v) {
-  if (v < 0.f) return 0.f;
-  if (v > 1.f) return 1.f;
-  return v;
-}
+  float dim = 1.f;
+  if (link == BtCompanionLinkState::SEARCHING) dim = 0.72f;
+  else if (link == BtCompanionLinkState::OFF) dim = 0.55f;
 
-static float sampleBtRuneMask(const uint8_t *bmp, float u, float v) {
-  if (!bmp) return 0.f;
-  const float fx = u * 16.f;
-  const float fy = v * 15.f;
-  const int x0 = (int)fx;
-  const int y0 = (int)fy;
-  const int x1 = (x0 < 16) ? x0 + 1 : 16;
-  const int y1 = (y0 < 15) ? y0 + 1 : 15;
-  const float tx = fx - (float)x0;
-  const float ty = fy - (float)y0;
-  const float p00 = readBtIconPixel(bmp, x0, y0) ? 1.f : 0.f;
-  const float p10 = readBtIconPixel(bmp, x1, y0) ? 1.f : 0.f;
-  const float p01 = readBtIconPixel(bmp, x0, y1) ? 1.f : 0.f;
-  const float p11 = readBtIconPixel(bmp, x1, y1) ? 1.f : 0.f;
-  const float a = p00 + (p10 - p00) * tx;
-  const float b = p01 + (p11 - p01) * tx;
-  return a + (b - a) * ty;
-}
-
-static float sampleBadgeFill(float px, float py, float cx, float cy, float r) {
-  const float d = hypotf(px - cx, py - cy);
-  return clamp01((r - d) + 0.85f);
-}
-
-static uint16_t *buildBtRxStationLogo(uint16_t outW, uint16_t outH, BtCompanionLinkState link) {
-  if (outW == 0 || outH == 0) return nullptr;
-  const size_t n = (size_t)outW * (size_t)outH;
+  const size_t n = (size_t)slotW * (size_t)slotH;
   uint16_t *buf = (uint16_t *)malloc(n * sizeof(uint16_t));
   if (!buf) return nullptr;
+  for (size_t i = 0; i < n; i++) buf[i] = kLogoColorKey;
 
-  uint16_t badgeCol = kBtBadgeBlue;
-  uint16_t runeCol = kBtRuneWhite;
-  if (link == BtCompanionLinkState::SEARCHING) {
-    badgeCol = kBtBadgeBlueDim;
-    runeCol = kBtRuneDim;
-  } else if (link == BtCompanionLinkState::OFF) {
-    badgeCol = kBtBadgeGray;
-    runeCol = kBtRuneDim;
-  }
-
-  const uint8_t *mask = btRxRuneMaskBmp(link);
-  const float cx = (float)outW * 0.5f;
-  const float cy = (float)outH * 0.5f;
-  const float r = (float)min(outW, outH) * 0.47f;
-  const float runeScale = r * 1.35f;
-
-  for (uint16_t y = 0; y < outH; y++) {
-    for (uint16_t x = 0; x < outW; x++) {
-      float badgeA = 0.f;
-      float runeA = 0.f;
-      for (int sy = 0; sy < 4; sy++) {
-        for (int sx = 0; sx < 4; sx++) {
-          const float px = (float)x + ((float)sx + 0.5f) / 4.f;
-          const float py = (float)y + ((float)sy + 0.5f) / 4.f;
-          badgeA += sampleBadgeFill(px, py, cx, cy, r);
-          const float dx = (px - cx) / runeScale;
-          const float dy = (py - cy) / runeScale;
-          const float u = dx * (17.f / 16.f) + 0.5f;
-          const float v = dy + 0.5f;
-          if (u >= 0.f && u <= 1.f && v >= 0.f && v <= 1.f) {
-            runeA += sampleBtRuneMask(mask, u, v);
-          }
-        }
-      }
-      badgeA /= 16.f;
-      runeA /= 16.f;
-
-      if (badgeA < 0.04f) {
-        buf[y * outW + x] = kLogoColorKey;
-      } else if (runeA > 0.45f) {
-        buf[y * outW + x] = runeCol;
-      } else {
-        buf[y * outW + x] = badgeCol;
-      }
+  const int offX = (int)slotW > (int)logoW ? ((int)slotW - (int)logoW) / 2 : 0;
+  for (uint16_t y = 0; y < logoH; y++) {
+    for (uint16_t x = 0; x < logoW; x++) {
+      const size_t li = (size_t)y * (size_t)logoW + (size_t)x;
+      const uint8_t a = logoA[li];
+      if (a == 0) continue;
+      uint16_t fg = logoRgb[li];
+      if (dim < 1.f) fg = dimRgb565(fg, dim);
+      const uint16_t out = (a >= 250) ? fg : blendRgb565(bgRgb565, fg, a);
+      buf[(size_t)y * (size_t)slotW + (size_t)offX + (size_t)x] = out;
     }
   }
   return buf;
@@ -2037,7 +2002,7 @@ void Display::_updateStationLogo() {
     }
 
     if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
-    uint16_t *px = buildBtRxStationLogo(wantW, wantH, btcompanion_rxLinkState());
+    uint16_t *px = buildBtRxStationLogo(wantW, wantH, config.theme.background, btcompanion_rxLinkState());
     if (!px) {
       _stationLogo->unlock();
       _stationLogo->setImage(nullptr, 0, 0);

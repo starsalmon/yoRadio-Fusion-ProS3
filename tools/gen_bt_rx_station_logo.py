@@ -1,111 +1,110 @@
 #!/usr/bin/env python3
-"""Preview / validate the ProS3 BT RX station-logo raster (matches display.cpp).
+"""Rasterise Wikimedia Bluetooth.svg into RGB565 + alpha for ProS3 station-logo slot.
 
-Slot sizes: 64x64 (vuLayout 0) or 80x80. Badge: filled circle, #0082FC (RGB565 0x041F),
-white rune from bilinear-upsampled 17x16 Material BT mask. 4x4 supersampling per pixel.
+Official oval aspect width:height = 753:1024 (per Bluetooth brand guidance).
+Oval fill #0060AA; rune solid white. Heights 64 and 80 (width scaled, centred in slot).
 
-Usage: python3 tools/gen_bt_rx_station_logo.py [64|80] [out.png]
+Outputs: src/displays/bitmaps/bt_official_logo_data.h
+
+Requires: cairosvg, pillow (pip install cairosvg pillow)
 """
 
 from __future__ import annotations
 
-import math
+import io
 import struct
-import sys
+import textwrap
 from pathlib import Path
 
-# Footer icon: ICON_BT_17x16 from footer_icons_16.h (MSB-first, 3 bytes/row)
-ICON_BT_17x16 = bytes([
-    0x01, 0x80, 0x00, 0x01, 0xc0, 0x00, 0x01, 0xe0, 0x00, 0x19, 0x30, 0x00, 0x0d, 0x30, 0x00, 0x07,
-    0x30, 0x00, 0x03, 0xe0, 0x00, 0x01, 0xc0, 0x00, 0x01, 0xc0, 0x00, 0x03, 0xe0, 0x00, 0x07, 0x30,
-    0x00, 0x0d, 0x30, 0x00, 0x19, 0x30, 0x00, 0x11, 0xe0, 0x00, 0x01, 0xc0, 0x00, 0x01, 0x80, 0x00,
-])
+import cairosvg
+from PIL import Image
 
-BT_BLUE = (0x00, 0x82, 0xFC)
-MAGENTA_KEY = (0xF8, 0x00, 0xF8)
+ROOT = Path(__file__).resolve().parents[1]
+OUT_H = ROOT / "src/displays/bitmaps/bt_official_logo_data.h"
+SVG_PATH = ROOT / "images_src" / "Bluetooth.svg"
 
-
-def read_bt_pixel(bmp: bytes, x: int, y: int) -> float:
-    if x < 0 or x >= 17 or y < 0 or y >= 16:
-        return 0.0
-    byte_idx = y * 3 + x // 8
-    bit = 7 - (x % 8)
-    return 1.0 if (bmp[byte_idx] >> bit) & 1 else 0.0
+# User / brand colour (replaces #0a3d91 in Commons SVG).
+OVAL_BLUE = "#0060AA"
+ASPECT_W_OVER_H = 753 / 1024.0
+SLOT_HEIGHTS = (64, 80)
+SUPERSAMPLE = 4
+COLOR_KEY_RGB565 = 0xF81F
 
 
-def sample_mask(bmp: bytes, u: float, v: float) -> float:
-    fx, fy = u * 16.0, v * 15.0
-    x0, y0 = int(fx), int(fy)
-    x1 = min(x0 + 1, 16)
-    y1 = min(y0 + 1, 15)
-    tx, ty = fx - x0, fy - y0
-    p00 = read_bt_pixel(bmp, x0, y0)
-    p10 = read_bt_pixel(bmp, x1, y0)
-    p01 = read_bt_pixel(bmp, x0, y1)
-    p11 = read_bt_pixel(bmp, x1, y1)
-    a = p00 + (p10 - p00) * tx
-    b = p01 + (p11 - p01) * tx
-    return a + (b - a) * ty
+def svg_bytes() -> bytes:
+    raw = SVG_PATH.read_text(encoding="utf-8")
+    raw = raw.replace('fill="#0a3d91"', f'fill="{OVAL_BLUE}"')
+    raw = raw.replace('fill="#0A3D91"', f'fill="{OVAL_BLUE}"')
+    # Solid white rune (stroke is opaque white on blue in the asset).
+    raw = raw.replace('stroke="#FFF"', 'stroke="#FFFFFF"')
+    return raw.encode("utf-8")
 
 
-def render(size: int) -> list[tuple[int, int, int]]:
-    cx = cy = size * 0.5
-    r = size * 0.47
-    rune_scale = r * 1.35
-    out: list[tuple[int, int, int]] = []
-    for y in range(size):
-        for x in range(size):
-            badge_a = rune_a = 0.0
-            for sy in range(4):
-                for sx in range(4):
-                    px = x + (sx + 0.5) / 4.0
-                    py = y + (sy + 0.5) / 4.0
-                    d = math.hypot(px - cx, py - cy)
-                    badge_a += max(0.0, min(1.0, (r - d) + 0.85))
-                    dx = (px - cx) / rune_scale
-                    dy = (py - cy) / rune_scale
-                    u = dx * (17.0 / 16.0) + 0.5
-                    v = dy + 0.5
-                    if 0.0 <= u <= 1.0 and 0.0 <= v <= 1.0:
-                        rune_a += sample_mask(ICON_BT_17x16, u, v)
-            badge_a /= 16.0
-            rune_a /= 16.0
-            if badge_a < 0.04:
-                out.append(MAGENTA_KEY)
-            elif rune_a > 0.45:
-                out.append((255, 255, 255))
-            else:
-                out.append(BT_BLUE)
-    return out
+def rgb_to_rgb565(r: int, g: int, b: int) -> int:
+    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 
-def write_png(path: Path, size: int, rgb: list[tuple[int, int, int]]) -> None:
-    import zlib
+def rasterize_logo(height: int) -> tuple[int, int, list[int], list[int]]:
+    """Return (width, height, rgb565[], alpha 0..255)."""
+    logo_w = max(1, int(round(height * ASPECT_W_OVER_H)))
+    render_h = height * SUPERSAMPLE
+    render_w = max(1, int(round(render_h * ASPECT_W_OVER_H)))
 
-    def chunk(tag: bytes, data: bytes) -> bytes:
-        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+    png = cairosvg.svg2png(
+        bytestring=svg_bytes(),
+        output_width=render_w,
+        output_height=render_h,
+    )
+    img = Image.open(io.BytesIO(png)).convert("RGBA")
+    img = img.resize((logo_w, height), Image.Resampling.LANCZOS)
 
-    raw = bytearray()
-    for y in range(size):
-        raw.append(0)
-        for x in range(size):
-            raw.extend(rgb[y * size + x])
-    compressed = zlib.compress(bytes(raw), 9)
-    png = b"\x89PNG\r\n\x1a\n"
-    png += chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
-    png += chunk(b"IDAT", compressed)
-    png += chunk(b"IEND", b"")
-    path.write_bytes(png)
+    rgb565: list[int] = []
+    alpha: list[int] = []
+    for y in range(height):
+        for x in range(logo_w):
+            r, g, b, a = img.getpixel((x, y))
+            rgb565.append(rgb_to_rgb565(r, g, b))
+            alpha.append(a)
+    return logo_w, height, rgb565, alpha
+
+
+def emit_c_array(name: str, values: list[int], per_line: int = 12) -> str:
+    lines = []
+    for i in range(0, len(values), per_line):
+        chunk = ", ".join(f"0x{v:04X}" if name.endswith("_rgb") else str(v) for v in values[i : i + per_line])
+        lines.append(f"  {chunk},")
+    return f"static const uint16_t {name}[] PROGMEM = {{\n" + "\n".join(lines) + "\n};\n"
+
+
+def emit_alpha_array(name: str, values: list[int]) -> str:
+    lines = []
+    per_line = 16
+    for i in range(0, len(values), per_line):
+        chunk = ", ".join(str(v) for v in values[i : i + per_line])
+        lines.append(f"  {chunk},")
+    return f"static const uint8_t {name}[] PROGMEM = {{\n" + "\n".join(lines) + "\n};\n"
 
 
 def main() -> None:
-    size = int(sys.argv[1]) if len(sys.argv) > 1 else 64
-    if size not in (64, 80):
-        raise SystemExit("size must be 64 or 80")
-    rgb = render(size)
-    out = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(f"/tmp/bt_rx_logo_{size}.png")
-    write_png(out, size, rgb)
-    print(f"Wrote {out} ({size}x{size}, badge #0082FC, 4x SS)")
+    parts = [
+        "/* Auto-generated by tools/gen_bt_rx_station_logo.py — do not edit. */",
+        "#pragma once",
+        "#include <stdint.h>",
+        f"/* Oval #0060AA, aspect {ASPECT_W_OVER_H:.4f}, Wikimedia Bluetooth.svg */",
+        "",
+    ]
+
+    for h in SLOT_HEIGHTS:
+        w, hh, rgb, alpha = rasterize_logo(h)
+        parts.append(f"#define BT_OFFICIAL_LOGO_W_{h} {w}")
+        parts.append(f"#define BT_OFFICIAL_LOGO_H_{h} {hh}")
+        parts.append(emit_c_array(f"bt_official_logo_rgb_{h}", rgb))
+        parts.append(emit_alpha_array(f"bt_official_logo_a_{h}", alpha))
+        parts.append("")
+
+    OUT_H.parent.mkdir(parents=True, exist_ok=True)
+    OUT_H.write_text("\n".join(parts) + "\n", encoding="utf-8")
+    print(f"Wrote {OUT_H}")
 
 
 if __name__ == "__main__":

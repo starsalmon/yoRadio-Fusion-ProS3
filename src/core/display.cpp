@@ -1055,9 +1055,10 @@ void Display::loop() {
   if(displayQueue==NULL || _locked) return;
 
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
-  if (sdman.indexing() || yoradio_sd_spi_bus_busy()) {
-    return;
-  }
+  if (sdman.indexing()) return;
+  // Hold the shared SPI bus for the whole draw pass. Non-blocking: if SD owns it, skip this frame.
+  if (!yoradio_sd_spi_try_acquire_for_display()) return;
+  struct SdBusGuard { ~SdBusGuard() { yoradio_sd_spi_release_for_display(); } } _sdBusGuard;
 #endif
 
   _pager->loop();

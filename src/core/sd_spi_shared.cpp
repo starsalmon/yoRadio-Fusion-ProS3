@@ -18,6 +18,17 @@ extern "C" void yoradio_sd_spi_release() {
   sdog.giveMutex();
 }
 
+bool yoradio_sd_spi_try_acquire_for_display() {
+  sdog.begin();
+  if (spiMutex == nullptr) return true;
+  return xSemaphoreTakeRecursive(spiMutex, 0) == pdTRUE;
+}
+
+void yoradio_sd_spi_release_for_display() {
+  if (spiMutex == nullptr) return;
+  xSemaphoreGiveRecursive(spiMutex);
+}
+
 bool yoradio_sd_spi_bus_busy() {
   sdog.begin();
   return sdog.isLocked();

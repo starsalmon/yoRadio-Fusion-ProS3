@@ -893,7 +893,8 @@ void onBtnDoubleClick(int id) {
         break;
       }
     case EVT_BTNMODE: {
-        pm.on_btn_click(EVT_BTNMODE);
+        controlEvt_e evt = EVT_BTNMODE;
+        pm.on_btn_click(evt);
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
         if (config.getMode() == PM_BLUETOOTH) {
           uint8_t back = config.playModeBeforeBluetooth;

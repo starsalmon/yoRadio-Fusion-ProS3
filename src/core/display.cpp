@@ -19,6 +19,9 @@
 #include "../displays/bitmaps/footer_icons_16.h"
 #include "../myoptions.h"
 #include "sdmanager.h"
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+#include "sd_spi_shared.h"
+#endif
 #include "bt_companion.h"
 #include "album_art.h"
 #include "freertos/FreeRTOS.h"
@@ -1051,17 +1054,8 @@ void Display::loop() {
   }
   if(displayQueue==NULL || _locked) return;
 
-#if SDC_CS != 255
-  if (sdman.indexing()) {
-    // No TFT/SPI traffic while SD owns the shared bus; only mode/progress without redraw.
-    requestParams_t request;
-    if (xQueueReceive(displayQueue, &request, 0)) {
-      if (request.type == NEWMODE) {
-        _swichMode((displayMode_e)request.payload);
-      } else if (request.type == SDFILEINDEX && _mode == SDCHANGE && _nums) {
-        _nums->setText(request.payload, "%d");
-      }
-    }
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+  if (sdman.indexing() || yoradio_sd_spi_bus_busy()) {
     return;
   }
 #endif
@@ -1625,20 +1619,19 @@ static uint16_t blendRgb565(uint16_t bg, uint16_t fg, uint8_t alpha) {
   return (uint16_t)((r << 11) | (g << 5) | b);
 }
 
-static uint16_t *buildBtRxStationLogo(uint16_t slotW, uint16_t slotH, uint16_t bgRgb565,
-                                      BtCompanionLinkState link) {
+static uint16_t *buildBtRxStationLogo(uint16_t slotW, uint16_t slotH, uint16_t bgRgb565) {
   if (slotW == 0 || slotH == 0) return nullptr;
 
   const uint16_t *logoRgb = nullptr;
   const uint8_t *logoA = nullptr;
   uint16_t logoW = 0;
   uint16_t logoH = 0;
-  if (slotH == BT_OFFICIAL_LOGO_H_64 && slotW == BT_OFFICIAL_LOGO_H_64) {
+  if (slotW == 64 && slotH == 64) {
     logoW = BT_OFFICIAL_LOGO_W_64;
     logoH = BT_OFFICIAL_LOGO_H_64;
     logoRgb = bt_official_logo_rgb_64;
     logoA = bt_official_logo_a_64;
-  } else if (slotH == BT_OFFICIAL_LOGO_H_80 && slotW == BT_OFFICIAL_LOGO_H_80) {
+  } else if (slotW == 80 && slotH == 80) {
     logoW = BT_OFFICIAL_LOGO_W_80;
     logoH = BT_OFFICIAL_LOGO_H_80;
     logoRgb = bt_official_logo_rgb_80;
@@ -1646,10 +1639,6 @@ static uint16_t *buildBtRxStationLogo(uint16_t slotW, uint16_t slotH, uint16_t b
   } else {
     return nullptr;
   }
-
-  float dim = 1.f;
-  if (link == BtCompanionLinkState::SEARCHING) dim = 0.72f;
-  else if (link == BtCompanionLinkState::OFF) dim = 0.55f;
 
   const size_t n = (size_t)slotW * (size_t)slotH;
   uint16_t *buf = (uint16_t *)malloc(n * sizeof(uint16_t));
@@ -1662,8 +1651,7 @@ static uint16_t *buildBtRxStationLogo(uint16_t slotW, uint16_t slotH, uint16_t b
       const size_t li = (size_t)y * (size_t)logoW + (size_t)x;
       const uint8_t a = logoA[li];
       if (a == 0) continue;
-      uint16_t fg = logoRgb[li];
-      if (dim < 1.f) fg = dimRgb565(fg, dim);
+      const uint16_t fg = logoRgb[li];
       const uint16_t out = (a >= 250) ? fg : blendRgb565(bgRgb565, fg, a);
       buf[(size_t)y * (size_t)slotW + (size_t)offX + (size_t)x] = out;
     }
@@ -1920,19 +1908,17 @@ void Display::_updateStationLogo() {
     const bool want64 = (config.store.vuLayout == 0);
     const uint16_t wantW = want64 ? 64 : 80;
     const uint16_t wantH = want64 ? 64 : 80;
-    char btKey[24];
-    snprintf(btKey, sizeof(btKey), "bt%u_%04x", (unsigned)btcompanion_rxLinkState(),
-             (unsigned)config.theme.background);
+    static const char kBtLogoKey[] = "bt_official";
 
     if (_stationLogoScaled &&
-        strcmp(_stationLogoLastKey, btKey) == 0 &&
+        strcmp(_stationLogoLastKey, kBtLogoKey) == 0 &&
         _stationLogoW == wantW && _stationLogoH == wantH &&
         !_stationLogo->locked()) {
       return;
     }
 
     if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
-    uint16_t *px = buildBtRxStationLogo(wantW, wantH, config.theme.background, btcompanion_rxLinkState());
+    uint16_t *px = buildBtRxStationLogo(wantW, wantH, config.theme.background);
     if (!px) {
       _stationLogo->unlock();
       _stationLogo->setImage(nullptr, 0, 0);
@@ -1941,7 +1927,7 @@ void Display::_updateStationLogo() {
     }
     _stationLogo->setUseColorKey(true, 0xF81F);
     _stationLogoScaled = px;
-    strlcpy(_stationLogoLastKey, btKey, sizeof(_stationLogoLastKey));
+    strlcpy(_stationLogoLastKey, kBtLogoKey, sizeof(_stationLogoLastKey));
     _stationLogoUsedDefault = false;
     _stationLogoLastPixels = nullptr;
     _stationLogo->lock(true);

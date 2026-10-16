@@ -94,15 +94,21 @@ bool MyNetwork::wifiBegin(bool silent){
   while (true) {
     if(!silent){
       Serial.printf("##[BOOT]#\tAttempt to connect to %s\n", config.ssids[ls].ssid);
+      Serial.flush();
       Serial.print("##[BOOT]#\t");
-      display.putRequest(BOOTSTRING, ls);
+      if (display.ready()) {
+        display.putRequest(BOOTSTRING, ls);
+      }
     }
     //WiFi.disconnect(true, true); //disconnect & erase internal credentials https://github.com/e2002/yoradio/pull/164/commits/89d8b4450dde99cd7930b84bb14d81dab920b879
     //delay(100);
     WiFi.mode(WIFI_STA);
     WiFi.begin(config.ssids[ls].ssid, config.ssids[ls].password);
     while (WiFi.status() != WL_CONNECTED) {
-      if(!silent) Serial.print(".");
+      if(!silent) {
+        Serial.print(".");
+        if ((errcnt & 7u) == 7u) Serial.flush();
+      }
       delay(500);
       if(REAL_LEDBUILTIN!=255 && !silent) digitalWrite(REAL_LEDBUILTIN, !digitalRead(REAL_LEDBUILTIN));
       errcnt++;
@@ -179,7 +185,9 @@ void MyNetwork::begin() {
   if(config.isRTCFound()){
     rtc.getTime(&network.timeinfo);
     mktime(&network.timeinfo);
-    display.putRequest(CLOCK);
+    if (display.ready()) {
+      display.putRequest(CLOCK);
+    }
   }
 #endif
   if (network_on_connect) network_on_connect();

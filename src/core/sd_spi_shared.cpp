@@ -18,4 +18,9 @@ extern "C" void yoradio_sd_spi_release() {
   sdog.giveMutex();
 }
 
+bool yoradio_sd_spi_bus_busy() {
+  sdog.begin();
+  return sdog.isLocked();
+}
+
 #endif

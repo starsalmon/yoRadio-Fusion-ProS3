@@ -3,11 +3,12 @@
 #include <WiFi.h>
 
 #define MAX_TLN_CLIENTS 5
+/* Boot logs go to USB Serial only (telnet is not up yet during early boot). */
 #define BOOTLOG( ... ) do { \
     char buf[120]; \
     snprintf(buf, sizeof(buf), __VA_ARGS__); \
     Serial.printf("##[BOOT]#\t%s\n", buf); \
-    telnet.printf("##[BOOT]#\t%s\n", buf); \
+    Serial.flush(); \
   } while (0)
 
 class Telnet {

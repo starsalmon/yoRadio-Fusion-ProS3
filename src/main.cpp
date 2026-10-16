@@ -144,21 +144,23 @@ void setup() {
   g_biampCrossoverHzForAudio = config.store.biampCrossoverHz;
   // Apply mono state at boot.
   player.forceMono(config.store.forceMono != 0);
-  network.begin();
 #if SDC_CS != 255 && defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI
   if (config.getMode() == PM_PODCAST) Serial.print("##[BOOT]#\tPodcast index\t");
   else Serial.print("##[BOOT]#\tSD search\t");
-  config.initPlaylistMode();
-  display.init();
-#else
-  display.init();
-  if(SDC_CS!=255) {
-    display.putRequest(WAITFORSD, 0);
-    if (config.getMode() == PM_PODCAST) Serial.print("##[BOOT]#\tPodcast index\t");
-    else Serial.print("##[BOOT]#\tSD search\t");
-  }
+  Serial.flush();
   config.initPlaylistMode();
 #endif
+  display.init();
+#if SDC_CS != 255 && !(defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI)
+  display.putRequest(WAITFORSD, 0);
+  if (config.getMode() == PM_PODCAST) Serial.print("##[BOOT]#\tPodcast index\t");
+  else Serial.print("##[BOOT]#\tSD search\t");
+  Serial.flush();
+  config.initPlaylistMode();
+#elif SDC_CS == 255
+  config.initPlaylistMode();
+#endif
+  network.begin();
   netserver.begin();
   telnet.begin();
   initControls();

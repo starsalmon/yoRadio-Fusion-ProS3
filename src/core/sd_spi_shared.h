@@ -5,5 +5,6 @@
 
 extern "C" void yoradio_sd_spi_acquire();
 extern "C" void yoradio_sd_spi_release();
+bool yoradio_sd_spi_bus_busy();
 
 #endif

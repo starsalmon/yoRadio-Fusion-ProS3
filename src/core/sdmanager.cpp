@@ -11,6 +11,9 @@
 #include "sdmanager.h"
 #include "display.h"
 #include "player.h"
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+#include "sd_spi_shared.h"
+#endif
 
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && defined(DSP_HSPI) && DSP_HSPI
 extern SPIClass SPI2;
@@ -160,7 +163,9 @@ void SDManager::listSD(File &plSDfile, File &plSDindex, const char* dirname, uin
 void SDManager::indexSDPlaylist() {
   _sdFCount = 0;
   _indexing = true;
-#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && defined(TFT_CS) && (TFT_CS != 255)
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+  yoradio_sd_spi_acquire();
+#elif defined(TFT_CS) && (TFT_CS != 255)
   pinMode(TFT_CS, OUTPUT);
   digitalWrite(TFT_CS, HIGH);
 #endif
@@ -169,12 +174,18 @@ void SDManager::indexSDPlaylist() {
   if(exists(INDEX_SD_PATH)) remove(INDEX_SD_PATH);
   File playlist = open(PLAYLIST_SD_PATH, "w", true);
   if (!playlist) {
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+    yoradio_sd_spi_release();
+#endif
     _indexing = false;
     return;
   }
   File index = open(INDEX_SD_PATH, "w", true);
   if (!index) {
     playlist.close();
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+    yoradio_sd_spi_release();
+#endif
     _indexing = false;
     return;
   }
@@ -186,6 +197,9 @@ void SDManager::indexSDPlaylist() {
   Serial.println();
   Serial.printf("##[SD]#\tindex done tracks=%lu\n", (unsigned long)_sdFCount);
   delay(50);
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+  yoradio_sd_spi_release();
+#endif
   _indexing = false;
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI
   if (display.ready() && display.mode() == SDCHANGE) {

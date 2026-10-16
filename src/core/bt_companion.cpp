@@ -157,6 +157,7 @@ static void maybeUpdateRxLinkState() {
   if (next != s_rxLink) {
     s_rxLink = next;
     display.putRequest(DRAWVOL);
+    display.putRequest(NEWSTATION);
     display.putRequest(NEWTITLE);
   }
 }
@@ -246,9 +247,10 @@ static void pumpRx() {
           v.trim();
           strlcpy(dst, v.c_str(), dstLen);
         };
-        readMeta("title=", s_rxTitle, sizeof(s_rxTitle));
-        readMeta("artist=", s_rxArtist, sizeof(s_rxArtist));
+        if (out.indexOf("title=") >= 0) readMeta("title=", s_rxTitle, sizeof(s_rxTitle));
+        if (out.indexOf("artist=") >= 0) readMeta("artist=", s_rxArtist, sizeof(s_rxArtist));
         s_lastRxUiMs = millis();
+        Serial.printf("[BTC] META stored title='%s' artist='%s'\n", s_rxTitle, s_rxArtist);
         display.putRequest(NEWTITLE);
       }
       continue;

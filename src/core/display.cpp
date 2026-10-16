@@ -1577,6 +1577,55 @@ static void spiffsKeyFromStationName(const char* stationName, char* outKey, size
   snprintf(outKey, outKeyLen, "%08lx", (unsigned long)h);
 }
 
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+static bool readBtIconPixel(const uint8_t *bmp, int x, int y) {
+  if (!bmp || x < 0 || x >= 17 || y < 0 || y >= 16) return false;
+  const int byteIdx = y * 3 + (x / 8);
+  const int bit = 7 - (x % 8);
+  return ((bmp[byteIdx] >> bit) & 0x01) != 0;
+}
+
+static const uint8_t *btRxStationIconBmp() {
+  switch (btcompanion_rxLinkState()) {
+    case BtCompanionLinkState::AUDIO:
+      return ICON_BT_CONNECTED_17x16;
+    case BtCompanionLinkState::CONNECTED:
+      return ICON_BT_17x16;
+    case BtCompanionLinkState::SEARCHING:
+      return ICON_BT_SEARCHING_17x16;
+    default:
+      return ICON_BT_DISABLED_17x16;
+  }
+}
+
+static uint16_t *buildBtRxStationLogo(uint16_t outW, uint16_t outH, uint16_t fgRgb565) {
+  if (outW == 0 || outH == 0) return nullptr;
+  const size_t n = (size_t)outW * (size_t)outH;
+  uint16_t *buf = (uint16_t *)malloc(n * sizeof(uint16_t));
+  if (!buf) return nullptr;
+  for (size_t i = 0; i < n; i++) buf[i] = 0xF81F;
+
+  const uint8_t *icon = btRxStationIconBmp();
+  const int iconW = 17;
+  const int iconH = 16;
+  const int scale = max(1, min((int)outW / iconW, (int)outH / iconH));
+  const int drawW = iconW * scale;
+  const int drawH = iconH * scale;
+  const int offX = (int)outW > drawW ? ((int)outW - drawW) / 2 : 0;
+  const int offY = (int)outH > drawH ? ((int)outH - drawH) / 2 : 0;
+
+  for (int y = 0; y < drawH; y++) {
+    const int sy = y / scale;
+    for (int x = 0; x < drawW; x++) {
+      const int sx = x / scale;
+      if (!readBtIconPixel(icon, sx, sy)) continue;
+      buf[(offY + y) * (int)outW + (offX + x)] = fgRgb565;
+    }
+  }
+  return buf;
+}
+#endif
+
 static bool decodeRgb565RleFileToBuf(File& f, uint32_t wordCount, uint16_t w, uint16_t h, uint16_t* outPixels) {
   if (!outPixels || w == 0 || h == 0 || (wordCount & 1u) != 0u) return false;
   const size_t outCount = (size_t)w * (size_t)h;
@@ -1906,6 +1955,45 @@ void Display::_updateStationLogo() {
   #endif
   }
 
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    const bool want64 = (config.store.vuLayout == 0);
+    const uint16_t wantW = want64 ? 64 : 80;
+    const uint16_t wantH = want64 ? 64 : 80;
+    char btKey[16];
+    snprintf(btKey, sizeof(btKey), "bt%u", (unsigned)btcompanion_rxLinkState());
+
+    if (_stationLogoScaled &&
+        strcmp(_stationLogoLastKey, btKey) == 0 &&
+        _stationLogoW == wantW && _stationLogoH == wantH &&
+        !_stationLogo->locked()) {
+      return;
+    }
+
+    if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
+    uint16_t *px = buildBtRxStationLogo(wantW, wantH, config.theme.meta);
+    if (!px) {
+      _stationLogo->unlock();
+      _stationLogo->setImage(nullptr, 0, 0);
+      _stationLogo->lock(true);
+      return;
+    }
+    _stationLogo->setUseColorKey(true, 0xF81F);
+    _stationLogoScaled = px;
+    strlcpy(_stationLogoLastKey, btKey, sizeof(_stationLogoLastKey));
+    _stationLogoUsedDefault = false;
+    _stationLogoLastPixels = nullptr;
+    _stationLogo->lock(true);
+    _stationLogoW = wantW;
+    _stationLogoH = wantH;
+    _layoutStationLogo();
+    _stationLogo->unlock();
+    _stationLogo->setImage(px, wantW, wantH);
+    _stationLogoLastPixels = px;
+    return;
+  }
+#endif
+
   const bool isWeb = (config.getMode() == PM_WEB);
   const bool isPodcast = (config.getMode() == PM_PODCAST);
   const bool showLogosInThisMode = (isWeb || isPodcast);
@@ -2110,9 +2198,9 @@ void Display::_title() {
     char t[96];
     char a[96];
     btcompanion_getRxMetadata(t, sizeof(t), a, sizeof(a));
-    if (t[0]) {
-      _title1->setText(t);
-      if (_title2) _title2->setText(a[0] ? a : "");
+    if (t[0] || a[0]) {
+      _title1->setText(t[0] ? t : a);
+      if (_title2) _title2->setText((t[0] && a[0]) ? a : "");
       return;
     }
     const char *status = "Pair your phone";

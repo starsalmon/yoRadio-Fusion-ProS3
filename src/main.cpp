@@ -177,6 +177,8 @@ void setup() {
     player.setOutputPins(false);
     btcompanion_enterRxMode(btcompanion_rxLocalName());
     btcompanion_setRxVolume(config.store.volume);
+    config.setStation("Bluetooth");
+    config.setTitle("Pair your phone");
   }
 #endif
   if (config.store.smartstart == 1) {
@@ -203,6 +205,7 @@ void loop() {
       Serial.println("##[WARN]# I2S bus reclaim failed after BT RX");
     }
     player.setSpeakerForceMuted(config.store.outputDevice == 1);
+    player.setOutputPins(false);
   }
 #endif
   processControlsEvents();

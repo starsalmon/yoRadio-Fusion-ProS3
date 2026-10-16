@@ -216,7 +216,14 @@ void Player::_stop(bool alreadyStopped){
   }
   _status = STOPPED;
   setOutputPins(false);
-  if(!_hasError) config.setTitle((display.mode()==LOST || display.mode()==UPDATING)?"":LANG::const_PlStopped);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    setOutputPins(false);
+  }
+#endif
+  if (!_hasError && config.getMode() != PM_BLUETOOTH) {
+    config.setTitle((display.mode() == LOST || display.mode() == UPDATING) ? "" : LANG::const_PlStopped);
+  }
   config.station.bitrate = 0;
   config.setBitrateFormat(BF_UNKNOWN);
   #ifdef USE_NEXTION
@@ -305,6 +312,12 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
         break;
       }
       case PR_TOGGLE: {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+        if (config.getMode() == PM_BLUETOOTH) {
+          btcompanion_rxAvrcpToggle();
+          break;
+        }
+#endif
         toggle();
         break;
       }
@@ -568,7 +581,18 @@ void Player::setOutputPins(bool isPlaying) {
   } else {
     _ml = isPlaying ? !MUTE_VAL : MUTE_VAL;
   }
-  if(MUTE_PIN!=255) digitalWrite(MUTE_PIN, _ml);
+  if (MUTE_PIN != 255) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    static uint8_t s_lastBoostLvl = 255;
+    if (s_lastBoostLvl != (uint8_t)_ml) {
+      s_lastBoostLvl = (uint8_t)_ml;
+      Serial.printf("[BTC] GPIO%d DAC boost=%s (mode=%d playing=%d forceMute=%d)\n",
+                    (int)MUTE_PIN, _ml == MUTE_VAL ? "OFF" : "ON",
+                    (int)config.getMode(), isPlaying ? 1 : 0, _speakerForceMuted ? 1 : 0);
+    }
+#endif
+    digitalWrite(MUTE_PIN, _ml);
+  }
 }
 
 void Player::setSpeakerForceMuted(bool v) {

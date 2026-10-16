@@ -760,6 +760,12 @@ void onBtnClick(int id) {
           display.putRequest(NEWMODE, PLAYER);
         }
         if (display.mode() == PLAYER) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+          if (config.getMode() == PM_BLUETOOTH) {
+            btcompanion_rxAvrcpToggle();
+            break;
+          }
+#endif
           player.toggle();
         }
         if (display.mode() == SCREENSAVER || display.mode() == SCREENBLANK) {

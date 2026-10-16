@@ -157,6 +157,7 @@ static void maybeUpdateRxLinkState() {
   if (next != s_rxLink) {
     s_rxLink = next;
     display.putRequest(DRAWVOL);
+    display.putRequest(NEWTITLE);
   }
 }
 
@@ -197,7 +198,7 @@ static void pumpRx() {
       s_uartLastComplete = out;
       // Avoid spamming Serial with periodic STATUS responses.
       if (!out.startsWith("STATUS ")) {
-        Serial.print("[BT2] ");
+        Serial.print("[BTC] ");
         Serial.println(out);
       }
       if (out == "PONG") s_lastPongMs = millis();
@@ -553,6 +554,11 @@ void btcompanion_setRxVolume(uint8_t volume) {
   sendLine(buf);
 }
 
+void btcompanion_rxAvrcpToggle() {
+  if (!s_rxActive) return;
+  sendLine("AVRCP TOGGLE");
+}
+
 void btcompanion_enterRxMode(const char* localName) {
   if (localName && localName[0]) btcompanion_setRxLocalName(localName);
   if (s_rxActive && s_rxStep == RxHandoverStep::None) return;
@@ -607,6 +613,7 @@ void btcompanion_getRxMetadata(char*, size_t, char*, size_t) {}
 void btcompanion_setRxLocalName(const char*) {}
 const char* btcompanion_rxLocalName() { return ""; }
 void btcompanion_setRxVolume(uint8_t) {}
+void btcompanion_rxAvrcpToggle() {}
 bool btcompanion_rxExitComplete() { return false; }
 
 #endif

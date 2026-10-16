@@ -491,8 +491,18 @@ void Config::changeMode(int newmode) { // DLNA mod
         return;
     }
 
+    const bool enteringBluetoothRx =
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
-    if (newmode == PM_BLUETOOTH && oldMode != PM_BLUETOOTH) {
+        (newmode == PM_BLUETOOTH && oldMode != PM_BLUETOOTH);
+#else
+        false;
+#endif
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    if (enteringBluetoothRx) {
+        // Update heading immediately (same pattern as Web→Podcast); play_mode commits later.
+        setStation("Bluetooth");
+        setTitle("Pair your phone");
         if (pir) {
             player.lockOutput = true;
             player.sendCommand({PR_STOP, 0});
@@ -512,12 +522,6 @@ void Config::changeMode(int newmode) { // DLNA mod
             return;
         }
         playModeBeforeBluetooth = oldMode;
-        player.setSpeakerForceMuted(false);
-        setStation("Bluetooth");
-        setTitle("Pair your phone");
-        btcompanion_enterRxMode(btcompanion_rxLocalName());
-        btcompanion_setRxVolume(store.volume);
-        player.setOutputPins(false);
     }
 
     if (oldMode == PM_BLUETOOTH && newmode != PM_BLUETOOTH) {
@@ -637,6 +641,15 @@ void Config::changeMode(int newmode) { // DLNA mod
     /* === set mode === */
     store.play_mode = (playMode_e)newmode;
     saveValue(&store.play_mode, (uint8_t)store.play_mode, true, true);
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    if (enteringBluetoothRx) {
+        player.setSpeakerForceMuted(false);
+        btcompanion_enterRxMode(btcompanion_rxLocalName());
+        btcompanion_setRxVolume(store.volume);
+        player.setOutputPins(false);
+    }
+#endif
 
     const bool enteringSD = (getMode() == PM_SDCARD);
 
@@ -1704,6 +1717,9 @@ void Config::setStation(const char* station) {
   memset(config.station.name, 0, BUFLEN);
   strlcpy(config.station.name, station, BUFLEN);
   u8fix(config.station.name);
+  if (display.ready()) {
+    display.putRequest(NEWSTATION);
+  }
 }
 
 void Config::indexPlaylist() {

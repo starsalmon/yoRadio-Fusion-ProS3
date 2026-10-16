@@ -1460,6 +1460,11 @@ void Display::_setRSSI(int rssi) {
 
 void Display::_station() {
   _meta->setAlign(metaConf.widget.align);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    _meta->setText("Bluetooth");
+  } else
+#endif
   _meta->setText(config.station.name);
   // Refresh station number and play-mode widgets
   #if STATION_WIDGETS
@@ -2110,6 +2115,16 @@ void Display::_title() {
       if (_title2) _title2->setText(a[0] ? a : "");
       return;
     }
+    const char *status = "Pair your phone";
+    switch (btcompanion_rxLinkState()) {
+      case BtCompanionLinkState::AUDIO: status = "Playing"; break;
+      case BtCompanionLinkState::CONNECTED: status = "Connected"; break;
+      case BtCompanionLinkState::SEARCHING: status = "Pair your phone"; break;
+      default: status = "Bluetooth"; break;
+    }
+    _title1->setText(status);
+    if (_title2) _title2->setText("");
+    return;
   }
 #endif
   // If title is empty but the player is running, fall back to station name

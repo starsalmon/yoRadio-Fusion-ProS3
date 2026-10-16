@@ -2228,8 +2228,12 @@ bool Config::initNetwork() {
 
 void Config::setBrightness(bool dosave){
 #if BRIGHTNESS_PIN!=255
-  if(!store.dspon && dosave) {
-    display.wakeup();
+  if (display.panelAsleep || (!store.dspon && dosave)) {
+    // Never light the backlight on a sleeping panel: wake it (via the display task) instead;
+    // the wake path restores the backlight from store.brightness.
+    if (dosave) saveValue(&store.brightness, store.brightness, false, true);
+    setDspOn(true, dosave);
+    return;
   }
   analogWrite(BRIGHTNESS_PIN, map(store.brightness, 0, 100, 0, 255));
   if(!store.dspon) store.dspon = true;
@@ -2257,6 +2261,7 @@ void Config::setBrightnessRaw(uint8_t percent) {
   if (percent > 100) percent = 100;
 
   // Hardware only: do not persist to config/store.
+  if (display.panelAsleep) return;  // backlight on + panel asleep = white screen
   analogWrite(BRIGHTNESS_PIN, map(percent, 0, 100, 0, 255));
 #endif
 }
@@ -2265,6 +2270,11 @@ void Config::setDspOn(bool dspon, bool saveval){
   if(saveval){
     store.dspon = dspon;
     saveValue(&store.dspon, store.dspon, true, true);
+  }
+  // Panel sleep/wake only on the display task; queue it from anywhere else.
+  if (display.ready() && !display.onDspTask()) {
+    display.putRequest(DSPPOWER, dspon ? 1 : 0);
+    return;
   }
 #ifdef USE_NEXTION
   if(!dspon) nextion.sleep();

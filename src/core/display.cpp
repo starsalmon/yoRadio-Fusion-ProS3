@@ -267,9 +267,13 @@ static void loopDspTask(void * pvParameters){
   vTaskDelete( NULL );
 }
 
+static TaskHandle_t s_dspTaskHandle = nullptr;
 void Display::_createDspTask(){
-  xTaskCreatePinnedToCore(loopDspTask, "DspTask", CORE_STACK_SIZE,  NULL,  DSP_TASK_PRIORITY, NULL, DSP_TASK_CORE_ID);
+  xTaskCreatePinnedToCore(loopDspTask, "DspTask", CORE_STACK_SIZE,  NULL,  DSP_TASK_PRIORITY, &s_dspTaskHandle, DSP_TASK_CORE_ID);
 }
+#ifndef DUMMYDISPLAY
+bool Display::onDspTask() { return s_dspTaskHandle == nullptr || xTaskGetCurrentTaskHandle() == s_dspTaskHandle; }
+#endif
 
 #ifndef DUMMYDISPLAY
 //============================================================================================================================
@@ -867,6 +871,8 @@ if (newmode == _mode ||
     #endif
     _nums->setText("");
     config.isScreensaver = false;
+    // Wake the panel BEFORE redrawing (a missed wake after SCREENBLANK = white screen).
+    if (panelAsleep && config.store.dspon) config.setDspOn(true, false);
     _pager->setPage( pages[PG_PLAYER]);
     if (_speechWidget) _speechWidget->setStat(config.store.ttsEnabled  != 0);
     if (_blfadeWidget) _blfadeWidget->setStat(config.store.blDimEnable != 0);
@@ -1185,6 +1191,11 @@ void Display::loop() {
           #endif*/
           break;
         case NEWTITLE: _title(); break;
+        case DSPPOWER:
+          // Panel power changes requested from other tasks run here (display task only).
+          if (request.payload && _mode == SCREENBLANK) _swichMode(PLAYER);  // full redraw + wake
+          else config.setDspOn(request.payload != 0, false);
+          break;
         case NEWSTATION: _station(); break;
         case NEXTSTATION: _drawNextStationNum(request.payload); break;
         case DRAWPLAYLIST: _drawPlaylist(); break;
@@ -2580,6 +2591,7 @@ void  Display::setContrast(){
 bool Display::deepsleep(){
 #if defined(LCD_I2C) || defined(DSP_OLED) || BRIGHTNESS_PIN!=255
   dsp.sleep();
+  panelAsleep = true;
   return true;
 #endif
   return false;
@@ -2588,6 +2600,7 @@ bool Display::deepsleep(){
 void Display::wakeup(){
 #if defined(LCD_I2C) || defined(DSP_OLED) || BRIGHTNESS_PIN!=255
   dsp.wake();
+  panelAsleep = false;
 #endif
 }
 

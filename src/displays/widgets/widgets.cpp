@@ -10,6 +10,7 @@
 #include "../fonts/iconsweather.h"
 #include "../fonts/iconsweather_mono.h"
 #include "../bitmaps/header_mode_icons.h"
+#include "../bitmaps/footer_icons_16.h"
 #include "Arduino.h"
 #include "widgets.h"
 #include "../../core/player.h"    //  for VU widget

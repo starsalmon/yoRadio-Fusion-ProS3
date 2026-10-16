@@ -20,7 +20,7 @@ DspCore::DspCore(): Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST) {}
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
 void DspCore::startWrite() {
   sdog.begin();
-  sdog.takeMutex();
+  (void)sdog.takeMutex();
   yoDisplay::startWrite();
 }
 void DspCore::endWrite() {

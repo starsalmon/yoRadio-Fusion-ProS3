@@ -544,6 +544,7 @@ void Config::changeMode(int newmode) { // DLNA mod
             uint32_t stopStart = millis();
             while (player.isRunning() && (millis() - stopStart) < 1200) {
                 player.loop();
+                btcompanion_pump();
                 delay(10);
             }
             if (player.isRunning()) player.stopSong();
@@ -588,6 +589,7 @@ void Config::changeMode(int newmode) { // DLNA mod
         uint32_t stopStart = millis();
         while (player.isRunning() && (millis() - stopStart) < 2500) {
             player.loop();        // process immediately in this context
+            btcompanion_pump();
             delay(10);
         }
         if (player.isRunning()) {
@@ -614,6 +616,7 @@ void Config::changeMode(int newmode) { // DLNA mod
         // Stop shouldn't take long; if it does, force-stop so mode switching feels instant.
         while (player.isRunning() && (millis() - stopStart) < 700) {
             player.loop();
+            btcompanion_pump();
             delay(10);
         }
         if (player.isRunning()) {
@@ -655,6 +658,7 @@ void Config::changeMode(int newmode) { // DLNA mod
                     uint32_t stopStart = millis();
                     while (player.isRunning() && (millis() - stopStart) < 2500) {
                       player.loop();
+                      btcompanion_pump();
                       delay(10);
                     }
                     if (player.isRunning()) {
@@ -746,6 +750,9 @@ void Config::initSDPlaylist() {
     display.putRequest(NEWMODE, SDCHANGE);
     const uint32_t t0 = millis();
     while (display.mode() != SDCHANGE && (uint32_t)(millis() - t0) < 800u) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+      btcompanion_pump();
+#endif
       vTaskDelay(pdMS_TO_TICKS(10));
     }
   }

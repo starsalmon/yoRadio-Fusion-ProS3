@@ -274,12 +274,8 @@ static void wakePulse() {
 
 static void sendLine(const char *s) {
   if (!s) return;
-  // Avoid spamming Serial with periodic STATUS polling.
   if (strcmp(s, "STATUS") != 0) {
-  #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
-    Serial.print("[BT2->] ");
-    Serial.println(s);
-  #endif
+    Serial.printf("[BTC->] %s\n", s);
   }
   s_btUart.print(s);
   s_btUart.print('\n');
@@ -477,9 +473,15 @@ bool btcompanion_enabled() { return s_enabled; }
 
 void btcompanion_toggle() { btcompanion_setEnabled(!s_enabled); }
 
-void btcompanion_loop() {
+void btcompanion_pump() {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   pumpRx();
   rxHandoverAdvance();
+#endif
+}
+
+void btcompanion_loop() {
+  btcompanion_pump();
 
   // Poll STATUS while enabled so UI can show searching/connected.
   if (s_rxActive) {
@@ -566,16 +568,21 @@ void btcompanion_rxAvrcpToggle() {
 
 void btcompanion_enterRxMode(const char* localName) {
   if (localName && localName[0]) btcompanion_setRxLocalName(localName);
-  if (s_rxActive && s_rxStep == RxHandoverStep::None) return;
 
   if (s_enabled) btcompanion_setEnabled(false);
 
-  s_rxConn = -1;
-  s_rxAudio = -1;
-  s_rxTitle[0] = s_rxArtist[0] = '\0';
-  s_rxLink = BtCompanionLinkState::SEARCHING;
-  s_rxActive = true;
-  s_rxExitCompleteFlag = false;
+  if (s_rxActive && s_rxStep != RxHandoverStep::None) {
+    return;
+  }
+
+  if (!s_rxActive) {
+    s_rxConn = -1;
+    s_rxAudio = -1;
+    s_rxTitle[0] = s_rxArtist[0] = '\0';
+    s_rxLink = BtCompanionLinkState::SEARCHING;
+    s_rxActive = true;
+    s_rxExitCompleteFlag = false;
+  }
 
   wakePulse();
   s_rxStep = RxHandoverStep::EnterWake;
@@ -601,6 +608,7 @@ bool btcompanion_rxExitComplete() {
 
 void btcompanion_init() {}
 void btcompanion_loop() {}
+void btcompanion_pump() {}
 void btcompanion_setEnabled(bool) {}
 bool btcompanion_enabled() { return false; }
 void btcompanion_toggle() {}

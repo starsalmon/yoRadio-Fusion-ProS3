@@ -6,6 +6,8 @@
 
 void btcompanion_init();
 void btcompanion_loop();
+// Call from blocking setup/mode-change waits so RX handover UART can progress.
+void btcompanion_pump();
 
 // A2DP TX output (ProS3 I2S -> HiGrow -> external BT speaker).
 void btcompanion_setEnabled(bool enable);

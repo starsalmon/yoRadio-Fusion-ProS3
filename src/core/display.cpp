@@ -1052,7 +1052,18 @@ void Display::loop() {
   if(displayQueue==NULL || _locked) return;
 
 #if SDC_CS != 255
-  if (sdman.indexing()) return;
+  if (sdman.indexing()) {
+    // No TFT/SPI traffic while SD owns the shared bus; only mode/progress without redraw.
+    requestParams_t request;
+    if (xQueueReceive(displayQueue, &request, 0)) {
+      if (request.type == NEWMODE) {
+        _swichMode((displayMode_e)request.payload);
+      } else if (request.type == SDFILEINDEX && _mode == SDCHANGE && _nums) {
+        _nums->setText(request.payload, "%d");
+      }
+    }
+    return;
+  }
 #endif
 
   _pager->loop();

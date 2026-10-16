@@ -126,6 +126,10 @@ void setup() {
   config.init();
   clock_tts_setup();
 
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  btcompanion_init();
+#endif
+
   player.init();
 
   // Apply last output device selection (speaker vs BT companion) before any auto-play.
@@ -159,7 +163,6 @@ void setup() {
   telnet.begin();
   initControls();
   startControlsTask();
-  btcompanion_init();
   // If last output was BT, start the companion connect flow now.
 #ifdef BT_COMPANION_ENABLE
   btcompanion_setEnabled(config.store.outputDevice == 1);
@@ -171,7 +174,12 @@ void setup() {
   }
 #endif
   display.putRequest(DSP_START);
-  while(!display.ready()) delay(10);
+  while (!display.ready()) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    btcompanion_pump();
+#endif
+    delay(10);
+  }
   #if USE_OTA
     if (network.status == CONNECTED || network.status == SOFT_AP) setupOTA();
   #endif

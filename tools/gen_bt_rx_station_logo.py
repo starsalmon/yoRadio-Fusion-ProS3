@@ -73,7 +73,7 @@ def emit_c_array(name: str, values: list[int], per_line: int = 12) -> str:
     for i in range(0, len(values), per_line):
         chunk = ", ".join(f"0x{v:04X}" if name.endswith("_rgb") else str(v) for v in values[i : i + per_line])
         lines.append(f"  {chunk},")
-    return f"static const uint16_t {name}[] PROGMEM = {{\n" + "\n".join(lines) + "\n};\n"
+    return f"static const uint16_t {name}[] = {{\n" + "\n".join(lines) + "\n};\n"
 
 
 def emit_alpha_array(name: str, values: list[int]) -> str:
@@ -82,7 +82,7 @@ def emit_alpha_array(name: str, values: list[int]) -> str:
     for i in range(0, len(values), per_line):
         chunk = ", ".join(str(v) for v in values[i : i + per_line])
         lines.append(f"  {chunk},")
-    return f"static const uint8_t {name}[] PROGMEM = {{\n" + "\n".join(lines) + "\n};\n"
+    return f"static const uint8_t {name}[] = {{\n" + "\n".join(lines) + "\n};\n"
 
 
 def main() -> None:

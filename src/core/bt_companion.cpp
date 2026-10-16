@@ -158,7 +158,9 @@ static void maybeUpdateRxLinkState() {
     s_rxLink = next;
     display.putRequest(DRAWVOL);
     display.putRequest(NEWSTATION);
-    display.putRequest(NEWTITLE);
+    if (!s_rxTitle[0] && !s_rxArtist[0]) {
+      display.putRequest(NEWTITLE);
+    }
   }
 }
 
@@ -558,6 +560,7 @@ void btcompanion_setRxVolume(uint8_t volume) {
 
 void btcompanion_rxAvrcpToggle() {
   if (!s_rxActive) return;
+  Serial.println("[BTC] AVRCP TOGGLE");
   sendLine("AVRCP TOGGLE");
 }
 

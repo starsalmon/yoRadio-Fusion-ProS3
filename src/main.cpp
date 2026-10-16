@@ -172,13 +172,11 @@ void setup() {
   player.lockOutput=false;
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   if (config.getMode() == PM_BLUETOOTH) {
-    player.releaseI2sBusToCompanion();
-    player.setSpeakerForceMuted(false);
-    player.setOutputPins(false);
-    btcompanion_enterRxMode(btcompanion_rxLocalName());
-    btcompanion_setRxVolume(config.store.volume);
-    config.setStation("Bluetooth");
-    config.setTitle("Pair your phone");
+    if (!player.releaseI2sBusToCompanion()) {
+      Serial.println("##[WARN]# Boot BT RX: I2S release failed");
+    }
+    config.startBluetoothRxSession();
+    config.refreshPlayModeDisplay();
   }
 #endif
   if (config.store.smartstart == 1) {

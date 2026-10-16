@@ -746,6 +746,7 @@ void onBtnClick(int id) {
   controlEvt_e btnid = static_cast<controlEvt_e>(id);
   pm.on_btn_click(btnid);
   if (network.status != CONNECTED && network.status!=SDREADY && config.getMode() != PM_SDCARD &&
+      config.getMode() != PM_BLUETOOTH &&
       (controlEvt_e)id!=EVT_BTNMODE && !passBnCenter) return;
   switch (btnid) {
     case EVT_BTNLEFT: {

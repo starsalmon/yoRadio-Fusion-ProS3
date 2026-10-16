@@ -431,6 +431,9 @@ class Config {
     void initSDPlaylist();
     void changeMode(int newmode=-1);
     void toggleMode(); //DLNA mod
+    void applyPlayModeStrings();
+    void refreshPlayModeDisplay();
+    void startBluetoothRxSession();
     uint16_t playlistLength();
     uint16_t lastStation(){
 #ifdef USE_SD

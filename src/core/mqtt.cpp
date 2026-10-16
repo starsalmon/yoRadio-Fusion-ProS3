@@ -617,9 +617,17 @@ static void mqttPublishHADiscovery() {
     char opts[96] = {0};
     // Options must be a JSON array; keep this deterministic and small.
 #ifdef USE_DLNA
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    strlcpy(opts, "[\"Web Streaming\",\"SD Card\",\"Podcast\",\"DLNA\",\"Bluetooth\"]", sizeof(opts));
+#else
     strlcpy(opts, "[\"Web Streaming\",\"SD Card\",\"Podcast\",\"DLNA\"]", sizeof(opts));
+#endif
+#else
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    strlcpy(opts, "[\"Web Streaming\",\"SD Card\",\"Podcast\",\"Bluetooth\"]", sizeof(opts));
 #else
     strlcpy(opts, "[\"Web Streaming\",\"SD Card\",\"Podcast\"]", sizeof(opts));
+#endif
 #endif
 
     char cfg[700];
@@ -1915,6 +1923,13 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         mqttPublishStatus();
         return;
       }
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+      if (strcasecmp(s, "bluetooth") == 0 || strcasecmp(s, "bt") == 0) {
+        config.changeMode(PM_BLUETOOTH);
+        mqttPublishStatus();
+        return;
+      }
+#endif
       return;
     }
   }

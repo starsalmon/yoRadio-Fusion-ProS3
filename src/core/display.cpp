@@ -1900,6 +1900,46 @@ void Display::_layoutStationLogo() {
 void Display::_updateStationLogo() {
   if (!_stationLogo) return;
 
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    const bool want64 = (config.store.vuLayout == 0);
+    const uint16_t wantW = want64 ? 64 : 80;
+    const uint16_t wantH = want64 ? 64 : 80;
+    char btKey[24];
+    snprintf(btKey, sizeof(btKey), "bt%u_%04x", (unsigned)btcompanion_rxLinkState(),
+             (unsigned)config.theme.background);
+
+    if (_stationLogoScaled &&
+        strcmp(_stationLogoLastKey, btKey) == 0 &&
+        _stationLogoW == wantW && _stationLogoH == wantH &&
+        !_stationLogo->locked()) {
+      return;
+    }
+
+    if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
+    uint16_t *px = buildBtRxStationLogo(wantW, wantH, config.theme.background, btcompanion_rxLinkState());
+    if (!px) {
+      _stationLogo->unlock();
+      _stationLogo->setImage(nullptr, 0, 0);
+      _stationLogo->lock(true);
+      return;
+    }
+    _stationLogo->setUseColorKey(true, 0xF81F);
+    _stationLogoScaled = px;
+    strlcpy(_stationLogoLastKey, btKey, sizeof(_stationLogoLastKey));
+    _stationLogoUsedDefault = false;
+    _stationLogoLastPixels = nullptr;
+    _stationLogo->lock(true);
+    _stationLogoW = wantW;
+    _stationLogoH = wantH;
+    _layoutStationLogo();
+    _stationLogo->unlock();
+    _stationLogo->setImage(px, wantW, wantH);
+    _stationLogoLastPixels = px;
+    return;
+  }
+#endif
+
   // Global toggle: hide both station logos and SD album art.
   if (!config.getShowlogos()) {
     if (_stationLogo->locked()) return;
@@ -1985,45 +2025,6 @@ void Display::_updateStationLogo() {
     return;
   #endif
   }
-
-#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
-  if (config.getMode() == PM_BLUETOOTH) {
-    const bool want64 = (config.store.vuLayout == 0);
-    const uint16_t wantW = want64 ? 64 : 80;
-    const uint16_t wantH = want64 ? 64 : 80;
-    char btKey[16];
-    snprintf(btKey, sizeof(btKey), "bt%u", (unsigned)btcompanion_rxLinkState());
-
-    if (_stationLogoScaled &&
-        strcmp(_stationLogoLastKey, btKey) == 0 &&
-        _stationLogoW == wantW && _stationLogoH == wantH &&
-        !_stationLogo->locked()) {
-      return;
-    }
-
-    if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
-    uint16_t *px = buildBtRxStationLogo(wantW, wantH, config.theme.background, btcompanion_rxLinkState());
-    if (!px) {
-      _stationLogo->unlock();
-      _stationLogo->setImage(nullptr, 0, 0);
-      _stationLogo->lock(true);
-      return;
-    }
-    _stationLogo->setUseColorKey(true, 0xF81F);
-    _stationLogoScaled = px;
-    strlcpy(_stationLogoLastKey, btKey, sizeof(_stationLogoLastKey));
-    _stationLogoUsedDefault = false;
-    _stationLogoLastPixels = nullptr;
-    _stationLogo->lock(true);
-    _stationLogoW = wantW;
-    _stationLogoH = wantH;
-    _layoutStationLogo();
-    _stationLogo->unlock();
-    _stationLogo->setImage(px, wantW, wantH);
-    _stationLogoLastPixels = px;
-    return;
-  }
-#endif
 
   const bool isWeb = (config.getMode() == PM_WEB);
   const bool isPodcast = (config.getMode() == PM_PODCAST);

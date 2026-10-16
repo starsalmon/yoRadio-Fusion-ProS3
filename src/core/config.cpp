@@ -399,6 +399,44 @@ void Config::_setupVersion(){
   saveValue(&store.version, currentVersion);
 }
 
+void Config::applyPlayModeStrings() {
+  switch (getMode()) {
+    case PM_BLUETOOTH:
+      setStation("Bluetooth");
+      setTitle("Pair your phone");
+      break;
+    case PM_PODCAST:
+      setStation("Podcasts");
+      break;
+    case PM_SDCARD:
+      break;
+    case PM_WEB:
+    default:
+      break;
+  }
+}
+
+void Config::refreshPlayModeDisplay() {
+  if (!_bootDone || !display.ready()) return;
+  netserver.resetQueue();
+  netserver.requestOnChange(GETINDEX, 0);
+  display.resetQueue();
+  display.putRequest(NEWMODE, PLAYER);
+  display.putRequest(NEWSTATION);
+  display.putRequest(NEWTITLE);
+}
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+void Config::startBluetoothRxSession() {
+  player.setSpeakerForceMuted(false);
+  btcompanion_enterRxMode(btcompanion_rxLocalName());
+  btcompanion_setRxVolume(store.volume);
+  player.setOutputPins(false);
+}
+#else
+void Config::startBluetoothRxSession() {}
+#endif
+
 void Config::toggleMode() {
   // Physical mode button cycles only the 3 main playback modes:
   // Web → SD → Podcast → Web ...
@@ -500,9 +538,6 @@ void Config::changeMode(int newmode) { // DLNA mod
 
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
     if (enteringBluetoothRx) {
-        // Update heading immediately (same pattern as Web→Podcast); play_mode commits later.
-        setStation("Bluetooth");
-        setTitle("Pair your phone");
         if (pir) {
             player.lockOutput = true;
             player.sendCommand({PR_STOP, 0});
@@ -644,10 +679,7 @@ void Config::changeMode(int newmode) { // DLNA mod
 
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
     if (enteringBluetoothRx) {
-        player.setSpeakerForceMuted(false);
-        btcompanion_enterRxMode(btcompanion_rxLocalName());
-        btcompanion_setRxVolume(store.volume);
-        player.setOutputPins(false);
+        startBluetoothRxSession();
     }
 #endif
 
@@ -673,12 +705,8 @@ void Config::changeMode(int newmode) { // DLNA mod
 
     initPlaylistMode();
 
-    // For non-podcast modes, line 2 should indicate the stopped state when nothing is playing.
-    // (Podcast mode uses line 2 for episode titles while browsing.)
-    if (getMode() == PM_BLUETOOTH) {
-      setStation("Bluetooth");
-      setTitle("Pair your phone");
-    } else if (getMode() != PM_PODCAST && !player.isRunning()) {
+    applyPlayModeStrings();
+    if (getMode() != PM_PODCAST && getMode() != PM_BLUETOOTH && !player.isRunning()) {
       setTitle(LANG::const_PlStopped);
     }
 
@@ -708,13 +736,7 @@ void Config::changeMode(int newmode) { // DLNA mod
       #endif
     }
 
-    netserver.resetQueue();
-    netserver.requestOnChange(GETINDEX, 0);
-
-    display.resetQueue();
-    display.putRequest(NEWMODE, PLAYER);
-    display.putRequest(NEWSTATION);
-    display.putRequest(NEWTITLE); // queue reset can drop stop-time title updates
+    refreshPlayModeDisplay();
 #endif
 }
 
@@ -847,8 +869,8 @@ void Config::initPlaylistMode() {
 
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   if (getMode() == PM_BLUETOOTH) {
-    setStation("Bluetooth");
-    setTitle("Pair your phone");
+    applyPlayModeStrings();
+    _bootDone = true;
     return;
   }
 #endif
@@ -1717,9 +1739,6 @@ void Config::setStation(const char* station) {
   memset(config.station.name, 0, BUFLEN);
   strlcpy(config.station.name, station, BUFLEN);
   u8fix(config.station.name);
-  if (display.ready()) {
-    display.putRequest(NEWSTATION);
-  }
 }
 
 void Config::indexPlaylist() {

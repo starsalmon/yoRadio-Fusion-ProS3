@@ -67,6 +67,7 @@ enum class RxHandoverStep : uint8_t {
 static RxHandoverStep s_rxStep = RxHandoverStep::None;
 static uint32_t s_rxStepAtMs = 0;
 static uint32_t s_rxPingBaselineMs = 0;
+static uint8_t s_pingTries = 0;
 static bool s_rxExitCompleteFlag = false;
 
 static void sendLine(const char *s);
@@ -85,7 +86,21 @@ static void rxHandoverAdvance() {
       }
       break;
     case RxHandoverStep::EnterPing:
-      if (s_lastPongMs != s_rxPingBaselineMs || (uint32_t)(now - s_rxStepAtMs) >= 600u) {
+      if (s_lastPongMs == s_rxPingBaselineMs) {
+        // HiGrow needs ~1 s to boot out of deep sleep: retry PING every 500 ms, up to ~5 s.
+        if ((uint32_t)(now - s_rxStepAtMs) < 500u) break;
+        if (++s_pingTries < 10) {
+          sendLine("PING");
+          s_rxStepAtMs = now;
+          break;
+        }
+        s_pingTries = 0;
+        Serial.println("[BT2] RX handover: no PONG after retries, continuing");
+      } else {
+        s_pingTries = 0;
+        Serial.println("[BT2] RX handover: PONG ok");
+      }
+      {
         sendLine("HANDOVER PROS3_RELEASED");
         s_rxStep = RxHandoverStep::EnterHandover;
         s_rxStepAtMs = now;

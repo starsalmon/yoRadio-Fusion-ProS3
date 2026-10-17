@@ -170,7 +170,11 @@
 //#define DSP_MODEL DSP_GC9A01A
 //#define HUN_LCD
 /*****************************************/
-#define TFT_SPI_FREQ 60000000UL
+// TFT SPI clock (Hz). ESP32-S3 Arduino SPI derives SCK from the 80 MHz APB clock with an
+// integer divider that rounds DOWN: real clocks are 80 / 40 / 26.7 / 20 / 16 / 13.3 / 11.4 / 10 MHz...
+// Anything from 40 MHz up to just under 80 MHz runs at 40 MHz (the old "60 MHz" setting was really 40).
+// 80 MHz bypasses the divider and glitched on this board. Keep 40 MHz.
+#define TFT_SPI_FREQ 40000000UL
 //#define DSP_HSPI 1
 #define TFT_DC 5
 #define TFT_CS 4
@@ -330,9 +334,10 @@
 #define SD_SHARE_TFT_SPI 1
 // Set to 1 once after flashing SPI-sharing fixes to force a full card rescan.
 #define SD_FORCE_REINDEX 0
-// SD card SPI clock (Hz). You can run TFT much faster than SD even on the same bus.
-// Start conservative for stability; increase only if verified stable.
-#define SDSPISPEED 10000000
+// SD card SPI clock (Hz). Same 80 MHz / integer-divider rounding as TFT_SPI_FREQ above, and
+// sd_diskio caps the card at 25 MHz, so 20 MHz (80/4, exact) is the highest real SD clock.
+// Do not set 25000000: it rounds down to 20 MHz anyway. Was 10 MHz; drop back if SD errors appear.
+#define SDSPISPEED 20000000
 
 // Experimental: SD album art (cover.jpg/folder.jpg) decode + render.
 // Keep this enabled only while testing; disable if you see SD playback instability.

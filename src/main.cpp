@@ -337,7 +337,14 @@ void loop() {
   const uint32_t now = millis();
 
   if (s_lastPlayingMs == 0) s_lastPlayingMs = now;
-  if (player.isRunning()) s_lastPlayingMs = now;
+  // BT RX: audio comes from the HiGrow, so player.isRunning() is always false. Never idle-sleep
+  // in BT mode (explicit sleep via button/MQTT/web and low-battery sleep still work).
+  const bool s_activeLike = player.isRunning()
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+                            || config.getMode() == PM_BLUETOOTH
+#endif
+                            ;
+  if (s_activeLike) s_lastPlayingMs = now;
 
   // Check at a low cadence (avoid extra work in the main loop).
   if (s_lastPowerCheckMs == 0 || (uint32_t)(now - s_lastPowerCheckMs) >= 1000) {
@@ -368,7 +375,7 @@ void loop() {
       }
     }
 
-    if (!player.isRunning()) {
+    if (!s_activeLike) {
       const uint32_t idleMs = (uint32_t)(now - s_lastPlayingMs);
       const uint32_t idleLimitMs = (uint32_t)AUTO_DEEPSLEEP_IDLE_MINUTES * 60UL * 1000UL;
       if (AUTO_DEEPSLEEP_IDLE_MINUTES > 0 && idleMs >= idleLimitMs) {

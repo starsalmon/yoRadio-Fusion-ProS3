@@ -368,6 +368,11 @@ uint16_t Display::height(){ return dsp.height(); }
   #endif
 #endif
 
+#ifndef BOOT_SCREEN_MIN_MS
+  #define BOOT_SCREEN_MIN_MS 0
+#endif
+static uint32_t s_bootLogoDoneMs = 0;   // millis() when the boot logo finished drawing
+
 void Display::_bootScreen(){
   _boot = new Page();
   _boot->addWidget(new ProgressWidget(bootWdtConf, bootPrgConf, BOOT_PRG_COLOR, 0));
@@ -376,6 +381,7 @@ void Display::_bootScreen(){
   _pager->setPage(_boot, true);
   DSPLOG("DSP boot logo draw begin");
   dsp.drawLogo(bootLogoTop);
+  s_bootLogoDoneMs = millis();
   DSPLOG("DSP boot logo draw end");
   _bootStep = 1;
 }
@@ -1312,7 +1318,17 @@ void Display::loop() {
           }
           #endif
           break;
-        case DSP_START: _start();  break;
+        case DSP_START: {
+          // Keep the boot screen up for at least BOOT_SCREEN_MIN_MS after the logo finished.
+          // Runs on the display task only; SD mount/indexing already happened before DSP_START.
+          const uint32_t shown = millis() - s_bootLogoDoneMs;
+          if (BOOT_SCREEN_MIN_MS > 0 && shown < (uint32_t)BOOT_SCREEN_MIN_MS) {
+            DSPLOG("DSP_START: holding boot screen %lu ms", (unsigned long)(BOOT_SCREEN_MIN_MS - shown));
+            vTaskDelay(pdMS_TO_TICKS(BOOT_SCREEN_MIN_MS - shown));
+          }
+          _start();
+          break;
+        }
         case NEWIP: {
           /*#ifndef HIDE_IP
             if(_volip) _volip->setText(config.ipToStr(WiFi.localIP()), iptxtFmt);

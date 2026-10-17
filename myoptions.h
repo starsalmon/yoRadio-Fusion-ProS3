@@ -334,10 +334,17 @@
 #define SD_SHARE_TFT_SPI 1
 // Set to 1 once after flashing SPI-sharing fixes to force a full card rescan.
 #define SD_FORCE_REINDEX 0
-// SD card SPI clock (Hz). Same 80 MHz / integer-divider rounding as TFT_SPI_FREQ above, and
-// sd_diskio caps the card at 25 MHz, so 20 MHz (80/4, exact) is the highest real SD clock.
-// Do not set 25000000: it rounds down to 20 MHz anyway. Was 10 MHz; drop back if SD errors appear.
-#define SDSPISPEED 20000000
+// SD card SPI clock (Hz). Same 80 MHz / integer-divider rounding as TFT_SPI_FREQ above
+// (real steps: 20 / 16 / 13.33 / 11.43 / 10 MHz ...), and sd_diskio caps the card at 25 MHz.
+// 20 MHz was tested on this board (2026-10-18) and FAILS in SD playback: every multi-block
+// read ends with "crc error" + "token error [12] 0x4" on CMD12 (STOP_TRANSMISSION), so each
+// track hits EOF after ~8 s. Keep 10 MHz.
+#define SDSPISPEED 10000000
+
+// Minimum time (ms) the boot screen (logo) stays up after the logo has finished drawing, before
+// the player screen replaces it. Only the display switch waits; SD mount happens before it.
+// 0 = switch immediately (upstream behaviour).
+#define BOOT_SCREEN_MIN_MS 1500
 
 // Experimental: SD album art (cover.jpg/folder.jpg) decode + render.
 // Keep this enabled only while testing; disable if you see SD playback instability.

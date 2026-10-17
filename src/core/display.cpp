@@ -378,6 +378,7 @@ void Display::_bootScreen(){
 }
 
 void Display::_buildPager(){
+  _pagerBuilt = true;
   // Header bar uses the theme "fill" color. Many themes set STATION_BG dark
   // and STATION_FILL as the intended header color.
   _meta->init("*", metaConf, config.theme.meta, config.theme.metafill);
@@ -820,13 +821,23 @@ void Display::_showDialog(const char *title){
   _meta->setText(title);
 }
 
+#include "dsplog.h"
 void Display::_swichMode(displayMode_e newmode) {
+  DSPLOG("DSP mode %d -> %d (task=%s)", (int)_mode, (int)newmode, onDspTask() ? "dsp" : "OTHER");
   #ifdef USE_NEXTION
     //nextion.swichMode(newmode);
     nextion.putRequest({NEWMODE, newmode});
   #endif
 if (newmode == _mode || 
     (network.status != CONNECTED && network.status != SDREADY)) return;
+  // SoftAP boot shows the AP screen and never builds the player/dialog pages (widgets not
+  // init()'d -> garbage text buffers). Leaving AP mode (e.g. WEB->SD offline) used to crash in
+  // _showDialog()->_meta->setText(). Build them on first use.
+  if (!_pagerBuilt) {
+    DSPLOG("DSP building pager after AP screen");
+    if (_boot) { _pager->removePage(_boot); _boot = nullptr; }
+    _buildPager();
+  }
 
   _mode = newmode;
   dsp.setScrollId(NULL);
@@ -2577,6 +2588,7 @@ void Display::_volume() {
 }
 
 void Display::requestPanelRecover(uint32_t delayMs) {
+  DSPLOG("DSP panel recover requested in %lu ms", (unsigned long)delayMs);
   uint32_t at = millis() + delayMs;
   if (at == 0) at = 1;
   _panelRecoverAt = at;   // latest request wins (debounces bursts of boost edges)
@@ -2584,7 +2596,8 @@ void Display::requestPanelRecover(uint32_t delayMs) {
 
 void Display::_panelRecover() {
 #if DSP_MODEL==DSP_ILI9341
-  Serial.println("[DSP] panel re-init + full redraw");
+  if (!_pagerBuilt) return;
+  DSPLOG("DSP panel recover (re-init + full redraw), mode=%d", (int)_mode);
   dsp.initDisplay();
   _pager->setPage(pages[PG_PLAYER]);   // clears + redraws every player widget
   _station();

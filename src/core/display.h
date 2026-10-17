@@ -53,6 +53,7 @@ class Display {
     bool onDspTask();               // true when called from the display task
     void requestPanelRecover(uint32_t delayMs);   // any task: re-init panel + full redraw on the display task
     volatile uint32_t _panelRecoverAt = 0;
+    bool _pagerBuilt = false;
     void _panelRecover();
     volatile bool panelAsleep = false;  // ILI9341 in SLPIN/DISPOFF (normally-white panel!)
     void setContrast();

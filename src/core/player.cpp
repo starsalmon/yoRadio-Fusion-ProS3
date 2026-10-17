@@ -1,4 +1,5 @@
 #include "driver/gpio.h"
+#include "dsplog.h"
 // Modified ("vol_step") by Tamás Várai
 #include "options.h"
 #include "player.h"
@@ -595,6 +596,7 @@ void Player::setOutputPins(bool isPlaying) {
       // Boost edges disturb the supply and can reset the ILI9341 (white screen): recover it.
       if (s_lastBoostLvl != 255 && display.ready()) display.requestPanelRecover(350);
       s_lastBoostLvl = (uint8_t)_ml;
+      DSPLOG("BOOST GPIO%d -> %s", (int)MUTE_PIN, _ml == MUTE_VAL ? "OFF" : "ON");
       Serial.printf("[BTC] GPIO%d DAC boost=%s (mode=%d playing=%d forceMute=%d)\n",
                     (int)MUTE_PIN, _ml == MUTE_VAL ? "OFF" : "ON",
                     (int)config.getMode(), isPlaying ? 1 : 0, _speakerForceMuted ? 1 : 0);

@@ -1,3 +1,4 @@
+#include "dsplog.h"
 #include "options.h"
 #include "config.h"
 #include <SPIFFS.h> /* ------------------myTheme webUI upload needed---------------*/ 
@@ -510,6 +511,7 @@ void Config::changeMode(int newmode) { // DLNA mod
         return;
     }
 
+    DSPLOG("PLAYMODE change %d -> %d", (int)getMode(), (int)newmode);
     const uint8_t oldMode = getMode();
     bool pir = player.isRunning();
     const bool willIndexPodcasts =
@@ -2279,7 +2281,9 @@ void Config::setBrightnessRaw(uint8_t percent) {
 #endif
 }
 
+
 void Config::setDspOn(bool dspon, bool saveval){
+  DSPLOG("setDspOn(%d, save=%d) task=%s asleep=%d", (int)dspon, (int)saveval, display.onDspTask() ? "dsp" : "OTHER", (int)display.panelAsleep);
   if(saveval){
     store.dspon = dspon;
     saveValue(&store.dspon, store.dspon, true, true);

@@ -334,10 +334,12 @@
 #define SD_SHARE_TFT_SPI 1
 // Set to 1 once after flashing SPI-sharing fixes to force a full card rescan.
 #define SD_FORCE_REINDEX 0
-// SD card SPI clock (Hz). Same 80 MHz / integer-divider rounding as TFT_SPI_FREQ above, and
-// sd_diskio caps the card at 25 MHz, so 20 MHz (80/4, exact) is the highest real SD clock.
-// Do not set 25000000: it rounds down to 20 MHz anyway. Was 10 MHz; drop back if SD errors appear.
-#define SDSPISPEED 20000000
+// SD card SPI clock (Hz). Same 80 MHz / integer-divider rounding as TFT_SPI_FREQ above
+// (real steps: 20 / 16 / 13.33 / 11.43 / 10 MHz ...), and sd_diskio caps the card at 25 MHz.
+// 20 MHz was tested (2026-10-18) and FAILS on this board: every multi-block read ends with
+// "crc error" + "token error [12] 0x4" (CMD12) and tracks hit EOF after a few seconds.
+// The bus runs through the GPIO matrix (pins 35/36/37) with 100R series resistors. Keep 10 MHz.
+#define SDSPISPEED 10000000
 
 // Experimental: SD album art (cover.jpg/folder.jpg) decode + render.
 // Keep this enabled only while testing; disable if you see SD playback instability.

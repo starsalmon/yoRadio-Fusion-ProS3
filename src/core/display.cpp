@@ -373,7 +373,9 @@ void Display::_bootScreen(){
   _bootstring = (TextWidget*) &_boot->addWidget(new TextWidget(bootstrConf, 50, true, BOOT_TXT_COLOR, 0));
   _pager->addPage(_boot);
   _pager->setPage(_boot, true);
+  DSPLOG("DSP boot logo draw begin");
   dsp.drawLogo(bootLogoTop);
+  DSPLOG("DSP boot logo draw end");
   _bootStep = 1;
 }
 
@@ -723,6 +725,7 @@ void Display::_apScreen() {
 }
 
 void Display::_start() {
+  DSPLOG("DSP_START: boot page -> player page");
   if(_boot) _pager->removePage(_boot);
   #ifdef USE_NEXTION
     nextion.wake();

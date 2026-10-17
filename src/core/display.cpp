@@ -1,6 +1,7 @@
 // Modified in v0.9.710 ("vol_step") by Tamás Várai
 #include "Arduino.h"
 #include "options.h"
+#include "dsplog.h"
 #include "SPIFFS.h"
 #include "WiFi.h"
 #include "time.h"

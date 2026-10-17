@@ -50,6 +50,12 @@ class Display {
     void setLstripActive(bool v);
     bool deepsleep();
     void wakeup();
+    bool onDspTask();               // true when called from the display task
+    void requestPanelRecover(uint32_t delayMs);   // any task: re-init panel + full redraw on the display task
+    volatile uint32_t _panelRecoverAt = 0;
+    bool _pagerBuilt = false;
+    void _panelRecover();
+    volatile bool panelAsleep = false;  // ILI9341 in SLPIN/DISPOFF (normally-white panel!)
     void setContrast();
     void lock()   { _locked=true; }
     void unlock() { _locked=false; }
@@ -151,6 +157,9 @@ class Display {
     void setContrast(){}
     bool deepsleep(){return true;}
     void wakeup(){}
+    bool onDspTask(){ return true; }
+    void requestPanelRecover(uint32_t){}
+    volatile bool panelAsleep = false;
     void printPLitem(uint8_t pos, const char* item){}
     void lock()   {}
     void unlock() {}

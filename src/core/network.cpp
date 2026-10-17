@@ -1,3 +1,4 @@
+#include "esp_wifi.h"
 //v0.9.720
 #include "options.h"
 #include <ESPmDNS.h>
@@ -51,7 +52,7 @@ void MyNetwork::WiFiReconnected(WiFiEvent_t event, WiFiEventInfo_t info){
   player.lockOutput = false;
   delay(100);
   display.putRequest(NEWMODE, PLAYER);
-  if(config.getMode()==PM_SDCARD) {
+  if(config.getMode()==PM_SDCARD || config.getMode()==PM_BLUETOOTH) {  // offline-capable modes
     network.status=CONNECTED;
     display.putRequest(NEWIP, 0);
     display.putRequest(DSPRSSI, WiFi.RSSI());
@@ -70,7 +71,7 @@ void MyNetwork::WiFiReconnected(WiFiEvent_t event, WiFiEventInfo_t info){
 void MyNetwork::WiFiLostConnection(WiFiEvent_t event, WiFiEventInfo_t info){
   if(!network.beginReconnect){
     Serial.printf("Lost connection, reconnecting to %s...\n", config.ssids[config.store.lastSSID-1].ssid);
-    if(config.getMode()==PM_SDCARD) {
+    if(config.getMode()==PM_SDCARD || config.getMode()==PM_BLUETOOTH) {  // keep playing, no LOST screen
       network.status=SDREADY;
       display.putRequest(NEWIP, 0);
       display.putRequest(DSPRSSI, 0);
@@ -86,7 +87,43 @@ void MyNetwork::WiFiLostConnection(WiFiEvent_t event, WiFiEventInfo_t info){
   WiFi.reconnect();
 }
 
+static const char *authName(wifi_auth_mode_t a) {
+  switch (a) {
+    case WIFI_AUTH_OPEN: return "OPEN"; case WIFI_AUTH_WEP: return "WEP";
+    case WIFI_AUTH_WPA_PSK: return "WPA"; case WIFI_AUTH_WPA2_PSK: return "WPA2";
+    case WIFI_AUTH_WPA_WPA2_PSK: return "WPA/WPA2"; case WIFI_AUTH_WPA2_ENTERPRISE: return "WPA2-ENT";
+    case WIFI_AUTH_WPA3_PSK: return "WPA3"; case WIFI_AUTH_WPA2_WPA3_PSK: return "WPA2/WPA3";
+    default: return "other";
+  }
+}
+// Diagnostic: list every AP the radio can see, plus the saved SSIDs (quoted, with length).
+void wifiScanLog(const char *tag) {
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(false, false);
+  esp_wifi_set_country_code("AU", true);   // AU: channels 1-13 (was world default 01: 1-11 active)
+  delay(50);
+  wifi_country_t cc = {};
+  esp_wifi_get_country(&cc);
+  int8_t txp = 0; esp_wifi_get_max_tx_power(&txp);
+  Serial.printf("[WIFISCAN] %s: country=%.2s ch%u-%u txpower=%.1fdBm saved=%u\n", tag, cc.cc,
+                (unsigned)cc.schan, (unsigned)(cc.schan + cc.nchan - 1), txp / 4.0f, (unsigned)config.ssidsCount);
+  for (uint8_t i = 0; i < config.ssidsCount; i++)
+    Serial.printf("[WIFISCAN]   saved[%u]='%s' (len %u)\n", i, config.ssids[i].ssid, (unsigned)strlen(config.ssids[i].ssid));
+  const int n = WiFi.scanNetworks(false, true);   // blocking, include hidden
+  Serial.printf("[WIFISCAN]   found %d AP(s)\n", n);
+  for (int i = 0; i < n; i++) {
+    Serial.printf("[WIFISCAN]   '%s' rssi=%d ch=%d auth=%s\n", WiFi.SSID(i).c_str(), WiFi.RSSI(i),
+                  WiFi.channel(i), authName(WiFi.encryptionType(i)));
+  }
+  WiFi.scanDelete();
+}
+
 bool MyNetwork::wifiBegin(bool silent){
+  { static uint32_t s_lastScanMs = 0;   // boot scan, then at most every 30 s while disconnected
+    if (s_lastScanMs == 0 || (uint32_t)(millis() - s_lastScanMs) >= 30000u) {
+      s_lastScanMs = millis() | 1u;
+      wifiScanLog(silent ? "background" : "boot");
+    } }
   uint8_t ls = (config.store.lastSSID == 0 || config.store.lastSSID > config.ssidsCount) ? 0 : config.store.lastSSID - 1;
   uint8_t startedls = ls;
   uint8_t errcnt = 0;
@@ -94,15 +131,21 @@ bool MyNetwork::wifiBegin(bool silent){
   while (true) {
     if(!silent){
       Serial.printf("##[BOOT]#\tAttempt to connect to %s\n", config.ssids[ls].ssid);
+      Serial.flush();
       Serial.print("##[BOOT]#\t");
-      display.putRequest(BOOTSTRING, ls);
+      if (display.ready()) {
+        display.putRequest(BOOTSTRING, ls);
+      }
     }
     //WiFi.disconnect(true, true); //disconnect & erase internal credentials https://github.com/e2002/yoradio/pull/164/commits/89d8b4450dde99cd7930b84bb14d81dab920b879
     //delay(100);
     WiFi.mode(WIFI_STA);
     WiFi.begin(config.ssids[ls].ssid, config.ssids[ls].password);
     while (WiFi.status() != WL_CONNECTED) {
-      if(!silent) Serial.print(".");
+      if(!silent) {
+        Serial.print(".");
+        if ((errcnt & 7u) == 7u) Serial.flush();
+      }
       delay(500);
       if(REAL_LEDBUILTIN!=255 && !silent) digitalWrite(REAL_LEDBUILTIN, !digitalRead(REAL_LEDBUILTIN));
       errcnt++;
@@ -154,7 +197,8 @@ void MyNetwork::begin() {
     raiseSoftAP();
     return;
   }
-  if(config.getMode()!=PM_SDCARD){
+  // SD and BT play without Wi-Fi: don't block boot; search for Wi-Fi in the background.
+  if(config.getMode()!=PM_SDCARD && config.getMode()!=PM_BLUETOOTH){
     if(!wifiBegin()){
       raiseSoftAP();
       Serial.println("##[BOOT]#\tdone");
@@ -179,7 +223,9 @@ void MyNetwork::begin() {
   if(config.isRTCFound()){
     rtc.getTime(&network.timeinfo);
     mktime(&network.timeinfo);
-    display.putRequest(CLOCK);
+    if (display.ready()) {
+      display.putRequest(CLOCK);
+    }
   }
 #endif
   if (network_on_connect) network_on_connect();

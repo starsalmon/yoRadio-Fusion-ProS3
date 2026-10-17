@@ -1,41 +1,24 @@
-// Companion ESP32 (Classic BT) controller for A2DP TX.
-// This is used when the main MCU is ESP32-S3 (BLE-only) but you still want A2DP output.
+// Companion ESP32 (Classic BT) controller for A2DP TX and A2DP RX (sink).
+// Used when the main MCU is ESP32-S3 (BLE-only) but you still want Classic BT audio.
 #pragma once
 
 #include <Arduino.h>
 
-// Initialize UART + wake pin (no-op unless BT_COMPANION_ENABLE is set).
 void btcompanion_init();
-
-// Poll UART input and maintain status (no-op unless enabled).
 void btcompanion_loop();
+// Call from blocking setup/mode-change waits so RX handover UART can progress.
+void btcompanion_pump();
 
-// Enable/disable BT output.
+// A2DP TX output (ProS3 I2S -> HiGrow -> external BT speaker).
 void btcompanion_setEnabled(bool enable);
 bool btcompanion_enabled();
 void btcompanion_toggle();
-
-// Best-effort: ask the companion to disconnect and deep sleep, even if our internal
-// enabled state is currently false (useful on boot/shutdown).
 void btcompanion_forceSleep();
-
-// Set/get the target sink name used for CONNECT.
-// - Default is BT_COMPANION_SINK_NAME (from myoptions.h).
-// - This is runtime-only (not persisted) unless you also change BT_COMPANION_SINK_NAME.
 void btcompanion_setSinkName(const char* name);
 const char* btcompanion_sinkName();
-
-// Ask the companion to (re)connect to the current sink name.
-// If audio is already started, this is a no-op to avoid disrupting playback.
 void btcompanion_requestConnect();
-
-// Optional: inform the companion about the current PCM sample rate on the I2S lines.
-// This is used to keep A2DP TX audio pitched correctly when streams switch between
-// 44.1k and 48k content (podcasts are often 48k).
 void btcompanion_setPcmSampleRate(uint32_t hz);
 
-// Best-effort link state based on periodic STATUS polling.
-// Used for UI icon selection (idle/searching/connected).
 enum class BtCompanionLinkState : uint8_t {
   OFF = 0,
   SEARCHING = 1,
@@ -44,3 +27,21 @@ enum class BtCompanionLinkState : uint8_t {
 };
 BtCompanionLinkState btcompanion_linkState();
 
+// A2DP RX input (phone -> HiGrow -> shared I2S DAC). Mutually exclusive with TX enable.
+bool btcompanion_rxActive();
+void btcompanion_enterRxMode(const char* localName);
+void btcompanion_exitRxMode();
+BtCompanionLinkState btcompanion_rxLinkState();
+void btcompanion_getRxMetadata(char* title, size_t titleLen, char* artist, size_t artistLen);
+void btcompanion_setRxLocalName(const char* name);
+const char* btcompanion_rxLocalName();
+// Map yoRadio volume (0..255) to companion AVRCP volume (0..127).
+void btcompanion_setRxVolume(uint8_t volume);
+void btcompanion_rxAvrcpToggle();
+// BT RX knob press: software mute (VOL 0 to HiGrow) / unmute (restore mapped volume).
+void btcompanion_rxToggleMute();
+bool btcompanion_rxMuted();
+// HiGrow confirmed I2S master for this RX session and the settle delay has passed (amp may enable).
+bool btcompanion_rxBusReady();
+// True once after MODE TX handover finishes (consume from main loop to reclaim I2S).
+bool btcompanion_rxExitComplete();

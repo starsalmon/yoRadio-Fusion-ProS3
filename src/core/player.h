@@ -20,6 +20,8 @@ struct playerRequestParams_t
 
 enum plStatus_e : uint8_t{ PLAYING = 1, STOPPED = 2 };
 
+void player_boostHardOff(bool holdThroughSleep);
+
 class Player: public Audio {
   private:
     uint32_t    _volTicks;   /* delayed volume save  */
@@ -76,6 +78,8 @@ class Player: public Audio {
     void setSpeakerForceMuted(bool v);
     void scheduleSpeakerUnmute(uint32_t delayMs);
     bool speakerForceMuted() const { return _speakerForceMuted; }
+    bool releaseI2sBusToCompanion();
+    bool reclaimI2sBusFromCompanion();
     void setResumeFilePos(uint32_t pos) { _resumeFilePos = pos; }
     uint32_t podcastResumeHintSec() const {
       if (_podcastResumeHintUntilMs == 0) return 0u;

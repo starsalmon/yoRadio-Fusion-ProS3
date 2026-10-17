@@ -19,6 +19,9 @@
 #include "../displays/bitmaps/footer_icons_16.h"
 #include "../myoptions.h"
 #include "sdmanager.h"
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+#include "sd_spi_shared.h"
+#endif
 #include "bt_companion.h"
 #include "album_art.h"
 #include "freertos/FreeRTOS.h"
@@ -264,9 +267,13 @@ static void loopDspTask(void * pvParameters){
   vTaskDelete( NULL );
 }
 
+static TaskHandle_t s_dspTaskHandle = nullptr;
 void Display::_createDspTask(){
-  xTaskCreatePinnedToCore(loopDspTask, "DspTask", CORE_STACK_SIZE,  NULL,  DSP_TASK_PRIORITY, NULL, DSP_TASK_CORE_ID);
+  xTaskCreatePinnedToCore(loopDspTask, "DspTask", CORE_STACK_SIZE,  NULL,  DSP_TASK_PRIORITY, &s_dspTaskHandle, DSP_TASK_CORE_ID);
 }
+#ifndef DUMMYDISPLAY
+bool Display::onDspTask() { return s_dspTaskHandle == nullptr || xTaskGetCurrentTaskHandle() == s_dspTaskHandle; }
+#endif
 
 #ifndef DUMMYDISPLAY
 //============================================================================================================================
@@ -371,6 +378,7 @@ void Display::_bootScreen(){
 }
 
 void Display::_buildPager(){
+  _pagerBuilt = true;
   // Header bar uses the theme "fill" color. Many themes set STATION_BG dark
   // and STATION_FILL as the intended header color.
   _meta->init("*", metaConf, config.theme.meta, config.theme.metafill);
@@ -464,8 +472,9 @@ void Display::_buildPager(){
             return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
           };
           const uint16_t btBlue = rgb565(0, 130, 252);
-          const bool btOut = (config.store.outputDevice == 1);
-          const BtCompanionLinkState ls = btcompanion_linkState();
+          const bool btRxIn = (config.getMode() == PM_BLUETOOTH);
+          const bool btOut = btRxIn || (config.store.outputDevice == 1);
+          const BtCompanionLinkState ls = btRxIn ? btcompanion_rxLinkState() : btcompanion_linkState();
 
           const uint8_t* bbmp = ICON_BT_DISABLED_17x16;
           uint16_t bfg = config.theme.vol;
@@ -812,13 +821,23 @@ void Display::_showDialog(const char *title){
   _meta->setText(title);
 }
 
+#include "dsplog.h"
 void Display::_swichMode(displayMode_e newmode) {
+  DSPLOG("DSP mode %d -> %d (task=%s)", (int)_mode, (int)newmode, onDspTask() ? "dsp" : "OTHER");
   #ifdef USE_NEXTION
     //nextion.swichMode(newmode);
     nextion.putRequest({NEWMODE, newmode});
   #endif
 if (newmode == _mode || 
     (network.status != CONNECTED && network.status != SDREADY)) return;
+  // SoftAP boot shows the AP screen and never builds the player/dialog pages (widgets not
+  // init()'d -> garbage text buffers). Leaving AP mode (e.g. WEB->SD offline) used to crash in
+  // _showDialog()->_meta->setText(). Build them on first use.
+  if (!_pagerBuilt) {
+    DSPLOG("DSP building pager after AP screen");
+    if (_boot) { _pager->removePage(_boot); _boot = nullptr; }
+    _buildPager();
+  }
 
   _mode = newmode;
   dsp.setScrollId(NULL);
@@ -844,6 +863,9 @@ if (newmode == _mode ||
       _meta->moveBack();
     #endif
     _meta->setAlign(metaConf.widget.align);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    if (config.getMode() == PM_BLUETOOTH) _meta->setText("Bluetooth"); else
+#endif
     _meta->setText(config.station.name);
     // Switching away to dialogs (e.g. volume) can clear the shared title widgets.
     // Ensure the player view always restores the current title from config state.
@@ -860,6 +882,8 @@ if (newmode == _mode ||
     #endif
     _nums->setText("");
     config.isScreensaver = false;
+    // Wake the panel BEFORE redrawing (a missed wake after SCREENBLANK = white screen).
+    if (panelAsleep && config.store.dspon) config.setDspOn(true, false);
     _pager->setPage( pages[PG_PLAYER]);
     if (_speechWidget) _speechWidget->setStat(config.store.ttsEnabled  != 0);
     if (_blfadeWidget) _blfadeWidget->setStat(config.store.blDimEnable != 0);
@@ -1050,7 +1074,40 @@ void Display::loop() {
   }
   if(displayQueue==NULL || _locked) return;
 
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+  // Bisect vs main: no display-side bus lock. SPIClass already serialises transactions
+  // (paramLock); only skip drawing while SD indexing holds the bus for a long scan.
+  if (sdman.indexing()) return;
+#if DSP_MODEL==DSP_ILI9341
+  // Safety net: soft redraw (no hardware reset) shortly after a play-mode change.
+  // GPIO39 boost no longer toggles per track, and post-boost HW re-inits were removed.
+  {
+    const uint32_t at = _panelRecoverAt;
+    if (at != 0 && (int32_t)(millis() - at) >= 0 && _mode == PLAYER && config.store.dspon && !panelAsleep) {
+      _panelRecoverAt = 0;
+      _panelRecover();
+    }
+    static int s_lastPlayMode = -1;
+    const int pmode = (int)config.getMode();
+    if (s_lastPlayMode >= 0 && pmode != s_lastPlayMode) requestPanelRecover(50);
+    s_lastPlayMode = pmode;
+  }
+#endif
+#endif
+
   _pager->loop();
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  // BT mode: the logo is the only thing in the station-logo slot. Other widgets
+  // (title/clock/footer redraws) can clear it, so re-blit it periodically.
+  if (_mode == PLAYER && config.getMode() == PM_BLUETOOTH && _stationLogo && !_stationLogo->locked()) {
+    static uint32_t s_btLogoBlitMs = 0;
+    const uint32_t nowMs = millis();
+    if ((uint32_t)(nowMs - s_btLogoBlitMs) >= 500u) {
+      s_btLogoBlitMs = nowMs;
+      _stationLogo->reblit();
+    }
+  }
+#endif
 #ifdef USE_NEXTION
   nextion.loop();
 #endif
@@ -1135,6 +1192,11 @@ void Display::loop() {
           #endif*/
           break;
         case NEWTITLE: _title(); break;
+        case DSPPOWER:
+          // Panel power changes requested from other tasks run here (display task only).
+          if (request.payload && _mode == SCREENBLANK) _swichMode(PLAYER);  // full redraw + wake
+          else config.setDspOn(request.payload != 0, false);
+          break;
         case NEWSTATION: _station(); break;
         case NEXTSTATION: _drawNextStationNum(request.payload); break;
         case DRAWPLAYLIST: _drawPlaylist(); break;
@@ -1459,6 +1521,11 @@ void Display::_setRSSI(int rssi) {
 
 void Display::_station() {
   _meta->setAlign(metaConf.widget.align);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    _meta->setText("Bluetooth");
+  } else
+#endif
   _meta->setText(config.station.name);
   // Refresh station number and play-mode widgets
   #if STATION_WIDGETS
@@ -1570,6 +1637,80 @@ static void spiffsKeyFromStationName(const char* stationName, char* outKey, size
   // 8 hex chars.
   snprintf(outKey, outKeyLen, "%08lx", (unsigned long)h);
 }
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+#include "../displays/bitmaps/bt_official_logo_data.h"
+
+static constexpr uint16_t kLogoColorKey = 0xF81F;
+
+static uint16_t dimRgb565(uint16_t c, float dim) {
+  if (dim >= 0.999f) return c;
+  const uint8_t r = (uint8_t)((((c >> 11) & 0x1F) * 255u) / 31u);
+  const uint8_t g = (uint8_t)((((c >> 5) & 0x3F) * 255u) / 63u);
+  const uint8_t b = (uint8_t)(((c & 0x1F) * 255u) / 31u);
+  const uint8_t r2 = (uint8_t)((float)r * dim);
+  const uint8_t g2 = (uint8_t)((float)g * dim);
+  const uint8_t b2 = (uint8_t)((float)b * dim);
+  return (uint16_t)(((r2 & 0xF8) << 8) | ((g2 & 0xFC) << 3) | (b2 >> 3));
+}
+
+static uint16_t blendRgb565(uint16_t bg, uint16_t fg, uint8_t alpha) {
+  if (alpha >= 255) return fg;
+  if (alpha == 0) return bg;
+  const uint32_t a = alpha;
+  const uint32_t ia = 255u - a;
+  const uint32_t br = (bg >> 11) & 0x1F;
+  const uint32_t bg6 = (bg >> 5) & 0x3F;
+  const uint32_t bb = bg & 0x1F;
+  const uint32_t fr = (fg >> 11) & 0x1F;
+  const uint32_t fg6 = (fg >> 5) & 0x3F;
+  const uint32_t fb = fg & 0x1F;
+  const uint32_t r = (br * ia + fr * a) / 255u;
+  const uint32_t g = (bg6 * ia + fg6 * a) / 255u;
+  const uint32_t b = (bb * ia + fb * a) / 255u;
+  return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+static uint16_t *buildBtRxStationLogo(uint16_t slotW, uint16_t slotH, uint16_t bgRgb565) {
+  if (slotW == 0 || slotH == 0) return nullptr;
+
+  const uint16_t *logoRgb = nullptr;
+  const uint8_t *logoA = nullptr;
+  uint16_t logoW = 0;
+  uint16_t logoH = 0;
+  if (slotW == 64 && slotH == 64) {
+    logoW = BT_OFFICIAL_LOGO_W_64;
+    logoH = BT_OFFICIAL_LOGO_H_64;
+    logoRgb = bt_official_logo_rgb_64;
+    logoA = bt_official_logo_a_64;
+  } else if (slotW == 80 && slotH == 80) {
+    logoW = BT_OFFICIAL_LOGO_W_80;
+    logoH = BT_OFFICIAL_LOGO_H_80;
+    logoRgb = bt_official_logo_rgb_80;
+    logoA = bt_official_logo_a_80;
+  } else {
+    return nullptr;
+  }
+
+  const size_t n = (size_t)slotW * (size_t)slotH;
+  uint16_t *buf = (uint16_t *)malloc(n * sizeof(uint16_t));
+  if (!buf) return nullptr;
+  for (size_t i = 0; i < n; i++) buf[i] = kLogoColorKey;
+
+  const int offX = (int)slotW > (int)logoW ? ((int)slotW - (int)logoW) / 2 : 0;
+  for (uint16_t y = 0; y < logoH; y++) {
+    for (uint16_t x = 0; x < logoW; x++) {
+      const size_t li = (size_t)y * (size_t)logoW + (size_t)x;
+      const uint8_t a = logoA[li];
+      if (a == 0) continue;
+      const uint16_t fg = logoRgb[li];
+      const uint16_t out = (a >= 250) ? fg : blendRgb565(bgRgb565, fg, a);
+      buf[(size_t)y * (size_t)slotW + (size_t)offX + (size_t)x] = out;
+    }
+  }
+  return buf;
+}
+#endif
 
 static bool decodeRgb565RleFileToBuf(File& f, uint32_t wordCount, uint16_t w, uint16_t h, uint16_t* outPixels) {
   if (!outPixels || w == 0 || h == 0 || (wordCount & 1u) != 0u) return false;
@@ -1813,6 +1954,44 @@ void Display::_layoutStationLogo() {
 
 void Display::_updateStationLogo() {
   if (!_stationLogo) return;
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    const bool want64 = (config.store.vuLayout == 0);
+    const uint16_t wantW = want64 ? 64 : 80;
+    const uint16_t wantH = want64 ? 64 : 80;
+    static const char kBtLogoKey[] = "bt_official";
+
+    if (_stationLogoScaled &&
+        strcmp(_stationLogoLastKey, kBtLogoKey) == 0 &&
+        _stationLogoW == wantW && _stationLogoH == wantH &&
+        !_stationLogo->locked()) {
+      return;
+    }
+
+    if (_stationLogoScaled) { free(_stationLogoScaled); _stationLogoScaled = nullptr; }
+    uint16_t *px = buildBtRxStationLogo(wantW, wantH, config.theme.background);
+    if (!px) {
+      _stationLogo->unlock();
+      _stationLogo->setImage(nullptr, 0, 0);
+      _stationLogo->lock(true);
+      return;
+    }
+    _stationLogo->setUseColorKey(true, 0xF81F);
+    _stationLogoScaled = px;
+    strlcpy(_stationLogoLastKey, kBtLogoKey, sizeof(_stationLogoLastKey));
+    _stationLogoUsedDefault = false;
+    _stationLogoLastPixels = nullptr;
+    _stationLogo->lock(true);
+    _stationLogoW = wantW;
+    _stationLogoH = wantH;
+    _layoutStationLogo();
+    _stationLogo->unlock();
+    _stationLogo->setImage(px, wantW, wantH);
+    _stationLogoLastPixels = px;
+    return;
+  }
+#endif
 
   // Global toggle: hide both station logos and SD album art.
   if (!config.getShowlogos()) {
@@ -2099,6 +2278,28 @@ static void formatHms(uint32_t sec, char* out, size_t outSz) {
 }
 
 void Display::_title() {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    char t[96];
+    char a[96];
+    btcompanion_getRxMetadata(t, sizeof(t), a, sizeof(a));
+    if (t[0] || a[0]) {
+      _title1->setText(t[0] ? t : a);
+      if (_title2) _title2->setText((t[0] && a[0]) ? a : "");
+      return;
+    }
+    const char *status = "Pair your phone";
+    switch (btcompanion_rxLinkState()) {
+      case BtCompanionLinkState::AUDIO: status = "Playing"; break;
+      case BtCompanionLinkState::CONNECTED: status = "Connected"; break;
+      case BtCompanionLinkState::SEARCHING: status = "Pair your phone"; break;
+      default: status = "Bluetooth"; break;
+    }
+    _title1->setText(status);
+    if (_title2) _title2->setText("");
+    return;
+  }
+#endif
   // If title is empty but the player is running, fall back to station name
   if (strlen(config.station.title) == 0 && player.isRunning()) {
     strlcpy(config.station.title, config.station.name, sizeof(config.station.title));
@@ -2331,8 +2532,9 @@ void Display::_volume() {
             return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
           };
           const uint16_t btBlue = rgb565(0, 130, 252);
-          const bool btOut = (config.store.outputDevice == 1);
-          const BtCompanionLinkState ls = btcompanion_linkState();
+          const bool btRxIn = (config.getMode() == PM_BLUETOOTH);
+          const bool btOut = btRxIn || (config.store.outputDevice == 1);
+          const BtCompanionLinkState ls = btRxIn ? btcompanion_rxLinkState() : btcompanion_linkState();
           const uint8_t* bbmp = ICON_BT_DISABLED_17x16;
           uint16_t bfg = config.theme.vol;
           if (btOut) {
@@ -2356,11 +2558,17 @@ void Display::_volume() {
       // Speaker volume icon
       if (_volIcon) {
         const uint8_t* vbmp = (vol <= 33) ? ICON_VOL_MUTE_18 : (vol <= 66) ? ICON_VOL_DOWN_18 : ICON_VOL_UP_18;
+        #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+          if (btcompanion_rxMuted()) vbmp = ICON_VOL_MUTE_18;
+        #endif
         _volIcon->setBitmap(vbmp, ICON_VOL_W, ICON_VOL_H);
       }
     #endif
   #endif
 
+  #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    if (btcompanion_rxMuted()) vol = 0;          // BT knob mute: empty bar + mute icon
+  #endif
   if (_volbar) {                                // "vol_step" modification
     _volbar->setValue(vol);
   }
@@ -2377,6 +2585,28 @@ void Display::_volume() {
   #endif */
 }
 
+void Display::requestPanelRecover(uint32_t delayMs) {
+  DSPLOG("DSP panel recover requested in %lu ms", (unsigned long)delayMs);
+  uint32_t at = millis() + delayMs;
+  if (at == 0) at = 1;
+  _panelRecoverAt = at;   // latest request wins (debounces bursts of boost edges)
+}
+
+void Display::_panelRecover() {
+#if DSP_MODEL==DSP_ILI9341
+  if (!_pagerBuilt) return;
+  // Soft redraw only: no TFT_RST / init sequence after boot (hardware re-inits were visible
+  // flicker and could themselves leave the normally-white panel blank).
+  DSPLOG("DSP soft redraw (no HW reset), mode=%d", (int)_mode);
+  _pager->setPage(pages[PG_PLAYER]);   // clears + redraws every player widget
+  _station();
+  _title();
+  _volume();
+  _stationLogoLastKey[0] = '\0';       // force the logo blit (its cache would skip it)
+  _updateStationLogo();
+#endif
+}
+
 void Display::flip(){ dsp.flip(); }
 
 void Display::invert(){ dsp.invert(); }
@@ -2389,7 +2619,13 @@ void  Display::setContrast(){
 
 bool Display::deepsleep(){
 #if defined(LCD_I2C) || defined(DSP_OLED) || BRIGHTNESS_PIN!=255
+  // Flag first: dsp.sleep() takes ~300 ms, and the backlight plugin (another task) must not
+  // light the backlight on a sleeping normally-white panel in that window.
+  panelAsleep = true;
   dsp.sleep();
+#if BRIGHTNESS_PIN!=255
+  analogWrite(BRIGHTNESS_PIN, 0);
+#endif
   return true;
 #endif
   return false;
@@ -2398,6 +2634,7 @@ bool Display::deepsleep(){
 void Display::wakeup(){
 #if defined(LCD_I2C) || defined(DSP_OLED) || BRIGHTNESS_PIN!=255
   dsp.wake();
+  panelAsleep = false;
 #endif
 }
 

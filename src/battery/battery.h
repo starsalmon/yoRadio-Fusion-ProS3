@@ -30,3 +30,6 @@ bool battery_alert_active();
 // Safe to call even if the gauge is unavailable.
 void battery_prepare_for_deepsleep();
 
+// Raw MAX17048 VCELL read (one I2C transaction). Returns false if the gauge isn't ready.
+bool battery_read_vcell_mv(uint16_t* mv);
+

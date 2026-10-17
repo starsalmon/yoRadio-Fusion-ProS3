@@ -4,30 +4,23 @@ SemaphoreHandle_t spiMutex = nullptr;
 SPIDog sdog;
 
 bool SPIDog::begin() {
-  if (spiMutex == nullptr)
-    spiMutex = xSemaphoreCreateMutex();
+  if (spiMutex == nullptr) {
+    spiMutex = xSemaphoreCreateRecursiveMutex();
+  }
   return spiMutex != nullptr;
 }
 
 bool SPIDog::takeMutex() {
   if (spiMutex == nullptr) return false;
-  if (xSemaphoreGetMutexHolder(spiMutex) == xTaskGetCurrentTaskHandle())
-    return true; 
-  if (xSemaphoreTake(spiMutex, portMAX_DELAY) != pdPASS) return false;
-  _busy = true;
-  return true;
+  return xSemaphoreTakeRecursive(spiMutex, portMAX_DELAY) == pdTRUE;
 }
 
 void SPIDog::giveMutex() {
-  if (spiMutex && xSemaphoreGetMutexHolder(spiMutex) == xTaskGetCurrentTaskHandle()) {
-    xSemaphoreGive(spiMutex);
-  }
-  _busy = false;
+  if (spiMutex == nullptr) return;
+  xSemaphoreGiveRecursive(spiMutex);
 }
 
 bool SPIDog::isLocked() const {
   if (spiMutex == nullptr) return false;
   return xSemaphoreGetMutexHolder(spiMutex) != nullptr;
 }
-
-

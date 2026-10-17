@@ -301,7 +301,11 @@
 #define BT_COMPANION_UART_RX   44
 #define BT_COMPANION_WAKE_PIN  38
 #define BT_COMPANION_WAKE_PULSE_MS 600
+// BT receive loudness trim vs web/SD (100 = same curve as local sources; raise if BT is quieter).
+#define BT_RX_VOL_GAIN_PCT 100
 #define BT_COMPANION_SINK_NAME "HiFi-IIS"
+// Discoverable name when ProS3 is in Bluetooth receive (input) mode.
+#define BT_COMPANION_RX_LOCAL_NAME "yoRadio Fusion"
 /********************************************/
 
 /*****************************************/
@@ -322,6 +326,10 @@
 /* SD CARD */
 
 #define SDC_CS    1
+// TFT (ILI9341) and microSD share the default SPI bus on UM ProS3 — mutex + sd_diskio patch required.
+#define SD_SHARE_TFT_SPI 1
+// Set to 1 once after flashing SPI-sharing fixes to force a full card rescan.
+#define SD_FORCE_REINDEX 0
 // SD card SPI clock (Hz). You can run TFT much faster than SD even on the same bus.
 // Start conservative for stability; increase only if verified stable.
 #define SDSPISPEED 10000000
@@ -364,6 +372,8 @@
 //
 // If WAKE_PIN1/2 are not configured, we avoid auto-sleep to prevent "bricking"
 // the device in deep sleep with no wake source.
+/* Timezone with automatic DST (POSIX TZ). Overrides the fixed tzHour/tzMin offset. Melbourne: */
+#define TIMEZONE_POSIX "AEST-10AEDT,M10.1.0,M4.1.0/3"
 #define AUTO_DEEPSLEEP_IDLE_MINUTES 15
 #define AUTO_DEEPSLEEP_BATT_PCT 5
 

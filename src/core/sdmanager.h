@@ -4,6 +4,7 @@
 class SDManager : public SDFS {
   public:
     bool ready;
+    bool indexing() const { return _indexing; }
   public:
     SDManager(FSImplPtr impl) : SDFS(impl) {}
     bool start();
@@ -13,6 +14,7 @@ class SDManager : public SDFS {
     void indexSDPlaylist();
   private:
     uint32_t _sdFCount;
+    bool _indexing = false;
   private:
     bool _checkNoMedia(const char* path);
     bool _endsWith (const char* base, const char* str);

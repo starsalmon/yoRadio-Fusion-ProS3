@@ -2,6 +2,7 @@
 
 #include "options.h"
 #include "display.h"
+#include "config.h"
 
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
 
@@ -21,16 +22,24 @@
 #ifndef BT_COMPANION_WAKE_PIN
 #define BT_COMPANION_WAKE_PIN 38
 #endif
+#ifndef BT_RX_VOL_GAIN_PCT
+// Trim BT receive level vs local sources (100 = match the yoRadio volume curve).
+#define BT_RX_VOL_GAIN_PCT 100
+#endif
 #ifndef BT_COMPANION_WAKE_PULSE_MS
 #define BT_COMPANION_WAKE_PULSE_MS 80
 #endif
 #ifndef BT_COMPANION_SINK_NAME
 #define BT_COMPANION_SINK_NAME "HiFi-IIS"
 #endif
+#ifndef BT_COMPANION_RX_LOCAL_NAME
+#define BT_COMPANION_RX_LOCAL_NAME "yoRadio Fusion"
+#endif
 
 static HardwareSerial s_btUart(BT_COMPANION_UART_PORT);
 static bool s_enabled = false;
 static String s_line;
+static String s_uartLastComplete;
 static volatile uint32_t s_lastPongMs = 0;
 static volatile uint32_t s_lastStatusMs = 0;
 static uint32_t s_lastStatusReqMs = 0;
@@ -43,6 +52,214 @@ static int s_conn = -1;
 static int s_audio = -1;
 static BtCompanionLinkState s_link = BtCompanionLinkState::OFF;
 static char s_sinkName[64] = BT_COMPANION_SINK_NAME;
+static bool s_rxActive = false;
+// Knob-press software mute in BT RX: VOL 0 to the HiGrow, restore the mapped volume on unmute.
+static bool s_rxMuted = false;
+// millis() when the HiGrow was confirmed I2S master for this RX session (0 = not yet).
+static uint32_t s_rxMasterAtMs = 0;
+static char s_rxLocalName[64] = BT_COMPANION_RX_LOCAL_NAME;
+static char s_rxTitle[96] = "";
+static char s_rxArtist[96] = "";
+static int s_rxConn = -1;
+static int s_rxAudio = -1;
+static BtCompanionLinkState s_rxLink = BtCompanionLinkState::OFF;
+static uint32_t s_lastRxUiMs = 0;
+
+enum class RxHandoverStep : uint8_t {
+  None = 0,
+  ResetSleepWait,
+  EnterWake,
+  EnterPing,
+  EnterStatusCheck,
+  EnterHandover,
+  EnterModeRx,
+  ExitModeTx,
+};
+static RxHandoverStep s_rxStep = RxHandoverStep::None;
+static uint32_t s_rxStepAtMs = 0;
+static uint32_t s_rxPingBaselineMs = 0;
+static uint8_t s_pingTries = 0;
+// HiGrow b3b2fec releases Classic-BT memory in rxSinkStop() (a2dp_sink.end(true)), so a second
+// sink start in the same awake session silently fails (stays "waiting", unconnectable). Only a
+// freshly booted HiGrow may be given MODE RX; otherwise reset it first (SLEEP + wake).
+static bool s_rxHgFresh = false;
+static uint32_t s_rxDropAtMs = 0;       // phone dropped (was connected, now not); 0 = none
+static uint32_t s_rxLastResetMs = 0;
+static void rxResetHiGrow(const char *why);
+// Last HiGrow STATUS: mode=rx and bt=1 (A2DP sink running => HiGrow is I2S master).
+static bool s_hgModeRx = false;
+static int s_hgRxSink = -1;
+static uint32_t s_rxStatusBaselineMs = 0;
+static uint32_t s_lastStatusMsFwd = 0;
+static bool s_rxExitCompleteFlag = false;
+
+static void sendLine(const char *s);
+static void wakePulse();
+
+static void rxHandoverAdvance() {
+  const uint32_t now = millis();
+  switch (s_rxStep) {
+    case RxHandoverStep::None:
+      break;
+    case RxHandoverStep::ResetSleepWait:
+      if ((uint32_t)(now - s_rxStepAtMs) >= 1800u) {
+        s_rxHgFresh = true;     // it is booting from deep sleep now
+        s_pingTries = 0;
+        wakePulse();
+        s_rxStep = RxHandoverStep::EnterWake;
+        s_rxStepAtMs = millis();
+      }
+      break;
+    case RxHandoverStep::EnterWake:
+      if ((uint32_t)(now - s_rxStepAtMs) >= 250u) {
+        s_rxPingBaselineMs = s_lastPongMs;
+        sendLine("PING");
+        s_rxStep = RxHandoverStep::EnterPing;
+        s_rxStepAtMs = now;
+      }
+      break;
+    case RxHandoverStep::EnterPing:
+      if (s_lastPongMs == s_rxPingBaselineMs) {
+        // HiGrow needs ~1 s to boot out of deep sleep: retry PING every 500 ms, up to ~5 s.
+        if ((uint32_t)(now - s_rxStepAtMs) < 500u) break;
+        if (++s_pingTries < 10) {
+          // A SLEEP sent just before entry can race the first wake pulse (HiGrow still
+          // shutting down). Re-pulse wake every other retry; harmless while it's awake.
+          if ((s_pingTries & 1u) == 0u) wakePulse();
+          sendLine("PING");
+          s_rxStepAtMs = now;
+          break;
+        }
+        s_pingTries = 0;
+        Serial.println("[BT2] RX handover: no PONG after retries, continuing");
+      } else {
+        if (s_pingTries > 0) s_rxHgFresh = true;   // needed retries => HiGrow just booted
+        s_pingTries = 0;
+        Serial.printf("[BT2] RX handover: PONG ok (fresh=%d)\n", s_rxHgFresh ? 1 : 0);
+      }
+      // Keep-connected: if the HiGrow is already in RX with the sink up (e.g. ProS3 rebooted),
+      // don't restart it (that drops the phone). Ask for STATUS first.
+      s_rxStatusBaselineMs = s_lastStatusMsFwd;
+      sendLine("STATUS");
+      s_rxStep = RxHandoverStep::EnterStatusCheck;
+      s_rxStepAtMs = now;
+      break;
+    case RxHandoverStep::EnterStatusCheck: {
+      const bool fresh = (s_lastStatusMsFwd != s_rxStatusBaselineMs);
+      if (fresh && s_hgModeRx && s_hgRxSink == 1) {
+        // ProS3 I2S pins were already released before enterRxMode(); HiGrow stays master.
+        Serial.println("[BT2] RX handover: HiGrow already RX master, keeping phone connected");
+        s_rxMasterAtMs = now ? now : 1;
+        btcompanion_setRxVolume(config.store.volume);  // resync volume
+        sendLine("STATUS");  // also makes the HiGrow replay cached META
+        display.putRequest(DRAWVOL);
+        display.putRequest(NEWSTATION);
+        display.putRequest(NEWTITLE);
+        s_rxStep = RxHandoverStep::None;
+        break;
+      }
+      if (!fresh && (uint32_t)(now - s_rxStepAtMs) >= 800u && (uint32_t)(now - s_rxStepAtMs) < 900u) {
+        sendLine("STATUS");   // one retry before deciding
+        s_rxStepAtMs -= 100u; // ensure only one retry
+        break;
+      }
+      if (fresh || (uint32_t)(now - s_rxStepAtMs) >= 1700u) {
+        if (!s_rxHgFresh) {
+          rxResetHiGrow(fresh ? "HiGrow awake but not RX master" : "no STATUS reply");
+          break;
+        }
+        sendLine("HANDOVER PROS3_RELEASED");
+        s_rxStep = RxHandoverStep::EnterHandover;
+        s_rxStepAtMs = now;
+      }
+      break;
+    }
+    case RxHandoverStep::EnterHandover:
+      if (s_uartLastComplete.indexOf("OK HIGROW_ARMED") >= 0) {
+        s_uartLastComplete = "";
+        char buf[96];
+        snprintf(buf, sizeof(buf), "MODE RX %s", s_rxLocalName);
+        sendLine(buf);
+        s_rxStep = RxHandoverStep::EnterModeRx;
+        s_rxStepAtMs = now;
+      } else if ((uint32_t)(now - s_rxStepAtMs) >= 2000u) {
+        Serial.println("[BT2] RX handover: HIGROW_ARMED timeout");
+        char buf[96];
+        snprintf(buf, sizeof(buf), "MODE RX %s", s_rxLocalName);
+        sendLine(buf);
+        s_rxStep = RxHandoverStep::EnterModeRx;
+        s_rxStepAtMs = now;
+      }
+      break;
+    case RxHandoverStep::EnterModeRx:
+      if (s_uartLastComplete.indexOf("BUS_HIGROW_MASTER") >= 0) {
+        s_uartLastComplete = "";
+        s_rxMasterAtMs = now ? now : 1;
+        btcompanion_setRxVolume(config.store.volume);  // VOL sent before wake may have been lost
+        sendLine("STATUS");
+        display.putRequest(DRAWVOL);
+        s_rxStep = RxHandoverStep::None;
+      } else if ((uint32_t)(now - s_rxStepAtMs) >= 5000u) {
+        Serial.println("[BT2] RX handover: BUS_HIGROW_MASTER timeout");
+        sendLine("STATUS");
+        s_rxStep = RxHandoverStep::None;
+      }
+      break;
+    case RxHandoverStep::ExitModeTx:
+      if (s_uartLastComplete.indexOf("BUS_HIGROW_RELEASED") >= 0) {
+        s_uartLastComplete = "";
+        sendLine("SLEEP");
+        s_rxActive = false;
+        s_rxMuted = false;
+        s_rxMasterAtMs = 0;
+        s_rxConn = -1;
+        s_rxAudio = -1;
+        s_rxLink = BtCompanionLinkState::OFF;
+        s_rxTitle[0] = s_rxArtist[0] = '\0';
+        s_rxStep = RxHandoverStep::None;
+        s_rxExitCompleteFlag = true;
+        display.putRequest(DRAWVOL);
+      } else if ((uint32_t)(now - s_rxStepAtMs) >= 4000u) {
+        Serial.println("[BT2] RX exit: BUS_HIGROW_RELEASED timeout");
+        sendLine("SLEEP");
+        s_rxActive = false;
+        s_rxMuted = false;
+        s_rxMasterAtMs = 0;
+        s_rxConn = -1;
+        s_rxAudio = -1;
+        s_rxLink = BtCompanionLinkState::OFF;
+        s_rxTitle[0] = s_rxArtist[0] = '\0';
+        s_rxStep = RxHandoverStep::None;
+        s_rxExitCompleteFlag = true;
+        display.putRequest(DRAWVOL);
+      }
+      break;
+  }
+}
+
+static void maybeUpdateRxLinkState() {
+  BtCompanionLinkState next = BtCompanionLinkState::OFF;
+  if (!s_rxActive) next = BtCompanionLinkState::OFF;
+  else if (s_rxConn == 2 && (s_rxAudio == 2 || s_rxAudio == 1)) next = BtCompanionLinkState::AUDIO;
+  else if (s_rxConn == 2) next = BtCompanionLinkState::CONNECTED;
+  else next = BtCompanionLinkState::SEARCHING;
+  if (next != s_rxLink) {
+    const bool wasConn = (s_rxLink == BtCompanionLinkState::CONNECTED || s_rxLink == BtCompanionLinkState::AUDIO);
+    const bool isConn  = (next == BtCompanionLinkState::CONNECTED || next == BtCompanionLinkState::AUDIO);
+    if (wasConn && !isConn) {
+      Serial.printf("[BT2] phone dropped (conn=%d): back to waiting, clearing metadata\n", s_rxConn);
+      s_rxTitle[0] = s_rxArtist[0] = '\0';
+      s_rxDropAtMs = millis() | 1u;
+    }
+    if (isConn) s_rxDropAtMs = 0;
+    s_rxLink = next;
+    display.putRequest(DRAWVOL);
+    display.putRequest(NEWSTATION);
+    if (!s_rxTitle[0] && !s_rxArtist[0]) {
+      display.putRequest(NEWTITLE);
+    }
+  }
+}
 
 static void maybeUpdateLinkState() {
   BtCompanionLinkState next = BtCompanionLinkState::OFF;
@@ -78,27 +295,65 @@ static void pumpRx() {
       // recognize PONG/STATUS lines.
       while (out.length() > 0 && (uint8_t)out[0] < 0x20) out.remove(0, 1);
       if (out.length() == 0) continue;
+      s_uartLastComplete = out;
       // Avoid spamming Serial with periodic STATUS responses.
       if (!out.startsWith("STATUS ")) {
-        Serial.print("[BT2] ");
+        Serial.print("[BTC] ");
         Serial.println(out);
       }
       if (out == "PONG") s_lastPongMs = millis();
       if (out.startsWith("STATUS ")) {
-        // Example:
-        // STATUS conn=2 audio=2 bt=1 ring=... i2sB=... underrunB=... overrunB=... peak=... dc=...
         auto readInt = [&](const char *key, int &dst) -> void {
           const int idx = out.indexOf(key);
           if (idx < 0) return;
           int start = idx + (int)strlen(key);
           int end = start;
-          while (end < (int)out.length() && isdigit((unsigned char)out[end])) end++;
+          while (end < (int)out.length() && (isdigit((unsigned char)out[end]) || out[end] == '-')) end++;
           dst = out.substring(start, end).toInt();
         };
-        readInt("conn=", s_conn);
-        readInt("audio=", s_audio);
-        s_lastStatusMs = millis();
-        maybeUpdateLinkState();
+        auto readStr = [&](const char *key, char *dst, size_t dstLen) -> void {
+          if (!dst || dstLen == 0) return;
+          const int idx = out.indexOf(key);
+          if (idx < 0) return;
+          int start = idx + (int)strlen(key);
+          while (start < (int)out.length() && out[start] == ' ') start++;
+          int end = start;
+          while (end < (int)out.length() && out[end] != ' ') end++;
+          String v = out.substring(start, end);
+          v.trim();
+          strlcpy(dst, v.c_str(), dstLen);
+        };
+        s_hgModeRx = (out.indexOf("mode=rx") >= 0);
+        if (s_hgModeRx) { int b = -1; readInt("bt=", b); s_hgRxSink = b; } else { s_hgRxSink = -1; }
+        s_lastStatusMsFwd = millis();
+        if (out.indexOf("mode=rx") >= 0) {
+          readInt("conn=", s_rxConn);
+          readInt("audio=", s_rxAudio);
+          s_lastStatusMs = millis();
+          maybeUpdateRxLinkState();
+          s_lastRxUiMs = millis();
+          display.putRequest(NEWTITLE);
+        } else {
+          readInt("conn=", s_conn);
+          readInt("audio=", s_audio);
+          s_lastStatusMs = millis();
+          maybeUpdateLinkState();
+        }
+      }
+      if (out.startsWith("META ")) {
+        auto readMeta = [&](const char *key, char *dst, size_t dstLen) {
+          const int idx = out.indexOf(key);
+          if (idx < 0) return;
+          int start = idx + (int)strlen(key);
+          String v = out.substring(start);
+          v.trim();
+          strlcpy(dst, v.c_str(), dstLen);
+        };
+        if (out.indexOf("title=") >= 0) readMeta("title=", s_rxTitle, sizeof(s_rxTitle));
+        if (out.indexOf("artist=") >= 0) readMeta("artist=", s_rxArtist, sizeof(s_rxArtist));
+        s_lastRxUiMs = millis();
+        Serial.printf("[BTC] META stored title='%s' artist='%s'\n", s_rxTitle, s_rxArtist);
+        display.putRequest(NEWTITLE);
       }
       continue;
     }
@@ -119,12 +374,8 @@ static void wakePulse() {
 
 static void sendLine(const char *s) {
   if (!s) return;
-  // Avoid spamming Serial with periodic STATUS polling.
   if (strcmp(s, "STATUS") != 0) {
-  #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
-    Serial.print("[BT2->] ");
-    Serial.println(s);
-  #endif
+    Serial.printf("[BTC->] %s\n", s);
   }
   s_btUart.print(s);
   s_btUart.print('\n');
@@ -141,6 +392,20 @@ void btcompanion_forceSleep() {
   sendLine("DISCONNECT");
   delay(80);
   sendLine("SLEEP");
+}
+
+static bool waitForUartContains(const char *needle, uint32_t timeoutMs) {
+  if (!needle || !needle[0]) return false;
+  const uint32_t start = millis();
+  while ((uint32_t)(millis() - start) < timeoutMs) {
+    pumpRx();
+    if (s_uartLastComplete.indexOf(needle) >= 0) {
+      s_uartLastComplete = "";
+      return true;
+    }
+    delay(10);
+  }
+  return false;
 }
 
 static bool waitForPong(uint32_t timeoutMs) {
@@ -308,11 +573,59 @@ bool btcompanion_enabled() { return s_enabled; }
 
 void btcompanion_toggle() { btcompanion_setEnabled(!s_enabled); }
 
-void btcompanion_loop() {
+void btcompanion_pump() {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   pumpRx();
+  rxHandoverAdvance();
+#endif
+}
+
+static void rxResetHiGrow(const char *why) {
+  Serial.printf("[BT2] HiGrow reset (SLEEP + wake): %s\n", why ? why : "");
+  sendLine("SLEEP");
+  s_rxMasterAtMs = 0;              // amp off while the bus floats
+  s_rxConn = -1;
+  s_rxAudio = -1;
+  s_hgModeRx = false;
+  s_hgRxSink = -1;
+  s_rxTitle[0] = s_rxArtist[0] = '\0';
+  s_rxDropAtMs = 0;
+  s_rxLastResetMs = millis() | 1u;
+  s_rxLink = BtCompanionLinkState::SEARCHING;
+  s_rxStep = RxHandoverStep::ResetSleepWait;
+  s_rxStepAtMs = millis();
+  display.putRequest(DRAWVOL);
+  display.putRequest(NEWSTATION);
+  display.putRequest(NEWTITLE);
+}
+
+void btcompanion_loop() {
+  btcompanion_pump();
+
+  // BT RX watchdogs (only between handovers).
+  if (s_rxActive && s_rxStep == RxHandoverStep::None) {
+    const uint32_t now = millis();
+    const bool recentReset = s_rxLastResetMs && (uint32_t)(now - s_rxLastResetMs) < 30000u;
+    // Phone dropped and nothing reconnected for 15 s: the HiGrow may be stuck unconnectable.
+    // Resetting it is harmless while nothing is connected.
+    if (s_rxDropAtMs && (uint32_t)(now - s_rxDropAtMs) >= 15000u && s_rxConn != 2 && !recentReset) {
+      rxResetHiGrow("phone dropped, not reconnected within 15 s");
+    }
+    // HiGrow stopped answering STATUS (asleep/hung): UI must not stay on stale "connected".
+    else if (s_lastStatusMs && (uint32_t)(now - s_lastStatusMs) >= 12000u && !recentReset) {
+      rxResetHiGrow("no STATUS for 12 s");
+    }
+  }
 
   // Poll STATUS while enabled so UI can show searching/connected.
-  if (s_enabled) {
+  if (s_rxActive) {
+    const uint32_t now = millis();
+    const uint32_t period = (s_rxLink == BtCompanionLinkState::AUDIO) ? 5000u : 2000u;
+    if (s_lastStatusReqMs == 0 || (uint32_t)(now - s_lastStatusReqMs) >= period) {
+      s_lastStatusReqMs = now;
+      sendLine("STATUS");
+    }
+  } else if (s_enabled) {
     const uint32_t now = millis();
     // While not connected, poll faster. Once connected, slow down.
     const uint32_t period = (s_link == BtCompanionLinkState::AUDIO) ? 3000u : 800u;
@@ -355,10 +668,136 @@ void btcompanion_loop() {
 
 BtCompanionLinkState btcompanion_linkState() { return s_link; }
 
+bool btcompanion_rxActive() { return s_rxActive; }
+
+void btcompanion_setRxLocalName(const char* name) {
+  if (!name || !name[0]) return;
+  strlcpy(s_rxLocalName, name, sizeof(s_rxLocalName));
+}
+
+const char* btcompanion_rxLocalName() { return s_rxLocalName; }
+
+void btcompanion_getRxMetadata(char* title, size_t titleLen, char* artist, size_t artistLen) {
+  if (title && titleLen) strlcpy(title, s_rxTitle, titleLen);
+  if (artist && artistLen) strlcpy(artist, s_rxArtist, artistLen);
+}
+
+BtCompanionLinkState btcompanion_rxLinkState() { return s_rxLink; }
+
+void btcompanion_setRxVolume(uint8_t volume) {
+  if (!s_rxActive) return;
+  if (s_rxMuted) {               // turning the knob (or any volume resync) unmutes
+    s_rxMuted = false;
+    display.putRequest(DRAWVOL);
+  }
+  // yoRadio volume is 0..100 (setVolumeSteps(100)). Previously this clamped to 0..21, so any
+  // volume above 21% sent full scale (VOL 127) and BT was far louder than local sources.
+  // Mirror Audio::calculateVolumeLimits() so the same knob position gives a similar level.
+  uint8_t v = volume;
+  if (v > 100) v = 100;
+  const float t = (float)v / 100.0f;
+  float g = (t < 0.5f) ? (t * t * 1.3f) : (0.3f + ((t - 0.5f) / 0.5f) * 0.7f);
+  g *= 0.9f * ((float)BT_RX_VOL_GAIN_PCT / 100.0f);
+  if (g > 1.0f) g = 1.0f;
+  if (g < 0.0f) g = 0.0f;
+  // HiGrow b3b2fec applies TWO gains for VOL v (0..127): the ESP32-A2DP default exponential
+  // volume control E(v) = (1.4^(12v/127-12) - 1.4^-12)/(1 - 1.4^-12), then a linear v/127
+  // in its stream reader. Pick the largest v whose total gain E(v)*v/127 <= g.
+  auto higrowGain = [](int vv) -> float {
+    const float z = powf(1.4f, -12.0f);
+    const float e = (powf(1.4f, (float)vv * 12.0f / 127.0f - 12.0f) - z) / (1.0f - z);
+    return e * (float)vv / 127.0f;
+  };
+  uint8_t avrcp = 0;
+  for (int vv = 127; vv >= 0; --vv) {
+    if (higrowGain(vv) <= g + 1e-6f) { avrcp = (uint8_t)vv; break; }
+  }
+  if (v > 0 && avrcp == 0) avrcp = 1;
+  char buf[24];
+  snprintf(buf, sizeof(buf), "VOL %u", (unsigned)avrcp);
+  Serial.printf("[BTC] RX volume %u%% -> VOL %u (gain %.3f)\n", (unsigned)v, (unsigned)avrcp, (double)g);
+  sendLine(buf);
+}
+
+bool btcompanion_rxMuted() { return s_rxActive && s_rxMuted; }
+
+#ifndef BT_RX_BOOST_SETTLE_MS
+#define BT_RX_BOOST_SETTLE_MS 250u
+#endif
+bool btcompanion_rxBusReady() {
+  if (!s_rxActive || s_rxStep != RxHandoverStep::None) return false;
+  // Late confirmation (handover timed out but a later STATUS shows RX + sink up).
+  if (s_rxMasterAtMs == 0 && s_hgModeRx && s_hgRxSink == 1) s_rxMasterAtMs = millis() | 1u;
+  return s_rxMasterAtMs != 0 && (uint32_t)(millis() - s_rxMasterAtMs) >= BT_RX_BOOST_SETTLE_MS;
+}
+
+void btcompanion_rxToggleMute() {
+  if (!s_rxActive) return;
+  if (s_rxMuted) {
+    Serial.println("[BTC] knob: UNMUTE");
+    btcompanion_setRxVolume(config.store.volume);   // clears s_rxMuted, sends mapped VOL
+  } else {
+    Serial.println("[BTC] knob: MUTE (VOL 0)");
+    sendLine("VOL 0");
+    s_rxMuted = true;
+    display.putRequest(DRAWVOL);
+  }
+}
+
+void btcompanion_rxAvrcpToggle() {
+  if (!s_rxActive) return;
+  Serial.println("[BTC] AVRCP TOGGLE");
+  sendLine("AVRCP TOGGLE");
+}
+
+void btcompanion_enterRxMode(const char* localName) {
+  if (localName && localName[0]) btcompanion_setRxLocalName(localName);
+
+  if (s_enabled) btcompanion_setEnabled(false);
+
+  if (s_rxActive && s_rxStep != RxHandoverStep::None) {
+    return;
+  }
+
+  if (!s_rxActive) {
+    s_rxConn = -1;
+    s_rxAudio = -1;
+    s_rxTitle[0] = s_rxArtist[0] = '\0';
+    s_rxLink = BtCompanionLinkState::SEARCHING;
+    s_rxActive = true;
+    s_rxMuted = false;
+    s_rxMasterAtMs = 0;
+    s_rxExitCompleteFlag = false;
+    s_rxHgFresh = false;
+    s_rxDropAtMs = 0;
+    s_lastStatusMs = 0;
+  }
+
+  wakePulse();
+  s_rxStep = RxHandoverStep::EnterWake;
+  s_rxStepAtMs = millis();
+  display.putRequest(DRAWVOL);
+}
+
+void btcompanion_exitRxMode() {
+  if (!s_rxActive && s_rxStep == RxHandoverStep::None) return;
+  if (s_rxStep == RxHandoverStep::ExitModeTx) return;
+  sendLine("MODE TX");
+  s_rxStep = RxHandoverStep::ExitModeTx;
+  s_rxStepAtMs = millis();
+}
+
+bool btcompanion_rxExitComplete() {
+  if (!s_rxExitCompleteFlag) return false;
+  s_rxExitCompleteFlag = false;
+  return true;
+}
+
 #else  // BT_COMPANION_ENABLE
 
 void btcompanion_init() {}
 void btcompanion_loop() {}
+void btcompanion_pump() {}
 void btcompanion_setEnabled(bool) {}
 bool btcompanion_enabled() { return false; }
 void btcompanion_toggle() {}
@@ -368,6 +807,19 @@ const char* btcompanion_sinkName() { return ""; }
 void btcompanion_requestConnect() {}
 void btcompanion_setPcmSampleRate(uint32_t) {}
 BtCompanionLinkState btcompanion_linkState() { return BtCompanionLinkState::OFF; }
+bool btcompanion_rxActive() { return false; }
+void btcompanion_enterRxMode(const char*) {}
+void btcompanion_exitRxMode() {}
+BtCompanionLinkState btcompanion_rxLinkState() { return BtCompanionLinkState::OFF; }
+void btcompanion_getRxMetadata(char*, size_t, char*, size_t) {}
+void btcompanion_setRxLocalName(const char*) {}
+const char* btcompanion_rxLocalName() { return ""; }
+void btcompanion_setRxVolume(uint8_t) {}
+void btcompanion_rxAvrcpToggle() {}
+bool btcompanion_rxMuted() { return false; }
+bool btcompanion_rxBusReady() { return false; }
+void btcompanion_rxToggleMute() {}
+bool btcompanion_rxExitComplete() { return false; }
 
 #endif
 

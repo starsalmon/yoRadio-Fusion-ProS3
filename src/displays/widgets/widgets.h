@@ -461,6 +461,7 @@ class RgbImageWidget : public Widget {
     void init(WidgetConfig wconf, uint16_t bgcolor);
     void setImage(const uint16_t* img, uint16_t w, uint16_t h);
     void setUseColorKey(bool enable, uint16_t key = 0xF81F);
+    void reblit() { _draw(); }  // redraw over whatever cleared the slot (no clear first)
   protected:
     const uint16_t* _img = nullptr;
     uint16_t _iw = 0, _ih = 0;

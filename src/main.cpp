@@ -21,6 +21,8 @@
 #include "core/timekeeper.h"
 #include "clock/clock_tts.h"
 #include "driver/rtc_io.h"
+#include "driver/gpio.h"
+#include "esp_system.h"
 #include "battery/battery.h"
 #include "core/podcast_resume.h"
 
@@ -102,7 +104,33 @@ void setupOTA(){
 extern IRrecv         irrecv;
 extern decode_results irResults;
 
+// Amp/boost enable (GPIO39 on ProS3) low as early as possible: runs during C++ static init,
+// well before setup(). Releases any deep-sleep hold while keeping the level low.
+#if MUTE_PIN != 255
+static void __attribute__((constructor)) yoradio_early_boost_off() {
+  gpio_set_direction((gpio_num_t)MUTE_PIN, GPIO_MODE_OUTPUT);
+  gpio_set_level((gpio_num_t)MUTE_PIN, MUTE_VAL == HIGH ? 1 : 0);
+  gpio_hold_dis((gpio_num_t)MUTE_PIN);
+  // SD_CS / TFT_CS / TFT_RST have no external pull-ups: stop them floating from reset.
+  // LDO2 (TFT/SD supply) is still off here, so only weak internal pull-ups (no back-powering
+  // the unpowered parts through a hard HIGH); they are driven HIGH right after LDO2 is enabled.
+  const gpio_num_t early[] = {(gpio_num_t)SDC_CS, (gpio_num_t)TFT_CS, (gpio_num_t)TFT_RST};
+  for (gpio_num_t p : early) {
+    if ((int)p < 0 || (int)p == 255) continue;
+    gpio_set_direction(p, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(p, GPIO_PULLUP_ONLY);
+  }
+}
+static void yoradio_boost_off_on_restart() {
+  gpio_set_level((gpio_num_t)MUTE_PIN, MUTE_VAL == HIGH ? 1 : 0);
+}
+#endif
+
 void setup() {
+#if MUTE_PIN != 255
+  player_boostHardOff(false);
+  esp_register_shutdown_handler(yoradio_boost_off_on_restart);   // ESP.restart()/OTA
+#endif
   Serial.begin(115200);
     EEPROM.begin(EEPROM_SIZE);
 #if IR_PIN != 255
@@ -126,7 +154,12 @@ void setup() {
   config.init();
   clock_tts_setup();
 
-  display.init();
+  display.init();   // main's boot order: display first
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  btcompanion_init();
+#endif
+
   player.init();
 
   // Apply last output device selection (speaker vs BT companion) before any auto-play.
@@ -152,30 +185,46 @@ void setup() {
   telnet.begin();
   initControls();
   startControlsTask();
-  btcompanion_init();
   // If last output was BT, start the companion connect flow now.
 #ifdef BT_COMPANION_ENABLE
   btcompanion_setEnabled(config.store.outputDevice == 1);
   // Prime companion with the current PCM sample rate (best-effort).
   btcompanion_setPcmSampleRate(player.getSampleRate());
-  if (config.store.outputDevice != 1) {
+  if (config.store.outputDevice != 1 && config.getMode() != PM_BLUETOOTH) {
     // Ensure companion isn't left streaming if ProS3 rebooted.
+    // (Not when booting into BT RX: the HiGrow may still be connected to the phone.)
     btcompanion_forceSleep();
   }
 #endif
   display.putRequest(DSP_START);
-  while(!display.ready()) delay(10);
+  while (!display.ready()) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    btcompanion_pump();
+#endif
+    delay(10);
+  }
   #if USE_OTA
     if (network.status == CONNECTED || network.status == SOFT_AP) setupOTA();
   #endif
   if (config.getMode()==PM_SDCARD) player.initHeaders(config.station.url);
   player.lockOutput=false;
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    if (!player.releaseI2sBusToCompanion()) {
+      Serial.println("##[WARN]# Boot BT RX: I2S release failed");
+    }
+    config.startBluetoothRxSession();
+    config.refreshPlayModeDisplay();
+  }
+#endif
   if (config.store.smartstart == 1) {
     // Only auto-play when we actually have a usable playback path:
     // - CONNECTED: web streaming is possible
     // - PM_SDCARD: SD playback is possible (even if we're currently in SoftAP mode)
     if (network.status == CONNECTED || config.getMode() == PM_SDCARD) {
-      player.sendCommand({PR_PLAY, config.lastStation()});
+      if (config.getMode() != PM_BLUETOOTH) {
+        player.sendCommand({PR_PLAY, config.lastStation()});
+      }
     }
   }
   Audio::audio_info_callback =  my_audio_info;   // "audio_change" audiohandlers.h ban kezelve.
@@ -186,6 +235,25 @@ void loop() {
   timekeeper.loop1();
   telnet.loop();
   btcompanion_loop();
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (btcompanion_rxExitComplete()) {
+    if (!player.reclaimI2sBusFromCompanion()) {
+      Serial.println("##[WARN]# I2S bus reclaim failed after BT RX");
+    }
+    player.setSpeakerForceMuted(config.store.outputDevice == 1);
+    delay(30);                                   // let the ProS3 I2S clock out silence first
+    player.setOutputPins(player.isRunning());
+  }
+  // BT RX: re-evaluate the amp enable whenever "HiGrow is master + settled" changes.
+  {
+    static bool s_lastBtAmp = false;
+    const bool btAmp = (config.getMode() == PM_BLUETOOTH) && btcompanion_rxBusReady();
+    if (btAmp != s_lastBtAmp) {
+      s_lastBtAmp = btAmp;
+      player.setOutputPins(player.isRunning());
+    }
+  }
+#endif
   processControlsEvents();
   // Runtime audio toggles (avoid doing work every loop unless the value changes).
   {
@@ -232,7 +300,8 @@ void loop() {
   // SD playback should stay usable even when WiFi fails and we fall back to SoftAP.
   // (network.status == SDREADY is only set when booting in SD mode; it does not
   // represent "SD available" in all cases.)
-  if (network.status == CONNECTED || network.status==SDREADY || config.getMode() == PM_SDCARD) {
+  if (network.status == CONNECTED || network.status==SDREADY || config.getMode() == PM_SDCARD ||
+      config.getMode() == PM_BLUETOOTH) {
     player.loop();
 #ifdef BT_COMPANION_ENABLE
     // Keep the companion informed if content changes the PCM sample rate.
@@ -306,7 +375,24 @@ void loop() {
   const uint32_t now = millis();
 
   if (s_lastPlayingMs == 0) s_lastPlayingMs = now;
-  if (player.isRunning()) s_lastPlayingMs = now;
+  // BT RX: audio comes from the HiGrow, so player.isRunning() is always false. Count BT as
+  // playing only while the HiGrow reports A2DP streaming (STATUS audio=1 -> link AUDIO), sticky for
+  // 60 s after the last streaming status. Idle/paused/disconnected BT still auto-sleeps.
+  bool s_activeLike = player.isRunning();
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  {
+    static uint32_t s_btLastStreamMs = 0;
+    static bool s_btSeenStream = false;
+    if (config.getMode() == PM_BLUETOOTH) {
+      if (btcompanion_rxLinkState() == BtCompanionLinkState::AUDIO) {
+        s_btLastStreamMs = now;
+        s_btSeenStream = true;
+      }
+      if (s_btSeenStream && (uint32_t)(now - s_btLastStreamMs) < 60000u) s_activeLike = true;
+    }
+  }
+#endif
+  if (s_activeLike) s_lastPlayingMs = now;
 
   // Check at a low cadence (avoid extra work in the main loop).
   if (s_lastPowerCheckMs == 0 || (uint32_t)(now - s_lastPowerCheckMs) >= 1000) {
@@ -337,7 +423,7 @@ void loop() {
       }
     }
 
-    if (!player.isRunning()) {
+    if (!s_activeLike) {
       const uint32_t idleMs = (uint32_t)(now - s_lastPlayingMs);
       const uint32_t idleLimitMs = (uint32_t)AUTO_DEEPSLEEP_IDLE_MINUTES * 60UL * 1000UL;
       if (AUTO_DEEPSLEEP_IDLE_MINUTES > 0 && idleMs >= idleLimitMs) {

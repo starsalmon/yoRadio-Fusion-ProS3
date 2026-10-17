@@ -5,8 +5,12 @@
 #include "config.h"
 #include "network.h"
 #include "display.h"
+#include "bt_companion.h"
 #include "player.h"
 #include "netserver.h"
+#if SDC_CS != 255
+#include "sdmanager.h"
+#endif
 #include "rtcsupport.h"
 #include "../displays/tools/l10n.h"
 #include "../pluginsManager/pluginsManager.h"
@@ -296,7 +300,15 @@ void TimeKeeper::_upScreensaver() {
   if (!display.ready()) {
     return;
   }
-  if (config.store.screensaverEnabled && display.mode() == PLAYER && !player.isRunning()) {
+  // BT receive: the ProS3 player is stopped but audio is playing via the HiGrow.
+  bool playing = player.isRunning();
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    const BtCompanionLinkState ls = btcompanion_rxLinkState();
+    playing = (ls == BtCompanionLinkState::AUDIO || ls == BtCompanionLinkState::CONNECTED);
+  }
+#endif
+  if (config.store.screensaverEnabled && display.mode() == PLAYER && !playing) {
     config.screensaverTicks++;
     if (config.screensaverTicks > config.store.screensaverTimeout + SCREENSAVERSTARTUPDELAY) {
       if (config.store.screensaverBlank) {
@@ -307,7 +319,7 @@ void TimeKeeper::_upScreensaver() {
       config.screensaverTicks = SCREENSAVERSTARTUPDELAY;
     }
   }
-  if (config.store.screensaverPlayingEnabled && display.mode() == PLAYER && player.isRunning()) {
+  if (config.store.screensaverPlayingEnabled && display.mode() == PLAYER && playing) {
     config.screensaverPlayingTicks++;
     if (config.screensaverPlayingTicks > config.store.screensaverPlayingTimeout * 60 + SCREENSAVERSTARTUPDELAY) {
       if (config.store.screensaverPlayingBlank) {
@@ -330,9 +342,13 @@ void TimeKeeper::_upRSSI() {
     }
   }
 #ifdef USE_SD
-  if (display.mode() != SDCHANGE) {
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI
+  /* cardPresent() cannot probe raw sectors on the same bus as the TFT. */
+#else
+  if (display.mode() != SDCHANGE && !sdman.indexing()) {
     player.sendCommand({PR_CHECKSD, 0});
   }
+#endif
 #endif
   player.sendCommand({PR_VUTONUS, 0});
 }

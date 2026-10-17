@@ -1,6 +1,9 @@
+#include "driver/gpio.h"
+#include "dsplog.h"
 // Modified ("vol_step") by Tamás Várai
 #include "options.h"
 #include "player.h"
+#include "boostprobe.h"
 #include "config.h"
 #include "telnet.h"
 #include "display.h"
@@ -9,6 +12,7 @@
 #include "timekeeper.h"
 #include "podcasts.h"
 #include "podcast_resume.h"
+#include "bt_companion.h"
 #include <time.h> /* ----- Auto On-Off Timer ----- */
 #include "../displays/tools/l10n.h"
 #include "../pluginsManager/pluginsManager.h"
@@ -215,7 +219,14 @@ void Player::_stop(bool alreadyStopped){
   }
   _status = STOPPED;
   setOutputPins(false);
-  if(!_hasError) config.setTitle((display.mode()==LOST || display.mode()==UPDATING)?"":LANG::const_PlStopped);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (config.getMode() == PM_BLUETOOTH) {
+    setOutputPins(false);
+  }
+#endif
+  if (!_hasError && config.getMode() != PM_BLUETOOTH) {
+    config.setTitle((display.mode() == LOST || display.mode() == UPDATING) ? "" : LANG::const_PlStopped);
+  }
   config.station.bitrate = 0;
   config.setBitrateFormat(BF_UNKNOWN);
   #ifdef USE_NEXTION
@@ -304,16 +315,31 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
         break;
       }
       case PR_TOGGLE: {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+        if (config.getMode() == PM_BLUETOOTH) {
+          btcompanion_rxToggleMute();
+          break;
+        }
+#endif
         toggle();
         break;
       }
       case PR_VOL: {
         config.setVolume(requestP.payload);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+        if (config.getMode() == PM_BLUETOOTH) {
+          btcompanion_setRxVolume((uint8_t)requestP.payload);
+        } else {
+          Audio::setVolume(volToI2S(requestP.payload));
+        }
+#else
         Audio::setVolume(volToI2S(requestP.payload));
+#endif
         break;
       }
       #ifdef USE_SD
       case PR_CHECKSD: {
+        if (sdman.indexing()) break;
         if(config.getMode()==PM_SDCARD){
           if(!sdman.cardPresent()){
             sdman.stop();
@@ -546,14 +572,61 @@ if (config.getMode() == PM_SDCARD && !isRunning() && _status == PLAYING) {
 void Player::setOutputPins(bool isPlaying) {
   if(REAL_LEDBUILTIN!=255) digitalWrite(REAL_LEDBUILTIN, LED_INVERT?!isPlaying:isPlaying);
   bool _ml = false;
+  // Boost/amp stays ON continuously once the ProS3 I2S has carried audio in a playback mode
+  // ("armed"); track start/stop/end no longer toggle it (each edge glitched the shared SPI bus:
+  // SD crc errors + white screens). It only goes OFF on BT handover, output=headphones,
+  // deep sleep / restart (player_boostHardOff).
+  static bool s_ampArmed = false;
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  // BT receive: HiGrow drives I2S; keep 5V DAC rail (MUTE_PIN) on even though player is stopped.
+  // Only once the HiGrow has confirmed it is I2S master (plus a settle delay); otherwise the
+  // amp enables onto a floating/unsettled bus and pops (boot, handover).
+  if (config.getMode() == PM_BLUETOOTH) {
+    s_ampArmed = false;   // bus belongs to the HiGrow; re-arm only after ProS3 playback restarts
+    _ml = btcompanion_rxBusReady() ? !MUTE_VAL : MUTE_VAL;
+  } else if (btcompanion_rxActive()) {
+    // Leaving BT: HiGrow still owns/releases the bus. Keep the amp off until the ProS3 reclaims it.
+    s_ampArmed = false;
+    _ml = MUTE_VAL;
+  } else
+#endif
   if (MUTE_LOCK) {
     _ml = !MUTE_VAL;
   } else if (_speakerForceMuted) {
     _ml = MUTE_VAL;
   } else {
-    _ml = isPlaying ? !MUTE_VAL : MUTE_VAL;
+    if (isPlaying) s_ampArmed = true;          // first playback => I2S running: arm
+    _ml = s_ampArmed ? !MUTE_VAL : MUTE_VAL;
   }
-  if(MUTE_PIN!=255) digitalWrite(MUTE_PIN, _ml);
+  if (MUTE_PIN != 255) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    static uint8_t s_lastBoostLvl = 255;
+    if (s_lastBoostLvl != (uint8_t)_ml) {
+      s_lastBoostLvl = (uint8_t)_ml;
+      if (_ml != MUTE_VAL) boostprobe_beforeOn();   // VBAT / LOW_BAT dip diagnostic
+      DSPLOG("BOOST GPIO%d -> %s", (int)MUTE_PIN, _ml == MUTE_VAL ? "OFF" : "ON");
+      Serial.printf("[BTC] GPIO%d DAC boost=%s (mode=%d playing=%d forceMute=%d)\n",
+                    (int)MUTE_PIN, _ml == MUTE_VAL ? "OFF" : "ON",
+                    (int)config.getMode(), isPlaying ? 1 : 0, _speakerForceMuted ? 1 : 0);
+    }
+#endif
+    digitalWrite(MUTE_PIN, _ml);
+  }
+}
+
+// Drive the amp/boost enable (MUTE_PIN) off immediately; optionally latch it through deep sleep.
+void player_boostHardOff(bool holdThroughSleep) {
+#if MUTE_PIN != 255
+  gpio_hold_dis((gpio_num_t)MUTE_PIN);
+  pinMode(MUTE_PIN, OUTPUT);
+  digitalWrite(MUTE_PIN, MUTE_VAL);
+  if (holdThroughSleep) {
+    gpio_hold_en((gpio_num_t)MUTE_PIN);
+    gpio_deep_sleep_hold_en();
+  }
+#else
+  (void)holdThroughSleep;
+#endif
 }
 
 void Player::setSpeakerForceMuted(bool v) {
@@ -570,6 +643,23 @@ void Player::setSpeakerForceMuted(bool v) {
 void Player::scheduleSpeakerUnmute(uint32_t delayMs) {
   _speakerUnmutePending = true;
   _speakerUnmuteAtMs = millis() + delayMs;
+}
+
+bool Player::releaseI2sBusToCompanion() {
+#if I2S_DOUT == 255
+  return false;
+#else
+  stopSong();
+  return releaseI2sGpioBus(I2S_BCLK, I2S_LRC, I2S_DOUT);
+#endif
+}
+
+bool Player::reclaimI2sBusFromCompanion() {
+#if I2S_DOUT == 255
+  return false;
+#else
+  return restoreI2sGpioBus(I2S_BCLK, I2S_LRC, I2S_DOUT);
+#endif
 }
 
 void Player::_play(uint16_t stationId) {

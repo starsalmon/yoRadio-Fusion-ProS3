@@ -119,6 +119,10 @@ class Audio {
     bool             setAudioPlayTime(uint16_t sec);
     bool             setTimeOffset(int sec);
     bool             setPinout(uint8_t BCLK, uint8_t LRC, uint8_t DOUT, int8_t MCLK = I2S_GPIO_UNUSED);
+    // Release I2S GPIOs to high-impedance inputs (companion HiGrow owns the bus).
+    bool             releaseI2sGpioBus(uint8_t BCLK, uint8_t LRC, uint8_t DOUT);
+    bool             restoreI2sGpioBus(uint8_t BCLK, uint8_t LRC, uint8_t DOUT);
+    bool             i2sGpioBusReleased() const { return m_i2sBusReleased; }
     bool             pauseResume();
     bool             isRunning() { return m_f_running; }
     void             loop();
@@ -417,6 +421,10 @@ class Audio {
     uint32_t       m_haveNewFilePos = 0;            // user changed the file position
     bool           m_f_metadata = false;            // assume stream without metadata
     bool           m_f_I2S_init = false;            //
+    bool           m_i2sBusReleased = false;
+    uint8_t        m_pinBclk = 255;
+    uint8_t        m_pinLrc = 255;
+    uint8_t        m_pinDout = 255;
     bool           m_f_unsync = false;              // set within ID3 tag but not used
     bool           m_f_exthdr = false;              // ID3 extended header
     bool           m_f_ssl = false;                 //

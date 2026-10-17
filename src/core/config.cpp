@@ -1,3 +1,4 @@
+#include "dsplog.h"
 #include "options.h"
 #include "config.h"
 #include <SPIFFS.h> /* ------------------myTheme webUI upload needed---------------*/ 
@@ -207,7 +208,6 @@ void Config::init() {
   EEPROM.commit();
 
   // Clamp play mode (fork adds PM_PODCAST=2; DLNA is handled via playlistSource).
-  store.play_mode = store.play_mode & 0b11;
   if (store.play_mode > MAX_PLAY_MODE) store.play_mode = PM_WEB;
   _initHW();
   if (!SPIFFS.begin(true)) {
@@ -400,6 +400,44 @@ void Config::_setupVersion(){
   saveValue(&store.version, currentVersion);
 }
 
+void Config::applyPlayModeStrings() {
+  switch (getMode()) {
+    case PM_BLUETOOTH:
+      setStation("Bluetooth");
+      setTitle("Pair your phone");
+      break;
+    case PM_PODCAST:
+      setStation("Podcasts");
+      break;
+    case PM_SDCARD:
+      break;
+    case PM_WEB:
+    default:
+      break;
+  }
+}
+
+void Config::refreshPlayModeDisplay() {
+  if (!_bootDone || !display.ready()) return;
+  netserver.resetQueue();
+  netserver.requestOnChange(GETINDEX, 0);
+  display.resetQueue();
+  display.putRequest(NEWMODE, PLAYER);
+  display.putRequest(NEWSTATION);
+  display.putRequest(NEWTITLE);
+}
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+void Config::startBluetoothRxSession() {
+  player.setSpeakerForceMuted(false);
+  btcompanion_enterRxMode(btcompanion_rxLocalName());
+  btcompanion_setRxVolume(store.volume);
+  player.setOutputPins(false);
+}
+#else
+void Config::startBluetoothRxSession() {}
+#endif
+
 void Config::toggleMode() {
   // Physical mode button cycles only the 3 main playback modes:
   // Web → SD → Podcast → Web ...
@@ -424,7 +462,23 @@ void Config::toggleMode() {
     return;
   }
 
-  // Podcast (and unknown)
+  if (getMode() == PM_PODCAST) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    changeMode(PM_BLUETOOTH);
+#else
+    changeMode(PM_WEB);
+#endif
+    return;
+  }
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (getMode() == PM_BLUETOOTH) {
+    changeMode(PM_WEB);
+    return;
+  }
+#endif
+
+  // Podcast (and unknown) -> web
   changeMode(PM_WEB);
 }
 
@@ -438,7 +492,15 @@ void Config::changeMode(int newmode) { // DLNA mod
             newmode = (SDC_CS != 255) ? PM_SDCARD : PM_PODCAST;
         } else if (getMode() == PM_SDCARD) {
             newmode = PM_PODCAST;
-        } else { // Podcast (and unknown)
+        } else if (getMode() == PM_PODCAST) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+            newmode = PM_BLUETOOTH;
+#else
+            newmode = PM_WEB;
+#endif
+        } else if (getMode() == PM_BLUETOOTH) {
+            newmode = PM_WEB;
+        } else { // unknown
             newmode = PM_WEB;
         }
     }
@@ -449,6 +511,7 @@ void Config::changeMode(int newmode) { // DLNA mod
         return;
     }
 
+    DSPLOG("PLAYMODE change %d -> %d", (int)getMode(), (int)newmode);
     const uint8_t oldMode = getMode();
     bool pir = player.isRunning();
     const bool willIndexPodcasts =
@@ -467,6 +530,46 @@ void Config::changeMode(int newmode) { // DLNA mod
         Serial.println("##[ERROR]# Podcast mode requires Wi-Fi");
         return;
     }
+
+    const bool enteringBluetoothRx =
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+        (newmode == PM_BLUETOOTH && oldMode != PM_BLUETOOTH);
+#else
+        false;
+#endif
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    if (enteringBluetoothRx) {
+        if (pir) {
+            player.lockOutput = true;
+            player.sendCommand({PR_STOP, 0});
+            uint32_t stopStart = millis();
+            while (player.isRunning() && (millis() - stopStart) < 1200) {
+                player.loop();
+                btcompanion_pump();
+                delay(10);
+            }
+            if (player.isRunning()) player.stopSong();
+            player.lockOutput = false;
+        }
+        if (store.outputDevice == 1) {
+            btcompanion_setEnabled(false);
+        }
+        if (!player.releaseI2sBusToCompanion()) {
+            Serial.println("##[ERROR]# Failed to release I2S bus for BT RX");
+            return;
+        }
+        playModeBeforeBluetooth = oldMode;
+    }
+
+    if (oldMode == PM_BLUETOOTH && newmode != PM_BLUETOOTH) {
+        btcompanion_exitRxMode();
+        // I2S GPIO reclaim runs from main loop after HiGrow releases the bus (non-blocking UART).
+        setTitle(LANG::const_PlStopped);
+    }
+#else
+    if (newmode == PM_BLUETOOTH) return;
+#endif
 
     // NOTE: Avoid writing "Podcast" UI state before the mode is actually committed.
     // If something resets mid-transition, we'd otherwise show "Indexing..." while still in SD.
@@ -488,6 +591,7 @@ void Config::changeMode(int newmode) { // DLNA mod
         uint32_t stopStart = millis();
         while (player.isRunning() && (millis() - stopStart) < 2500) {
             player.loop();        // process immediately in this context
+            btcompanion_pump();
             delay(10);
         }
         if (player.isRunning()) {
@@ -514,6 +618,7 @@ void Config::changeMode(int newmode) { // DLNA mod
         // Stop shouldn't take long; if it does, force-stop so mode switching feels instant.
         while (player.isRunning() && (millis() - stopStart) < 700) {
             player.loop();
+            btcompanion_pump();
             delay(10);
         }
         if (player.isRunning()) {
@@ -555,6 +660,7 @@ void Config::changeMode(int newmode) { // DLNA mod
                     uint32_t stopStart = millis();
                     while (player.isRunning() && (millis() - stopStart) < 2500) {
                       player.loop();
+                      btcompanion_pump();
                       delay(10);
                     }
                     if (player.isRunning()) {
@@ -576,6 +682,12 @@ void Config::changeMode(int newmode) { // DLNA mod
     /* === set mode === */
     store.play_mode = (playMode_e)newmode;
     saveValue(&store.play_mode, (uint8_t)store.play_mode, true, true);
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    if (enteringBluetoothRx) {
+        startBluetoothRxSession();
+    }
+#endif
 
     const bool enteringSD = (getMode() == PM_SDCARD);
 
@@ -599,9 +711,8 @@ void Config::changeMode(int newmode) { // DLNA mod
 
     initPlaylistMode();
 
-    // For non-podcast modes, line 2 should indicate the stopped state when nothing is playing.
-    // (Podcast mode uses line 2 for episode titles while browsing.)
-    if (getMode() != PM_PODCAST && !player.isRunning()) {
+    applyPlayModeStrings();
+    if (getMode() != PM_PODCAST && getMode() != PM_BLUETOOTH && !player.isRunning()) {
       setTitle(LANG::const_PlStopped);
     }
 
@@ -620,7 +731,7 @@ void Config::changeMode(int newmode) { // DLNA mod
     #endif
     // When entering Podcast mode, do not auto-resume old playback.
     // (Podcast mode is list-driven; also avoids keeping SD audio alive.)
-    if (pir && getMode() != PM_PODCAST) {
+    if (pir && getMode() != PM_PODCAST && getMode() != PM_BLUETOOTH) {
       #ifdef USE_DLNA
         uint16_t st = (getMode() == PM_SDCARD) ? store.lastSdStation
                                                : (store.playlistSource == PL_SRC_DLNA ? store.lastDlnaStation : store.lastStation);
@@ -631,22 +742,41 @@ void Config::changeMode(int newmode) { // DLNA mod
       #endif
     }
 
-    netserver.resetQueue();
-    netserver.requestOnChange(GETINDEX, 0);
-
-    display.resetQueue();
-    display.putRequest(NEWMODE, PLAYER);
-    display.putRequest(NEWSTATION);
-    display.putRequest(NEWTITLE); // queue reset can drop stop-time title updates
+    refreshPlayModeDisplay();
 #endif
 }
 
 void Config::initSDPlaylist() {
 #ifdef USE_SD
-  //store.countStation = 0;
-  //bool doIndex = !sdman.exists(INDEX_SD_PATH);
-  //if(doIndex) sdman.indexSDPlaylist();
-  sdman.indexSDPlaylist();
+  if (display.ready() && display.mode() != SDCHANGE) {
+    display.putRequest(NEWMODE, SDCHANGE);
+    const uint32_t t0 = millis();
+    while (display.mode() != SDCHANGE && (uint32_t)(millis() - t0) < 800u) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+      btcompanion_pump();
+#endif
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+  }
+  bool forceIndex = false;
+#if SD_FORCE_REINDEX
+  forceIndex = true;
+#endif
+  const bool needIndex =
+      forceIndex || !sdman.exists(INDEX_SD_PATH) || !sdman.exists(PLAYLIST_SD_PATH);
+  if (needIndex) {
+    sdman.indexSDPlaylist();
+  } else {
+    File idx = sdman.open(INDEX_SD_PATH, "r");
+    const bool bad = (!idx || idx.size() < 4);
+    if (idx) idx.close();
+    if (bad) sdman.indexSDPlaylist();
+    else Serial.println("##[SD]#\tusing cached index");
+  }
+  if (playlistLength() == 0 && sdman.ready) {
+    Serial.println("##[SD]#\tempty index — rescanning card");
+    sdman.indexSDPlaylist();
+  }
   if (SDPLFS()->exists(INDEX_SD_PATH)) {
     File index = SDPLFS()->open(INDEX_SD_PATH, "r");
     //store.countStation = index.size() / 4;
@@ -767,6 +897,14 @@ void Config::setSDpos(uint32_t val){
 
 void Config::initPlaylistMode() {
   uint16_t _lastStation = 0;
+
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  if (getMode() == PM_BLUETOOTH) {
+    applyPlayModeStrings();
+    _bootDone = true;
+    return;
+  }
+#endif
 
 #ifdef USE_SD
   if (getMode() == PM_SDCARD) {
@@ -1120,13 +1258,26 @@ void Config::setScreensaverPlayingBlank(bool val){
   display.putRequest(NEWMODE, PLAYER);
 #endif
 }
+// Automatic DST: if TIMEZONE_POSIX is set (myoptions.h), override the fixed-offset TZ that
+// configTime() installs with a POSIX rule string. configTime() still starts SNTP; only TZ changes,
+// so the tzHour/tzMin offset is not applied twice (localtime() uses TZ only).
+static void applyPosixTz() {
+#ifdef TIMEZONE_POSIX
+  if (TIMEZONE_POSIX[0] != '\0') {
+    setenv("TZ", TIMEZONE_POSIX, 1);
+    tzset();
+    Serial.printf("[TIME] TZ=%s\n", TIMEZONE_POSIX);
+  }
+#endif
+}
+
 void Config::setSntpOne(const char *val){
   bool tzdone = false;
   if (strlen(val) > 0 && strlen(store.sntp2) > 0) {
-    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), val, store.sntp2);
+    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), val, store.sntp2); applyPosixTz();
     tzdone = true;
   } else if (strlen(val) > 0) {
-    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), val);
+    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), val); applyPosixTz();
     tzdone = true;
   }
   if (tzdone) {
@@ -1221,7 +1372,7 @@ void Config::resetSystem(const char *val, uint8_t clientId){
     saveValue(store.sntp2, "au.pool.ntp.org", 35);
     saveValue(&store.timeSyncInterval, (uint16_t)60);
     saveValue(&store.timeSyncIntervalRTC, (uint16_t)24);
-    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1, store.sntp2);
+    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1, store.sntp2); applyPosixTz();
     timekeeper.forceTimeSync = true;
     netserver.requestOnChange(GETTIMEZONE, clientId);
     return;
@@ -2065,9 +2216,9 @@ bool Config::saveWifi() {
 
 void Config::setTimeConf(){
   if(strlen(store.sntp1)>0 && strlen(store.sntp2)>0){
-    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1, store.sntp2);
+    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1, store.sntp2); applyPosixTz();
   }else if(strlen(store.sntp1)>0){
-    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1);
+    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1); applyPosixTz();
   }
 }
 
@@ -2092,8 +2243,12 @@ bool Config::initNetwork() {
 
 void Config::setBrightness(bool dosave){
 #if BRIGHTNESS_PIN!=255
-  if(!store.dspon && dosave) {
-    display.wakeup();
+  if (display.panelAsleep || (!store.dspon && dosave)) {
+    // Never light the backlight on a sleeping panel: wake it (via the display task) instead;
+    // the wake path restores the backlight from store.brightness.
+    if (dosave) saveValue(&store.brightness, store.brightness, false, true);
+    setDspOn(true, dosave);
+    return;
   }
   analogWrite(BRIGHTNESS_PIN, map(store.brightness, 0, 100, 0, 255));
   if(!store.dspon) store.dspon = true;
@@ -2121,14 +2276,22 @@ void Config::setBrightnessRaw(uint8_t percent) {
   if (percent > 100) percent = 100;
 
   // Hardware only: do not persist to config/store.
+  if (display.panelAsleep) return;  // backlight on + panel asleep = white screen
   analogWrite(BRIGHTNESS_PIN, map(percent, 0, 100, 0, 255));
 #endif
 }
 
+
 void Config::setDspOn(bool dspon, bool saveval){
+  DSPLOG("setDspOn(%d, save=%d) task=%s asleep=%d", (int)dspon, (int)saveval, display.onDspTask() ? "dsp" : "OTHER", (int)display.panelAsleep);
   if(saveval){
     store.dspon = dspon;
     saveValue(&store.dspon, store.dspon, true, true);
+  }
+  // Panel sleep/wake only on the display task; queue it from anywhere else.
+  if (display.ready() && !display.onDspTask()) {
+    display.putRequest(DSPPOWER, dspon ? 1 : 0);
+    return;
   }
 #ifdef USE_NEXTION
   if(!dspon) nextion.sleep();
@@ -2200,6 +2363,7 @@ void Config::doSleep() {
 #endif
     if (mask != 0) { esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ANY_LOW); }
     esp_sleep_enable_timer_wakeup(config.sleepfor * 60ULL * 1000000ULL);
+    player_boostHardOff(true);   // amp off and latched low through deep sleep (no wake pop)
     esp_deep_sleep_start();
 }
 
@@ -2292,6 +2456,7 @@ void Config::doSleepW() {
     delay(3);
 #endif
 
+    player_boostHardOff(true);   // amp off and latched low through deep sleep (no wake pop)
     esp_deep_sleep_start();
 }
 

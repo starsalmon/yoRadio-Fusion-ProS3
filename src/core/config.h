@@ -47,7 +47,7 @@
   #define REAL_INDEX (config.getMode()==PM_WEB?INDEX_PATH:(config.getMode()==PM_PODCAST?INDEX_PODCAST_PATH:INDEX_SD_PATH))
 #endif
 
-#define MAX_PLAY_MODE   2
+#define MAX_PLAY_MODE   4
 #define WEATHERKEY_LENGTH 58
 #define MDNS_LENGTH 24
 
@@ -61,6 +61,8 @@ enum playMode_e : uint8_t {  //DLNA mod
   PM_WEB    = 0,
   PM_SDCARD = 1,
   PM_PODCAST = 2,
+  // PM 3 reserved for DLNA UI overlay (playlistSource), not stored in play_mode.
+  PM_BLUETOOTH = 4,
 };
 
 
@@ -376,6 +378,8 @@ class Config {
     uint16_t screensaverPlayingTicks;
     bool     isScreensaver;
     int      newConfigMode;
+    // Play mode to restore when leaving PM_BLUETOOTH via MODE double-click (not persisted).
+    uint8_t  playModeBeforeBluetooth = PM_WEB;
     char      tmpBuf[BUFLEN];
     char     tmpBuf2[BUFLEN];
     char       ipBuf[16];
@@ -427,6 +431,9 @@ class Config {
     void initSDPlaylist();
     void changeMode(int newmode=-1);
     void toggleMode(); //DLNA mod
+    void applyPlayModeStrings();
+    void refreshPlayModeDisplay();
+    void startBluetoothRxSession();
     uint16_t playlistLength();
     uint16_t lastStation(){
 #ifdef USE_SD

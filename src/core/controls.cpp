@@ -746,6 +746,7 @@ void onBtnClick(int id) {
   controlEvt_e btnid = static_cast<controlEvt_e>(id);
   pm.on_btn_click(btnid);
   if (network.status != CONNECTED && network.status!=SDREADY && config.getMode() != PM_SDCARD &&
+      config.getMode() != PM_BLUETOOTH &&
       (controlEvt_e)id!=EVT_BTNMODE && !passBnCenter) return;
   switch (btnid) {
     case EVT_BTNLEFT: {
@@ -760,6 +761,12 @@ void onBtnClick(int id) {
           display.putRequest(NEWMODE, PLAYER);
         }
         if (display.mode() == PLAYER) {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+          if (config.getMode() == PM_BLUETOOTH) {
+            btcompanion_rxToggleMute();
+            break;
+          }
+#endif
           player.toggle();
         }
         if (display.mode() == SCREENSAVER || display.mode() == SCREENBLANK) {
@@ -893,10 +900,17 @@ void onBtnDoubleClick(int id) {
         break;
       }
     case EVT_BTNMODE: {
-        // MODE double-click is intentionally left unused (spare for future).
-        // Still notify plugins so the mode-button LED pulse triggers.
         controlEvt_e evt = EVT_BTNMODE;
         pm.on_btn_click(evt);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+        if (config.getMode() == PM_BLUETOOTH) {
+          uint8_t back = config.playModeBeforeBluetooth;
+          if (back == PM_BLUETOOTH || back > MAX_PLAY_MODE) back = PM_WEB;
+          config.changeMode((int)back);
+        } else {
+          config.changeMode(PM_BLUETOOTH);
+        }
+#endif
         break;
       }
     default:

@@ -38,5 +38,10 @@ const char* btcompanion_rxLocalName();
 // Map yoRadio volume (0..255) to companion AVRCP volume (0..127).
 void btcompanion_setRxVolume(uint8_t volume);
 void btcompanion_rxAvrcpToggle();
+// BT RX knob press: software mute (VOL 0 to HiGrow) / unmute (restore mapped volume).
+void btcompanion_rxToggleMute();
+bool btcompanion_rxMuted();
+// HiGrow confirmed I2S master for this RX session and the settle delay has passed (amp may enable).
+bool btcompanion_rxBusReady();
 // True once after MODE TX handover finishes (consume from main loop to reclaim I2S).
 bool btcompanion_rxExitComplete();

@@ -20,6 +20,8 @@ struct playerRequestParams_t
 
 enum plStatus_e : uint8_t{ PLAYING = 1, STOPPED = 2 };
 
+void player_boostHardOff(bool holdThroughSleep);
+
 class Player: public Audio {
   private:
     uint32_t    _volTicks;   /* delayed volume save  */

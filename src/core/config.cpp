@@ -2359,6 +2359,7 @@ void Config::doSleep() {
 #endif
     if (mask != 0) { esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ANY_LOW); }
     esp_sleep_enable_timer_wakeup(config.sleepfor * 60ULL * 1000000ULL);
+    player_boostHardOff(true);   // amp off and latched low through deep sleep (no wake pop)
     esp_deep_sleep_start();
 }
 
@@ -2451,6 +2452,7 @@ void Config::doSleepW() {
     delay(3);
 #endif
 
+    player_boostHardOff(true);   // amp off and latched low through deep sleep (no wake pop)
     esp_deep_sleep_start();
 }
 

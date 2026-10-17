@@ -1,3 +1,4 @@
+#include "driver/gpio.h"
 // Modified ("vol_step") by Tamás Várai
 #include "options.h"
 #include "player.h"
@@ -314,7 +315,7 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
       case PR_TOGGLE: {
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
         if (config.getMode() == PM_BLUETOOTH) {
-          btcompanion_rxAvrcpToggle();
+          btcompanion_rxToggleMute();
           break;
         }
 #endif
@@ -571,8 +572,13 @@ void Player::setOutputPins(bool isPlaying) {
   bool _ml = false;
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   // BT receive: HiGrow drives I2S; keep 5V DAC rail (MUTE_PIN) on even though player is stopped.
+  // Only once the HiGrow has confirmed it is I2S master (plus a settle delay); otherwise the
+  // amp enables onto a floating/unsettled bus and pops (boot, handover).
   if (config.getMode() == PM_BLUETOOTH) {
-    _ml = !MUTE_VAL;
+    _ml = btcompanion_rxBusReady() ? !MUTE_VAL : MUTE_VAL;
+  } else if (btcompanion_rxActive()) {
+    // Leaving BT: HiGrow still owns/releases the bus. Keep the amp off until the ProS3 reclaims it.
+    _ml = MUTE_VAL;
   } else
 #endif
   if (MUTE_LOCK) {
@@ -586,6 +592,8 @@ void Player::setOutputPins(bool isPlaying) {
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
     static uint8_t s_lastBoostLvl = 255;
     if (s_lastBoostLvl != (uint8_t)_ml) {
+      // Boost edges disturb the supply and can reset the ILI9341 (white screen): recover it.
+      if (s_lastBoostLvl != 255 && display.ready()) display.requestPanelRecover(350);
       s_lastBoostLvl = (uint8_t)_ml;
       Serial.printf("[BTC] GPIO%d DAC boost=%s (mode=%d playing=%d forceMute=%d)\n",
                     (int)MUTE_PIN, _ml == MUTE_VAL ? "OFF" : "ON",
@@ -594,6 +602,21 @@ void Player::setOutputPins(bool isPlaying) {
 #endif
     digitalWrite(MUTE_PIN, _ml);
   }
+}
+
+// Drive the amp/boost enable (MUTE_PIN) off immediately; optionally latch it through deep sleep.
+void player_boostHardOff(bool holdThroughSleep) {
+#if MUTE_PIN != 255
+  gpio_hold_dis((gpio_num_t)MUTE_PIN);
+  pinMode(MUTE_PIN, OUTPUT);
+  digitalWrite(MUTE_PIN, MUTE_VAL);
+  if (holdThroughSleep) {
+    gpio_hold_en((gpio_num_t)MUTE_PIN);
+    gpio_deep_sleep_hold_en();
+  }
+#else
+  (void)holdThroughSleep;
+#endif
 }
 
 void Player::setSpeakerForceMuted(bool v) {

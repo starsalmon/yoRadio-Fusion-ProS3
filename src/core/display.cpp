@@ -1068,27 +1068,19 @@ void Display::loop() {
   // (paramLock); only skip drawing while SD indexing holds the bus for a long scan.
   if (sdman.indexing()) return;
 #if DSP_MODEL==DSP_ILI9341
-  // White-screen safety net (MISO isn't wired, so the panel can't be read back):
-  //  - every 30 s on the player page: re-assert power/format registers (invisible)
-  //  - on every play-mode change: full panel re-init + redraw
-  if (_mode == PLAYER && config.store.dspon) {
-    static uint32_t s_regRefreshMs = 0;
-    static int s_lastPlayMode = -1;
-    const uint32_t nowMs = millis();
-    const int pmode = (int)config.getMode();
-    if (s_lastPlayMode >= 0 && pmode != s_lastPlayMode) {
-      Serial.printf("[DSP] play mode %d->%d: panel re-init\n", s_lastPlayMode, pmode);
-      dsp.initDisplay();
-      _pager->setPage(pages[PG_PLAYER]);
-      // Already on the display task: redraw directly (don't post to our own queue).
-      _station();
-      _title();
-      _volume();
-      s_regRefreshMs = nowMs;
-    } else if ((uint32_t)(nowMs - s_regRefreshMs) >= 30000u) {
-      s_regRefreshMs = nowMs;
-      dsp.refreshRegs();
+  // Panel recovery. Root cause of the white screens: GPIO39 (5 V boost / amp enable) edges
+  // disturb the supply and reset the ILI9341 (normally-white panel; MISO unwired, so it
+  // can't be read back). Player::setOutputPins() requests a recovery ~350 ms after every
+  // boost edge; play-mode changes also request one. Runs only here, on the display task.
+  {
+    const uint32_t at = _panelRecoverAt;
+    if (at != 0 && (int32_t)(millis() - at) >= 0 && _mode == PLAYER && config.store.dspon && !panelAsleep) {
+      _panelRecoverAt = 0;
+      _panelRecover();
     }
+    static int s_lastPlayMode = -1;
+    const int pmode = (int)config.getMode();
+    if (s_lastPlayMode >= 0 && pmode != s_lastPlayMode) requestPanelRecover(50);
     s_lastPlayMode = pmode;
   }
 #endif
@@ -2557,11 +2549,17 @@ void Display::_volume() {
       // Speaker volume icon
       if (_volIcon) {
         const uint8_t* vbmp = (vol <= 33) ? ICON_VOL_MUTE_18 : (vol <= 66) ? ICON_VOL_DOWN_18 : ICON_VOL_UP_18;
+        #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+          if (btcompanion_rxMuted()) vbmp = ICON_VOL_MUTE_18;
+        #endif
         _volIcon->setBitmap(vbmp, ICON_VOL_W, ICON_VOL_H);
       }
     #endif
   #endif
 
+  #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+    if (btcompanion_rxMuted()) vol = 0;          // BT knob mute: empty bar + mute icon
+  #endif
   if (_volbar) {                                // "vol_step" modification
     _volbar->setValue(vol);
   }
@@ -2578,6 +2576,25 @@ void Display::_volume() {
   #endif */
 }
 
+void Display::requestPanelRecover(uint32_t delayMs) {
+  uint32_t at = millis() + delayMs;
+  if (at == 0) at = 1;
+  _panelRecoverAt = at;   // latest request wins (debounces bursts of boost edges)
+}
+
+void Display::_panelRecover() {
+#if DSP_MODEL==DSP_ILI9341
+  Serial.println("[DSP] panel re-init + full redraw");
+  dsp.initDisplay();
+  _pager->setPage(pages[PG_PLAYER]);   // clears + redraws every player widget
+  _station();
+  _title();
+  _volume();
+  _stationLogoLastKey[0] = '\0';       // force the logo blit (its cache would skip it)
+  _updateStationLogo();
+#endif
+}
+
 void Display::flip(){ dsp.flip(); }
 
 void Display::invert(){ dsp.invert(); }
@@ -2590,8 +2607,13 @@ void  Display::setContrast(){
 
 bool Display::deepsleep(){
 #if defined(LCD_I2C) || defined(DSP_OLED) || BRIGHTNESS_PIN!=255
-  dsp.sleep();
+  // Flag first: dsp.sleep() takes ~300 ms, and the backlight plugin (another task) must not
+  // light the backlight on a sleeping normally-white panel in that window.
   panelAsleep = true;
+  dsp.sleep();
+#if BRIGHTNESS_PIN!=255
+  analogWrite(BRIGHTNESS_PIN, 0);
+#endif
   return true;
 #endif
   return false;

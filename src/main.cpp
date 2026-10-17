@@ -21,6 +21,8 @@
 #include "core/timekeeper.h"
 #include "clock/clock_tts.h"
 #include "driver/rtc_io.h"
+#include "driver/gpio.h"
+#include "esp_system.h"
 #include "battery/battery.h"
 #include "core/podcast_resume.h"
 
@@ -102,7 +104,24 @@ void setupOTA(){
 extern IRrecv         irrecv;
 extern decode_results irResults;
 
+// Amp/boost enable (GPIO39 on ProS3) low as early as possible: runs during C++ static init,
+// well before setup(). Releases any deep-sleep hold while keeping the level low.
+#if MUTE_PIN != 255
+static void __attribute__((constructor)) yoradio_early_boost_off() {
+  gpio_set_direction((gpio_num_t)MUTE_PIN, GPIO_MODE_OUTPUT);
+  gpio_set_level((gpio_num_t)MUTE_PIN, MUTE_VAL == HIGH ? 1 : 0);
+  gpio_hold_dis((gpio_num_t)MUTE_PIN);
+}
+static void yoradio_boost_off_on_restart() {
+  gpio_set_level((gpio_num_t)MUTE_PIN, MUTE_VAL == HIGH ? 1 : 0);
+}
+#endif
+
 void setup() {
+#if MUTE_PIN != 255
+  player_boostHardOff(false);
+  esp_register_shutdown_handler(yoradio_boost_off_on_restart);   // ESP.restart()/OTA
+#endif
   Serial.begin(115200);
     EEPROM.begin(EEPROM_SIZE);
 #if IR_PIN != 255
@@ -213,7 +232,17 @@ void loop() {
       Serial.println("##[WARN]# I2S bus reclaim failed after BT RX");
     }
     player.setSpeakerForceMuted(config.store.outputDevice == 1);
-    player.setOutputPins(false);
+    delay(30);                                   // let the ProS3 I2S clock out silence first
+    player.setOutputPins(player.isRunning());
+  }
+  // BT RX: re-evaluate the amp enable whenever "HiGrow is master + settled" changes.
+  {
+    static bool s_lastBtAmp = false;
+    const bool btAmp = (config.getMode() == PM_BLUETOOTH) && btcompanion_rxBusReady();
+    if (btAmp != s_lastBtAmp) {
+      s_lastBtAmp = btAmp;
+      player.setOutputPins(player.isRunning());
+    }
   }
 #endif
   processControlsEvents();

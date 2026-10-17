@@ -18,3 +18,11 @@ data/logos/
 # Optional legacy bulk dump (keep local, don't commit)
 images_src/station_logos/bulk_logos.txt
 
+
+# pioarduino hybrid-compile (custom_sdkconfig) build leftovers
+.dummy/
+managed_components/
+sdkconfig.defaults
+sdkconfig.*
+dependencies.lock
+CMakeLists.txt

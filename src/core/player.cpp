@@ -571,14 +571,21 @@ if (config.getMode() == PM_SDCARD && !isRunning() && _status == PLAYING) {
 void Player::setOutputPins(bool isPlaying) {
   if(REAL_LEDBUILTIN!=255) digitalWrite(REAL_LEDBUILTIN, LED_INVERT?!isPlaying:isPlaying);
   bool _ml = false;
+  // Boost/amp stays ON continuously once the ProS3 I2S has carried audio in a playback mode
+  // ("armed"); track start/stop/end no longer toggle it (each edge glitched the shared SPI bus:
+  // SD crc errors + white screens). It only goes OFF on BT handover, output=headphones,
+  // deep sleep / restart (player_boostHardOff).
+  static bool s_ampArmed = false;
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   // BT receive: HiGrow drives I2S; keep 5V DAC rail (MUTE_PIN) on even though player is stopped.
   // Only once the HiGrow has confirmed it is I2S master (plus a settle delay); otherwise the
   // amp enables onto a floating/unsettled bus and pops (boot, handover).
   if (config.getMode() == PM_BLUETOOTH) {
+    s_ampArmed = false;   // bus belongs to the HiGrow; re-arm only after ProS3 playback restarts
     _ml = btcompanion_rxBusReady() ? !MUTE_VAL : MUTE_VAL;
   } else if (btcompanion_rxActive()) {
     // Leaving BT: HiGrow still owns/releases the bus. Keep the amp off until the ProS3 reclaims it.
+    s_ampArmed = false;
     _ml = MUTE_VAL;
   } else
 #endif
@@ -587,14 +594,13 @@ void Player::setOutputPins(bool isPlaying) {
   } else if (_speakerForceMuted) {
     _ml = MUTE_VAL;
   } else {
-    _ml = isPlaying ? !MUTE_VAL : MUTE_VAL;
+    if (isPlaying) s_ampArmed = true;          // first playback => I2S running: arm
+    _ml = s_ampArmed ? !MUTE_VAL : MUTE_VAL;
   }
   if (MUTE_PIN != 255) {
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
     static uint8_t s_lastBoostLvl = 255;
     if (s_lastBoostLvl != (uint8_t)_ml) {
-      // Boost edges disturb the supply and can reset the ILI9341 (white screen): recover it.
-      if (s_lastBoostLvl != 255 && display.ready()) display.requestPanelRecover(350);
       s_lastBoostLvl = (uint8_t)_ml;
       DSPLOG("BOOST GPIO%d -> %s", (int)MUTE_PIN, _ml == MUTE_VAL ? "OFF" : "ON");
       Serial.printf("[BTC] GPIO%d DAC boost=%s (mode=%d playing=%d forceMute=%d)\n",

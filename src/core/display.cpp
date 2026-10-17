@@ -1079,10 +1079,8 @@ void Display::loop() {
   // (paramLock); only skip drawing while SD indexing holds the bus for a long scan.
   if (sdman.indexing()) return;
 #if DSP_MODEL==DSP_ILI9341
-  // Panel recovery. Root cause of the white screens: GPIO39 (5 V boost / amp enable) edges
-  // disturb the supply and reset the ILI9341 (normally-white panel; MISO unwired, so it
-  // can't be read back). Player::setOutputPins() requests a recovery ~350 ms after every
-  // boost edge; play-mode changes also request one. Runs only here, on the display task.
+  // Safety net: soft redraw (no hardware reset) shortly after a play-mode change.
+  // GPIO39 boost no longer toggles per track, and post-boost HW re-inits were removed.
   {
     const uint32_t at = _panelRecoverAt;
     if (at != 0 && (int32_t)(millis() - at) >= 0 && _mode == PLAYER && config.store.dspon && !panelAsleep) {
@@ -2597,8 +2595,9 @@ void Display::requestPanelRecover(uint32_t delayMs) {
 void Display::_panelRecover() {
 #if DSP_MODEL==DSP_ILI9341
   if (!_pagerBuilt) return;
-  DSPLOG("DSP panel recover (re-init + full redraw), mode=%d", (int)_mode);
-  dsp.initDisplay();
+  // Soft redraw only: no TFT_RST / init sequence after boot (hardware re-inits were visible
+  // flicker and could themselves leave the normally-white panel blank).
+  DSPLOG("DSP soft redraw (no HW reset), mode=%d", (int)_mode);
   _pager->setPage(pages[PG_PLAYER]);   // clears + redraws every player widget
   _station();
   _title();

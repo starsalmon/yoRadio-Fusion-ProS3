@@ -337,13 +337,23 @@ void loop() {
   const uint32_t now = millis();
 
   if (s_lastPlayingMs == 0) s_lastPlayingMs = now;
-  // BT RX: audio comes from the HiGrow, so player.isRunning() is always false. Never idle-sleep
-  // in BT mode (explicit sleep via button/MQTT/web and low-battery sleep still work).
-  const bool s_activeLike = player.isRunning()
+  // BT RX: audio comes from the HiGrow, so player.isRunning() is always false. Count BT as
+  // playing only while the HiGrow reports A2DP streaming (STATUS audio=1 -> link AUDIO), sticky for
+  // 60 s after the last streaming status. Idle/paused/disconnected BT still auto-sleeps.
+  bool s_activeLike = player.isRunning();
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
-                            || config.getMode() == PM_BLUETOOTH
+  {
+    static uint32_t s_btLastStreamMs = 0;
+    static bool s_btSeenStream = false;
+    if (config.getMode() == PM_BLUETOOTH) {
+      if (btcompanion_rxLinkState() == BtCompanionLinkState::AUDIO) {
+        s_btLastStreamMs = now;
+        s_btSeenStream = true;
+      }
+      if (s_btSeenStream && (uint32_t)(now - s_btLastStreamMs) < 60000u) s_activeLike = true;
+    }
+  }
 #endif
-                            ;
   if (s_activeLike) s_lastPlayingMs = now;
 
   // Check at a low cadence (avoid extra work in the main loop).

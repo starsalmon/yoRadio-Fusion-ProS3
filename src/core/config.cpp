@@ -1256,13 +1256,26 @@ void Config::setScreensaverPlayingBlank(bool val){
   display.putRequest(NEWMODE, PLAYER);
 #endif
 }
+// Automatic DST: if TIMEZONE_POSIX is set (myoptions.h), override the fixed-offset TZ that
+// configTime() installs with a POSIX rule string. configTime() still starts SNTP; only TZ changes,
+// so the tzHour/tzMin offset is not applied twice (localtime() uses TZ only).
+static void applyPosixTz() {
+#ifdef TIMEZONE_POSIX
+  if (TIMEZONE_POSIX[0] != '\0') {
+    setenv("TZ", TIMEZONE_POSIX, 1);
+    tzset();
+    Serial.printf("[TIME] TZ=%s\n", TIMEZONE_POSIX);
+  }
+#endif
+}
+
 void Config::setSntpOne(const char *val){
   bool tzdone = false;
   if (strlen(val) > 0 && strlen(store.sntp2) > 0) {
-    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), val, store.sntp2);
+    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), val, store.sntp2); applyPosixTz();
     tzdone = true;
   } else if (strlen(val) > 0) {
-    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), val);
+    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), val); applyPosixTz();
     tzdone = true;
   }
   if (tzdone) {
@@ -1357,7 +1370,7 @@ void Config::resetSystem(const char *val, uint8_t clientId){
     saveValue(store.sntp2, "au.pool.ntp.org", 35);
     saveValue(&store.timeSyncInterval, (uint16_t)60);
     saveValue(&store.timeSyncIntervalRTC, (uint16_t)24);
-    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1, store.sntp2);
+    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1, store.sntp2); applyPosixTz();
     timekeeper.forceTimeSync = true;
     netserver.requestOnChange(GETTIMEZONE, clientId);
     return;
@@ -2201,9 +2214,9 @@ bool Config::saveWifi() {
 
 void Config::setTimeConf(){
   if(strlen(store.sntp1)>0 && strlen(store.sntp2)>0){
-    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1, store.sntp2);
+    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1, store.sntp2); applyPosixTz();
   }else if(strlen(store.sntp1)>0){
-    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1);
+    configTime(store.tzHour * 3600 + store.tzMin * 60, getTimezoneOffset(), store.sntp1); applyPosixTz();
   }
 }
 

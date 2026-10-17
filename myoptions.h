@@ -372,6 +372,8 @@
 //
 // If WAKE_PIN1/2 are not configured, we avoid auto-sleep to prevent "bricking"
 // the device in deep sleep with no wake source.
+/* Timezone with automatic DST (POSIX TZ). Overrides the fixed tzHour/tzMin offset. Melbourne: */
+#define TIMEZONE_POSIX "AEST-10AEDT,M10.1.0,M4.1.0/3"
 #define AUTO_DEEPSLEEP_IDLE_MINUTES 15
 #define AUTO_DEEPSLEEP_BATT_PCT 5
 

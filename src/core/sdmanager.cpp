@@ -32,16 +32,20 @@ SPIClass  SDSPI(HSPI);
 SDManager sdman(FSImplPtr(new VFSImpl()));
 
 bool SDManager::start(){
-#if defined(TFT_CS) && (TFT_CS != 255)
-  // Only before the TFT driver owns the pin (boot). After that, never drive TFT_CS from here:
-  // start() runs from mode-switch tasks while the display may be mid-transaction.
-  if (!display.ready()) {
-    pinMode(TFT_CS, OUTPUT);
-    digitalWrite(TFT_CS, HIGH);
-  }
-#endif
+  // Never touch TFT_CS here. The TFT driver owns it from display.init() onwards (it is pulled up
+  // from reset in main.cpp and driven HIGH at LDO2-on in yoradio_user.cpp). At boot in SD mode
+  // this runs from setup() while the display task is still drawing the boot logo inside an
+  // Adafruit startWrite()..endWrite(); re-running pinMode()+digitalWrite() on TFT_CS from here
+  // cut that transfer (logo only partly drawn) and glitched CS mid-byte, so the panel took
+  // misaligned bits as commands and dropped to its blank (white) state.
   pinMode(SDC_CS, OUTPUT);
   digitalWrite(SDC_CS, HIGH);
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+  // Hold the shared-bus lock across the whole mount (card init + FAT mount + retries).
+  // Recursive: sd_diskio's AcquireSPI takes it again per operation. TFT transactions are
+  // still serialised by SPIClass, so a TFT transfer never sees SD traffic mid-way.
+  yoradio_sd_spi_acquire();
+#endif
   ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
   vTaskDelay(10);
   if(!ready) ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
@@ -49,6 +53,9 @@ bool SDManager::start(){
   if(!ready) ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
   vTaskDelay(50);
   if(!ready) ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+  yoradio_sd_spi_release();
+#endif
   return ready;
 }
 

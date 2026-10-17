@@ -286,3 +286,11 @@ void battery_prepare_for_deepsleep() {
 
 #endif
 
+
+bool battery_read_vcell_mv(uint16_t* mv) {
+  if (!batteryReady || !mv) return false;
+  uint16_t raw = 0;
+  if (!max17048_read16(0x02 /*VCELL*/, raw)) return false;
+  *mv = (uint16_t)(((uint32_t)raw * 5u) / 64u);   // 78.125 uV/LSB
+  return true;
+}

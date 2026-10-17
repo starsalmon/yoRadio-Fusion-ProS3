@@ -55,6 +55,16 @@ void yoradio_on_setup() {
       #if defined(LDO2_ENABLE) && (LDO2_ENABLE != 255)
         pinMode(LDO2_ENABLE, OUTPUT);
         digitalWrite(LDO2_ENABLE, HIGH);   // enable LDO2 (3V3_AUX)
+        // Now that TFT/SD are powered, hold their CS/RST lines firmly HIGH (no ext pull-ups).
+        #if defined(SDC_CS) && (SDC_CS != 255)
+          pinMode(SDC_CS, OUTPUT);  digitalWrite(SDC_CS, HIGH);
+        #endif
+        #if defined(TFT_CS) && (TFT_CS != 255)
+          pinMode(TFT_CS, OUTPUT);  digitalWrite(TFT_CS, HIGH);
+        #endif
+        #if defined(TFT_RST) && (TFT_RST != 255)
+          pinMode(TFT_RST, OUTPUT); digitalWrite(TFT_RST, HIGH);
+        #endif
         Serial.println(">>> LDO2 (3V3_AUX) enabled! <<<");
       #endif
 

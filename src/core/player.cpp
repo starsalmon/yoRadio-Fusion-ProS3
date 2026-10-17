@@ -3,6 +3,7 @@
 // Modified ("vol_step") by Tamás Várai
 #include "options.h"
 #include "player.h"
+#include "boostprobe.h"
 #include "config.h"
 #include "telnet.h"
 #include "display.h"
@@ -602,6 +603,7 @@ void Player::setOutputPins(bool isPlaying) {
     static uint8_t s_lastBoostLvl = 255;
     if (s_lastBoostLvl != (uint8_t)_ml) {
       s_lastBoostLvl = (uint8_t)_ml;
+      if (_ml != MUTE_VAL) boostprobe_beforeOn();   // VBAT / LOW_BAT dip diagnostic
       DSPLOG("BOOST GPIO%d -> %s", (int)MUTE_PIN, _ml == MUTE_VAL ? "OFF" : "ON");
       Serial.printf("[BTC] GPIO%d DAC boost=%s (mode=%d playing=%d forceMute=%d)\n",
                     (int)MUTE_PIN, _ml == MUTE_VAL ? "OFF" : "ON",

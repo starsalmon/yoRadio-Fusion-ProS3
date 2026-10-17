@@ -111,6 +111,15 @@ static void __attribute__((constructor)) yoradio_early_boost_off() {
   gpio_set_direction((gpio_num_t)MUTE_PIN, GPIO_MODE_OUTPUT);
   gpio_set_level((gpio_num_t)MUTE_PIN, MUTE_VAL == HIGH ? 1 : 0);
   gpio_hold_dis((gpio_num_t)MUTE_PIN);
+  // SD_CS / TFT_CS / TFT_RST have no external pull-ups: stop them floating from reset.
+  // LDO2 (TFT/SD supply) is still off here, so only weak internal pull-ups (no back-powering
+  // the unpowered parts through a hard HIGH); they are driven HIGH right after LDO2 is enabled.
+  const gpio_num_t early[] = {(gpio_num_t)SDC_CS, (gpio_num_t)TFT_CS, (gpio_num_t)TFT_RST};
+  for (gpio_num_t p : early) {
+    if ((int)p < 0 || (int)p == 255) continue;
+    gpio_set_direction(p, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(p, GPIO_PULLUP_ONLY);
+  }
 }
 static void yoradio_boost_off_on_restart() {
   gpio_set_level((gpio_num_t)MUTE_PIN, MUTE_VAL == HIGH ? 1 : 0);

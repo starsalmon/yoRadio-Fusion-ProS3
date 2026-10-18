@@ -336,6 +336,25 @@ static void pumpRx() {
           v.trim();
           strlcpy(dst, v.c_str(), dstLen);
         };
+        {
+          // Log the HiGrow link state only when it changes (not every poll).
+          static String s_lastStatusKey;
+          String key;
+          const char *keys[] = {"mode=", "conn=", "audio=", "bt="};
+          for (const char *k : keys) {
+            const int i = out.indexOf(k);
+            if (i < 0) continue;
+            int e = out.indexOf(' ', i);
+            key += out.substring(i, e < 0 ? out.length() : e);
+            key += ' ';
+          }
+          key += "title=";
+          key += s_rxTitle;
+          if (key != s_lastStatusKey) {
+            s_lastStatusKey = key;
+            Serial.printf("[BTC] STATUS change: %s (t=%lus)\n", key.c_str(), (unsigned long)(millis() / 1000));
+          }
+        }
         s_hgModeRx = (out.indexOf("mode=rx") >= 0);
         if (s_hgModeRx) { int b = -1; readInt("bt=", b); s_hgRxSink = b; } else { s_hgRxSink = -1; }
         s_lastStatusMsFwd = millis();

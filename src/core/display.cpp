@@ -387,6 +387,54 @@ void Display::_bootScreen(){
   _bootStep = 1;
 }
 
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+// BT RX track progress: slim bar under the elapsed/total line. Draws only the pixels that
+// change (fill grows / shrinks), full draw only when its page is (re)drawn.
+class BtProgressBar : public Widget {
+ public:
+  void init(WidgetConfig c, uint16_t w, uint16_t h, uint16_t fg, uint16_t track, uint16_t bg) {
+    Widget::init(c, fg, bg);
+    _width = w; _h = h; _track = track; _fillW = 0; _permille = 0;
+  }
+  void setPermille(uint16_t pm) {
+    _permille = (pm > 1000) ? 1000 : pm;
+    if (!_active || _locked) return;
+    const uint16_t w = _calc();
+    if (w == _fillW) return;
+    if (w > _fillW) dsp.fillRect(_config.left + _fillW, _config.top, w - _fillW, _h, _fgcolor);
+    else            dsp.fillRect(_config.left + w, _config.top, _fillW - w, _h, _track);
+    _fillW = w;
+  }
+  void show() { if (!_locked) return; unlock(); if (_active) _draw(); }
+  void hide() { if (!_locked) lock(true); }
+ protected:
+  uint16_t _h = 2, _track = 0, _fillW = 0, _permille = 0;
+  uint16_t _calc() const { return (uint16_t)(((uint32_t)_width * _permille) / 1000u); }
+  void _draw() override {
+    const uint16_t w = _calc();
+    if (w) dsp.fillRect(_config.left, _config.top, w, _h, _fgcolor);
+    if (w < _width) dsp.fillRect(_config.left + w, _config.top, _width - w, _h, _track);
+    _fillW = w;
+  }
+  void _clear() override { dsp.fillRect(_config.left, _config.top, _width, _h, _bgcolor); }
+  void _reset() override { _fillW = 0; }
+};
+static BtProgressBar *s_btProgBar = nullptr;
+
+// Directly below the track-time line (_trackpos). textsize 1 = DejaVuSans13, yAdvance 22 px,
+// so the bar sits just outside that widget's strip and never gets wiped by its redraws.
+// Width is half the frame, centred: clear of the bitrate badge in every VU layout.
+static void btProgBarCreate(const WidgetConfig &tp, Page *page) {
+  if (s_btProgBar || !page) return;
+  const uint16_t w = (uint16_t)(MAX_WIDTH / 2);
+  WidgetConfig bc = { (uint16_t)((DSP_WIDTH - w) / 2), (uint16_t)(tp.top + 22), 0, WA_LEFT };
+  s_btProgBar = new BtProgressBar();
+  s_btProgBar->init(bc, w, 2, config.theme.bitrate, config.theme.div, config.theme.background);
+  s_btProgBar->lock(true);  // hidden until a track with a length plays
+  page->addWidget(s_btProgBar);
+}
+#endif
+
 void Display::_buildPager(){
   _pagerBuilt = true;
   // Header bar uses the theme "fill" color. Many themes set STATION_BG dark
@@ -612,6 +660,9 @@ void Display::_buildPager(){
       _trackpos = new ScrollWidget("*", sc, config.theme.bitrate, config.theme.background);
       _trackpos->lock(true); // start hidden (avoids clobbering weather area)
       pages[PG_PLAYER]->addWidget(_trackpos);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+      btProgBarCreate(tp, pages[PG_PLAYER]);
+#endif
     }
   #else
     // Track time/duration line (for SD & Podcast) sits just above the bitrate badge.
@@ -628,6 +679,9 @@ void Display::_buildPager(){
       _trackpos = new ScrollWidget("*", sc, config.theme.bitrate, config.theme.background);
       _trackpos->lock(true); // start hidden (avoids clobbering weather area)
       pages[PG_PLAYER]->addWidget(_trackpos);
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+      btProgBarCreate(tp, pages[PG_PLAYER]);
+#endif
     }
     _bitrate = new TextWidget(bitrateConf, 30, false, config.theme.bitrate, config.theme.background);
     pages[PG_PLAYER]->addWidget( _bitrate);
@@ -1136,6 +1190,7 @@ void Display::loop() {
       _stationLogo->reblit();
     }
   }
+  _btProgressTick();
 #endif
 #ifdef USE_NEXTION
   nextion.loop();
@@ -1153,7 +1208,7 @@ void Display::loop() {
           // For SD / Podcast playback, show current time / duration in the strip
           // above the bitrate badge (see screenshot red highlight).
           #if !defined(TRACKPOS_ENABLE) || (TRACKPOS_ENABLE != 0)
-          if (_mode == PLAYER && _trackpos) {
+          if (_mode == PLAYER && _trackpos && config.getMode() != PM_BLUETOOTH) {
             const bool isFileMode = (config.getMode() == PM_SDCARD || config.getMode() == PM_PODCAST);
             const bool wants = isFileMode && player.isRunning();
             const bool weatherOn = config.store.showweather;
@@ -2322,9 +2377,18 @@ void Display::_title() {
     char t[96];
     char a[96];
     btcompanion_getRxMetadata(t, sizeof(t), a, sizeof(a));
+    char al[96];
+    btcompanion_getRxAlbum(al, sizeof(al));
     if (t[0] || a[0]) {
       _title1->setText(t[0] ? t : a);
-      if (_title2) _title2->setText((t[0] && a[0]) ? a : "");
+      if (_title2) {
+        // Second line: "Artist - Album" (album only when the phone sends it).
+        static char l2[200];
+        const char *artist = (t[0] && a[0]) ? a : "";
+        if (artist[0] && al[0]) snprintf(l2, sizeof(l2), "%s - %s", artist, al);
+        else strlcpy(l2, artist[0] ? artist : al, sizeof(l2));
+        _title2->setText(l2);
+      }
       return;
     }
     const char *status = "Pair your phone";
@@ -2372,6 +2436,81 @@ void Display::_title() {
     player_on_track_change();
   }
   pm.on_track_change();
+}
+
+// BT RX: elapsed/total in the track-time line (same widget/style as SD) plus a slim bar.
+// Runs from the display loop; redraws the text only when the shown second changes and the bar
+// only when its fill width changes. Elapsed is interpolated locally between POS lines.
+void Display::_btProgressTick() {
+#if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  static uint32_t s_lastTickMs = 0;
+  static uint32_t s_lastSec = 0xFFFFFFFFu, s_lastTotSec = 0xFFFFFFFFu;
+  const uint32_t nowMs = millis();
+  if ((uint32_t)(nowMs - s_lastTickMs) < 200u) return;
+  s_lastTickMs = nowMs;
+  if (!_trackpos || !s_btProgBar) return;
+  // Other screens (playlist, volume, ...) own the panel: leave the widgets alone; the player
+  // page redraws them when it comes back.
+  if (_mode != PLAYER) return;
+
+  uint32_t el = 0, tot = 0;
+  bool playing = false;
+  const bool btMode = (config.getMode() == PM_BLUETOOTH);
+  const bool have = btMode && btcompanion_getRxProgress(&el, &tot, &playing);
+  const bool weatherOn = config.store.showweather;
+  const bool replaceWeather =
+  #if defined(TRACKPOS_REPLACE_WEATHER_WHILE_PLAYING)
+    (TRACKPOS_REPLACE_WEATHER_WHILE_PLAYING != 0);
+  #else
+    false;
+  #endif
+  // Same rule as the SD/podcast time line: never draw over the weather line unless allowed.
+  const bool canShow = have && (!weatherOn || replaceWeather)
+  #if defined(TRACKPOS_ENABLE)
+    && (TRACKPOS_ENABLE != 0)
+  #endif
+    ;
+
+  if (canShow) {
+    if (weatherOn && replaceWeather && !_trackposHidWeather) {
+      if (_weather) _weather->lock(true);
+      if (_weatherIcon) _weatherIcon->lock(true);
+      _trackposHidWeather = true;
+    }
+    const uint32_t sec = el / 1000u, totSec = tot / 1000u;
+    if (!_btProgShown || sec != s_lastSec || totSec != s_lastTotSec) {
+      char a[16], b[16], line[40];
+      formatHms(sec, a, sizeof(a));
+      formatHms(totSec, b, sizeof(b));
+      snprintf(line, sizeof(line), "%s / %s", a, b);
+      _trackpos->unlock();
+      _trackpos->setText(line);
+      _trackposVisible = true;
+      s_lastSec = sec;
+      s_lastTotSec = totSec;
+    }
+    s_btProgBar->setPermille((uint16_t)(((uint64_t)el * 1000u) / tot));
+    s_btProgBar->show();
+    _btProgShown = true;
+    return;
+  }
+  if (!_btProgShown) return;
+  // No length / no phone / left BT mode or the player page: hide gracefully.
+  s_btProgBar->hide();
+  if (_trackposVisible) {
+    _trackpos->setText("");
+    _trackpos->lock(true);
+    _trackposVisible = false;
+  }
+  if (_trackposHidWeather) {
+    if (_weather) _weather->unlock();
+    if (_weatherIcon) _weatherIcon->unlock();
+    _trackposHidWeather = false;
+    _refreshWeatherUI();
+  }
+  _btProgShown = false;
+  s_lastSec = s_lastTotSec = 0xFFFFFFFFu;
+#endif
 }
 
 void Display::_utf8_clean(char *s)

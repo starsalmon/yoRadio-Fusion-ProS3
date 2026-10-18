@@ -115,6 +115,8 @@ class Display {
     void _drawPlaylist();
     void _volume();
     void _title();
+    void _btProgressTick();   // BT RX: elapsed/total line + slim progress bar
+    bool _btProgShown = false;
     void _utf8_clean(char *s);  // modification
     void _station();
     void _drawNextStationNum(uint16_t num);

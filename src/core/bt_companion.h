@@ -33,6 +33,10 @@ void btcompanion_enterRxMode(const char* localName);
 void btcompanion_exitRxMode();
 BtCompanionLinkState btcompanion_rxLinkState();
 void btcompanion_getRxMetadata(char* title, size_t titleLen, char* artist, size_t artistLen);
+void btcompanion_getRxAlbum(char* album, size_t albumLen);
+// Elapsed/total of the phone's current track (elapsed interpolated while playing).
+// False when there is no track length (some apps don't send one) or no phone connected.
+bool btcompanion_getRxProgress(uint32_t* elapsedMs, uint32_t* totalMs, bool* playing);
 void btcompanion_setRxLocalName(const char* name);
 const char* btcompanion_rxLocalName();
 // Map yoRadio volume (0..255) to companion AVRCP volume (0..127).

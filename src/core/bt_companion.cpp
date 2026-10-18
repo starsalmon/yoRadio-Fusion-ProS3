@@ -70,6 +70,17 @@ static uint32_t s_rxMasterAtMs = 0;
 static char s_rxLocalName[64] = BT_COMPANION_RX_LOCAL_NAME;
 static char s_rxTitle[96] = "";
 static char s_rxArtist[96] = "";
+// Album + play position from the HiGrow ("META album=", "POS <elapsed_ms> <total_ms> <playing>").
+static char s_rxAlbum[96] = "";
+static uint32_t s_rxPosMs = 0;      // elapsed at s_rxPosAtMs
+static uint32_t s_rxPosAtMs = 0;    // millis() when POS arrived (0 = no POS yet)
+static uint32_t s_rxLenMs = 0;      // 0 = unknown length -> no progress bar
+static bool s_rxPlaying = false;
+static void rxClearTrackExtras() {
+  s_rxAlbum[0] = '\0';
+  s_rxPosMs = s_rxPosAtMs = s_rxLenMs = 0;
+  s_rxPlaying = false;
+}
 static int s_rxConn = -1;
 static int s_rxAudio = -1;
 static BtCompanionLinkState s_rxLink = BtCompanionLinkState::OFF;
@@ -229,7 +240,7 @@ static void rxHandoverAdvance() {
         s_rxConn = -1;
         s_rxAudio = -1;
         s_rxLink = BtCompanionLinkState::OFF;
-        s_rxTitle[0] = s_rxArtist[0] = '\0';
+        s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
         s_rxStep = RxHandoverStep::None;
         s_rxExitCompleteFlag = true;
         display.putRequest(DRAWVOL);
@@ -242,7 +253,7 @@ static void rxHandoverAdvance() {
         s_rxConn = -1;
         s_rxAudio = -1;
         s_rxLink = BtCompanionLinkState::OFF;
-        s_rxTitle[0] = s_rxArtist[0] = '\0';
+        s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
         s_rxStep = RxHandoverStep::None;
         s_rxExitCompleteFlag = true;
         display.putRequest(DRAWVOL);
@@ -262,7 +273,7 @@ static void maybeUpdateRxLinkState() {
     const bool isConn  = (next == BtCompanionLinkState::CONNECTED || next == BtCompanionLinkState::AUDIO);
     if (wasConn && !isConn) {
       Serial.printf("[BT2] phone dropped (conn=%d): back to waiting, clearing metadata\n", s_rxConn);
-      s_rxTitle[0] = s_rxArtist[0] = '\0';
+      s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
       s_rxDropAtMs = millis() | 1u;
     }
     if (isConn) s_rxDropAtMs = 0;
@@ -314,9 +325,31 @@ static void pumpRx() {
       if (out.indexOf("BUS_HIGROW_MASTER") >= 0) s_gotBusMaster = true;
       if (out.indexOf("BUS_HIGROW_RELEASED") >= 0) s_gotBusReleased = true;
       // Avoid spamming Serial with periodic STATUS responses.
-      if (!out.startsWith("STATUS ")) {
+      if (!out.startsWith("STATUS ") && !out.startsWith("POS ")) {
         Serial.print("[BTC] ");
         Serial.println(out);
+      }
+      if (out.startsWith("POS ")) {
+        unsigned long el = 0, tot = 0;
+        int pl = 0;
+        if (sscanf(out.c_str() + 4, "%lu %lu %d", &el, &tot, &pl) == 3) {
+          const bool changed = ((uint32_t)tot != s_rxLenMs) || ((pl != 0) != s_rxPlaying);
+          s_rxPosMs = (uint32_t)el;
+          s_rxPosAtMs = millis() | 1u;
+          s_rxLenMs = (uint32_t)tot;
+          s_rxPlaying = (pl != 0);
+          if (changed) Serial.printf("[BTC] POS %lu/%lu playing=%d\n", el, tot, pl);
+        }
+        continue;
+      }
+      if (out.startsWith("META album=")) {
+        String v = out.substring(11);
+        v.trim();
+        if (strcmp(v.c_str(), s_rxAlbum) != 0) {
+          strlcpy(s_rxAlbum, v.c_str(), sizeof(s_rxAlbum));
+          display.putRequest(NEWTITLE);
+        }
+        continue;
       }
       if (out == "PONG") s_lastPongMs = millis();
       if (out.startsWith("STATUS ")) {
@@ -642,7 +675,7 @@ static void rxResetHiGrow(const char *why) {
   s_rxAudio = -1;
   s_hgModeRx = false;
   s_hgRxSink = -1;
-  s_rxTitle[0] = s_rxArtist[0] = '\0';
+  s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
   s_rxDropAtMs = 0;
   s_rxLastResetMs = millis() | 1u;
   s_rxLink = BtCompanionLinkState::SEARCHING;
@@ -669,7 +702,7 @@ void btcompanion_loop() {
         Serial.println("[BTC] HiGrow restarted (mode=tx) - re-handover");
         s_rxConn = -1;
         s_rxAudio = -1;
-        s_rxTitle[0] = s_rxArtist[0] = '\0';
+        s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
         rxResetHiGrow("HiGrow restarted (mode=tx / bt=0)");
         return;
       }
@@ -748,6 +781,23 @@ const char* btcompanion_rxLocalName() { return s_rxLocalName; }
 void btcompanion_getRxMetadata(char* title, size_t titleLen, char* artist, size_t artistLen) {
   if (title && titleLen) strlcpy(title, s_rxTitle, titleLen);
   if (artist && artistLen) strlcpy(artist, s_rxArtist, artistLen);
+}
+
+void btcompanion_getRxAlbum(char* album, size_t albumLen) {
+  if (album && albumLen) strlcpy(album, s_rxAlbum, albumLen);
+}
+
+bool btcompanion_getRxProgress(uint32_t* elapsedMs, uint32_t* totalMs, bool* playing) {
+  if (!s_rxActive || s_rxLenMs == 0 || s_rxPosAtMs == 0) return false;
+  if (s_rxLink != BtCompanionLinkState::CONNECTED && s_rxLink != BtCompanionLinkState::AUDIO) return false;
+  uint32_t el = s_rxPosMs;
+  // Interpolate locally between POS lines (~1/s) so the bar moves smoothly.
+  if (s_rxPlaying) el += (uint32_t)(millis() - s_rxPosAtMs);
+  if (el > s_rxLenMs) el = s_rxLenMs;
+  if (elapsedMs) *elapsedMs = el;
+  if (totalMs) *totalMs = s_rxLenMs;
+  if (playing) *playing = s_rxPlaying;
+  return true;
 }
 
 BtCompanionLinkState btcompanion_rxLinkState() { return s_rxLink; }
@@ -830,7 +880,7 @@ void btcompanion_enterRxMode(const char* localName) {
   if (!s_rxActive) {
     s_rxConn = -1;
     s_rxAudio = -1;
-    s_rxTitle[0] = s_rxArtist[0] = '\0';
+    s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
     s_rxLink = BtCompanionLinkState::SEARCHING;
     s_rxActive = true;
     s_rxMuted = false;

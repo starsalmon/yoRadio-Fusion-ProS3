@@ -40,6 +40,12 @@ static HardwareSerial s_btUart(BT_COMPANION_UART_PORT);
 static bool s_enabled = false;
 static String s_line;
 static String s_uartLastComplete;
+// Handover replies latched per line in pumpRx(): s_uartLastComplete only holds the LAST line, so a
+// STATUS/META reply arriving in the same pump overwrote BUS_HIGROW_MASTER -> false timeout,
+// volume not re-sent, amp boost flapping via the late-confirm path.
+static volatile bool s_gotHigrowArmed = false;
+static volatile bool s_gotBusMaster = false;
+static volatile bool s_gotBusReleased = false;
 static volatile uint32_t s_lastPongMs = 0;
 static volatile uint32_t s_lastStatusMs = 0;
 static uint32_t s_lastStatusReqMs = 0;
@@ -168,6 +174,8 @@ static void rxHandoverAdvance() {
           rxResetHiGrow(fresh ? "HiGrow awake but not RX master" : "no STATUS reply");
           break;
         }
+        s_gotHigrowArmed = false;
+        s_gotBusMaster = false;
         sendLine("HANDOVER PROS3_RELEASED");
         s_rxStep = RxHandoverStep::EnterHandover;
         s_rxStepAtMs = now;
@@ -175,8 +183,9 @@ static void rxHandoverAdvance() {
       break;
     }
     case RxHandoverStep::EnterHandover:
-      if (s_uartLastComplete.indexOf("OK HIGROW_ARMED") >= 0) {
-        s_uartLastComplete = "";
+      if (s_gotHigrowArmed) {
+        s_gotHigrowArmed = false;
+        s_gotBusMaster = false;
         char buf[96];
         snprintf(buf, sizeof(buf), "MODE RX %s", s_rxLocalName);
         sendLine(buf);
@@ -184,6 +193,7 @@ static void rxHandoverAdvance() {
         s_rxStepAtMs = now;
       } else if ((uint32_t)(now - s_rxStepAtMs) >= 2000u) {
         Serial.println("[BT2] RX handover: HIGROW_ARMED timeout");
+        s_gotBusMaster = false;
         char buf[96];
         snprintf(buf, sizeof(buf), "MODE RX %s", s_rxLocalName);
         sendLine(buf);
@@ -192,8 +202,8 @@ static void rxHandoverAdvance() {
       }
       break;
     case RxHandoverStep::EnterModeRx:
-      if (s_uartLastComplete.indexOf("BUS_HIGROW_MASTER") >= 0) {
-        s_uartLastComplete = "";
+      if (s_gotBusMaster) {
+        s_gotBusMaster = false;
         s_rxMasterAtMs = now ? now : 1;
         btcompanion_setRxVolume(config.store.volume);  // VOL sent before wake may have been lost
         sendLine("STATUS");
@@ -206,8 +216,8 @@ static void rxHandoverAdvance() {
       }
       break;
     case RxHandoverStep::ExitModeTx:
-      if (s_uartLastComplete.indexOf("BUS_HIGROW_RELEASED") >= 0) {
-        s_uartLastComplete = "";
+      if (s_gotBusReleased) {
+        s_gotBusReleased = false;
         sendLine("SLEEP");
         s_rxActive = false;
         s_rxMuted = false;
@@ -296,6 +306,9 @@ static void pumpRx() {
       while (out.length() > 0 && (uint8_t)out[0] < 0x20) out.remove(0, 1);
       if (out.length() == 0) continue;
       s_uartLastComplete = out;
+      if (out.indexOf("OK HIGROW_ARMED") >= 0) s_gotHigrowArmed = true;
+      if (out.indexOf("BUS_HIGROW_MASTER") >= 0) s_gotBusMaster = true;
+      if (out.indexOf("BUS_HIGROW_RELEASED") >= 0) s_gotBusReleased = true;
       // Avoid spamming Serial with periodic STATUS responses.
       if (!out.startsWith("STATUS ")) {
         Serial.print("[BTC] ");
@@ -782,6 +795,7 @@ void btcompanion_enterRxMode(const char* localName) {
 void btcompanion_exitRxMode() {
   if (!s_rxActive && s_rxStep == RxHandoverStep::None) return;
   if (s_rxStep == RxHandoverStep::ExitModeTx) return;
+  s_gotBusReleased = false;
   sendLine("MODE TX");
   s_rxStep = RxHandoverStep::ExitModeTx;
   s_rxStepAtMs = millis();

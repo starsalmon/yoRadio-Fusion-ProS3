@@ -212,13 +212,29 @@ def _apply_patch() -> None:
                 break
     if not enabled:
         print("[sd-shared-spi] skip (SD_SHARE_TFT_SPI not enabled)")
-        return
+        return False
 
     path = _find_sd_diskio()
     if not path:
         print("[sd-shared-spi] warning: sd_diskio.cpp not found")
-        return
+        return True
     _patch_sd_diskio(path)
+    return True
 
 
-_apply_patch()
+def _sd_diskio_middleware(env_, node):
+    # pioarduino reinstalls the shared Arduino framework ("*** Reinstall Arduino framework ***")
+    # AFTER pre: scripts run whenever the previous build used a different custom_sdkconfig (e.g.
+    # yoRadio's hybrid build). That wipes the patch applied above, so the SD library would compile
+    # pristine. Re-check right when the SD library source node is created (after any reinstall).
+    try:
+        path = node.srcnode().get_abspath()
+        if os.path.basename(path) == "sd_diskio.cpp" and os.path.isfile(path):
+            _patch_sd_diskio(path)
+    except Exception as exc:  # never break the build from here
+        print(f"[sd-shared-spi] middleware warning: {exc}")
+    return node
+
+
+if _apply_patch():
+    env.AddBuildMiddleware(_sd_diskio_middleware, "*sd_diskio.cpp")

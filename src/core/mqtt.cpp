@@ -1753,6 +1753,10 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 
       const bool wasBt = (config.store.outputDevice == 1);
       const bool nowBt = wantBt;
+      if (config.getMode() == PM_BLUETOOTH) {  // never touch the HiGrow TX path while it is the phone's sink
+        mqttPublishOutputDevice(true);
+        return;
+      }
       if (nowBt == wasBt) {
         mqttPublishOutputDevice(true);
         return;

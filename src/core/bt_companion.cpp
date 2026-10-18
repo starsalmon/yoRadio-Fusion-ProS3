@@ -517,6 +517,12 @@ void btcompanion_setPcmSampleRate(uint32_t hz) {
 
 void btcompanion_setEnabled(bool enable) {
   if (enable == s_enabled) return;
+  // Backstop: TX bridge control (CONNECT/SR/DISCONNECT/SLEEP) must never run while the
+  // HiGrow is in RX (phone sink) mode; RX enter/exit owns the HiGrow then.
+  if (s_rxActive) {
+    Serial.printf("[BT2] setEnabled(%d) ignored: BT RX active\n", enable ? 1 : 0);
+    return;
+  }
   s_enabled = enable;
   #if defined(BT2_DIAG_LOG) && BT2_DIAG_LOG
     Serial.printf("[BT2] enabled=%d\n", s_enabled ? 1 : 0);
@@ -621,8 +627,8 @@ void btcompanion_loop() {
     const bool recentReset = s_rxLastResetMs && (uint32_t)(now - s_rxLastResetMs) < 30000u;
     // Phone dropped and nothing reconnected for 15 s: the HiGrow may be stuck unconnectable.
     // Resetting it is harmless while nothing is connected.
-    if (s_rxDropAtMs && (uint32_t)(now - s_rxDropAtMs) >= 15000u && s_rxConn != 2 && !recentReset) {
-      rxResetHiGrow("phone dropped, not reconnected within 15 s");
+    if (s_rxDropAtMs && (uint32_t)(now - s_rxDropAtMs) >= 60000u && s_rxConn != 2 && !recentReset) {
+      rxResetHiGrow("phone dropped, not reconnected within 60 s");
     }
     // HiGrow stopped answering STATUS (asleep/hung): UI must not stay on stale "connected".
     else if (s_lastStatusMs && (uint32_t)(now - s_lastStatusMs) >= 12000u && !recentReset) {

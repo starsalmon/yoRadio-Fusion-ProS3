@@ -835,6 +835,13 @@ static void toggleAudioOutputFromUi(controlEvt_e srcBtn) {
   // Let plugins react (e.g. mode-button LED pulse, NeoStatus cues, etc).
   pm.on_btn_click(srcBtn);
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
+  // In BT receive mode the HiGrow is the phone's A2DP sink. Toggling "output = BT speaker"
+  // here sent CONNECT/SR (TX-mode commands) and, on the second toggle, DISCONNECT + SLEEP,
+  // which deep-slept the HiGrow and dropped the phone. Ignore the double-click in BT RX.
+  if (config.getMode() == PM_BLUETOOTH) {
+    Serial.println("[BT2] output toggle ignored in BT RX mode");
+    return;
+  }
   const bool wasBt = (config.store.outputDevice == 1);
 
   // Remember current volume for the currently active output.

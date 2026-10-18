@@ -40,6 +40,8 @@ class Display {
     void loop();
     void _start();
     bool ready() { return _bootStep==2; }
+    // True once the display task has finished drawing the boot logo (its SPI transaction ended).
+    bool bootLogoDrawn() { return _bootStep>=1; }
     void resetQueue();
     void putRequest(displayRequestType_e type, int payload=0);
     void flip();
@@ -105,7 +107,7 @@ class Display {
     BitmapWidget* _batIcon = nullptr;
     BitmapWidget* _batChgIcon = nullptr;
     bool _locked = false;
-    uint8_t _bootStep;
+    volatile uint8_t _bootStep;   // written by the display task, polled by setup()
     void _time(bool redraw = false);
     void _apScreen();
     void _swichMode(displayMode_e newmode);
@@ -149,6 +151,7 @@ class Display {
     void putRequest(displayRequestType_e type, int payload=0);
     void loop(){}
     bool ready() { return true; }
+    bool bootLogoDrawn() { return true; }
     void resetQueue(){}
     void centerText(const char* text, uint8_t y, uint16_t fg, uint16_t bg){}
     void rightText(const char* text, uint8_t y, uint16_t fg, uint16_t bg){}

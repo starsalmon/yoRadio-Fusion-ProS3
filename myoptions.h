@@ -336,9 +336,10 @@
 #define SD_FORCE_REINDEX 0
 // SD card SPI clock (Hz). Same 80 MHz / integer-divider rounding as TFT_SPI_FREQ above
 // (real steps: 20 / 16 / 13.33 / 11.43 / 10 MHz ...), and sd_diskio caps the card at 25 MHz.
-// 20 MHz was tested on this board (2026-10-18) and FAILS in SD playback: every multi-block
-// read ends with "crc error" + "token error [12] 0x4" on CMD12 (STOP_TRANSMISSION), so each
-// track hits EOF after ~8 s. Keep 10 MHz.
+// The "crc error" + "token error [12] 0x4" on CMD12 that ended SD tracks after ~8 s were NOT
+// clock related (seen at 10 MHz and 20 MHz): upstream sd_diskio parsed a data byte of the
+// in-flight block as CMD12's R1. Fixed by the YORADIO_SD_DISKIO_FIX patch applied by
+// tools/pio/patch_sd_shared_spi.py. Kept at 10 MHz for now; 20 MHz can be retried after the fix.
 #define SDSPISPEED 10000000
 
 // Minimum time (ms) the boot screen (logo) stays up after the logo has finished drawing, before

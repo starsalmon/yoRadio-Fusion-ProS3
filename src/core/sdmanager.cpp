@@ -11,6 +11,7 @@
 #include "sdmanager.h"
 #include "display.h"
 #include "player.h"
+#include "dsplog.h"
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
 #include "sd_spi_shared.h"
 #endif
@@ -33,11 +34,22 @@ SDManager sdman(FSImplPtr(new VFSImpl()));
 
 bool SDManager::start(){
   // Never touch TFT_CS here. The TFT driver owns it from display.init() onwards (it is pulled up
-  // from reset in main.cpp and driven HIGH at LDO2-on in yoradio_user.cpp). At boot in SD mode
-  // this runs from setup() while the display task is still drawing the boot logo inside an
-  // Adafruit startWrite()..endWrite(); re-running pinMode()+digitalWrite() on TFT_CS from here
-  // cut that transfer (logo only partly drawn) and glitched CS mid-byte, so the panel took
-  // misaligned bits as commands and dropped to its blank (white) state.
+  // from reset in main.cpp and driven HIGH at LDO2-on in yoradio_user.cpp). Re-running
+  // pinMode()+digitalWrite() on TFT_CS from here (an earlier version did) cut the boot-logo
+  // transfer and glitched CS mid-byte, so the panel dropped to its blank (white) state.
+  //
+  // Boot order: display.init() returns before the display task has drawn the boot logo, so in
+  // SD mode setup() reached this mount while the logo was still being drawn (BT/web boots never
+  // mount at boot, which is why only SD boots showed a partly drawn logo). Wait (bounded) until
+  // the logo is fully drawn and its SPI transaction has ended, so the card's power-up clocks,
+  // CMD0/CMD8/ACMD41 at 400 kHz and the FAT mount never overlap it.
+  if (!display.bootLogoDrawn()) {
+    const uint32_t t0 = millis();
+    while (!display.bootLogoDrawn() && (uint32_t)(millis() - t0) < 3000u) vTaskDelay(pdMS_TO_TICKS(5));
+    DSPLOG("SD mount: waited %lu ms for boot logo (drawn=%d)", (unsigned long)(millis() - t0),
+           (int)display.bootLogoDrawn());
+  }
+  DSPLOG("SD mount begin (SPI %lu Hz)", (unsigned long)SDSPISPEED);
   pinMode(SDC_CS, OUTPUT);
   digitalWrite(SDC_CS, HIGH);
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
@@ -46,16 +58,17 @@ bool SDManager::start(){
   // still serialised by SPIClass, so a TFT transfer never sees SD traffic mid-way.
   yoradio_sd_spi_acquire();
 #endif
-  ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
-  vTaskDelay(10);
-  if(!ready) ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
-  vTaskDelay(20);
-  if(!ready) ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
-  vTaskDelay(50);
-  if(!ready) ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
+  static const uint8_t retryDelayMs[] = {0, 10, 20, 50};
+  int attempt = 0;
+  ready = false;
+  for (; attempt < 4 && !ready; attempt++) {
+    if (retryDelayMs[attempt]) vTaskDelay(pdMS_TO_TICKS(retryDelayMs[attempt]));
+    ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
+  }
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
   yoradio_sd_spi_release();
 #endif
+  DSPLOG("SD mount end: ready=%d attempts=%d", (int)ready, attempt);
   return ready;
 }
 

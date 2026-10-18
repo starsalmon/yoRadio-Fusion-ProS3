@@ -46,6 +46,10 @@ static String s_uartLastComplete;
 static volatile bool s_gotHigrowArmed = false;
 static volatile bool s_gotBusMaster = false;
 static volatile bool s_gotBusReleased = false;
+// HiGrow-restart detection in BT RX: consecutive STATUS replies saying mode=tx (or rx with bt=0)
+// while we believe the HiGrow is our RX master. Acted on in btcompanion_loop(), not in pumpRx().
+static uint8_t s_hgRestartStrikes = 0;
+static bool s_hgRestartPending = false;
 static volatile uint32_t s_lastPongMs = 0;
 static volatile uint32_t s_lastStatusMs = 0;
 static uint32_t s_lastStatusReqMs = 0;
@@ -357,6 +361,18 @@ static void pumpRx() {
         }
         s_hgModeRx = (out.indexOf("mode=rx") >= 0);
         if (s_hgModeRx) { int b = -1; readInt("bt=", b); s_hgRxSink = b; } else { s_hgRxSink = -1; }
+        // HiGrow restarted? Only between handovers and only once we've had it as RX master.
+        if (s_rxActive && s_rxStep == RxHandoverStep::None && s_rxMasterAtMs != 0) {
+          const bool lost = !s_hgModeRx || s_hgRxSink == 0;
+          if (lost) {
+            if (s_hgRestartStrikes < 255) s_hgRestartStrikes++;
+            if (s_hgRestartStrikes >= 2) s_hgRestartPending = true;  // debounce: 2 in a row
+          } else {
+            s_hgRestartStrikes = 0;
+          }
+        } else {
+          s_hgRestartStrikes = 0;
+        }
         s_lastStatusMsFwd = millis();
         if (out.indexOf("mode=rx") >= 0) {
           readInt("conn=", s_rxConn);
@@ -644,6 +660,20 @@ void btcompanion_loop() {
   if (s_rxActive && s_rxStep == RxHandoverStep::None) {
     const uint32_t now = millis();
     const bool recentReset = s_rxLastResetMs && (uint32_t)(now - s_rxLastResetMs) < 30000u;
+    // HiGrow came back in TX/default mode (crash, brownout, watchdog): our RX view is stale.
+    if (s_hgRestartPending) {
+      s_hgRestartPending = false;
+      s_hgRestartStrikes = 0;
+      const bool tooSoon = s_rxLastResetMs && (uint32_t)(now - s_rxLastResetMs) < 10000u;
+      if (!tooSoon) {
+        Serial.println("[BTC] HiGrow restarted (mode=tx) - re-handover");
+        s_rxConn = -1;
+        s_rxAudio = -1;
+        s_rxTitle[0] = s_rxArtist[0] = '\0';
+        rxResetHiGrow("HiGrow restarted (mode=tx / bt=0)");
+        return;
+      }
+    }
     // Phone dropped and nothing reconnected for 15 s: the HiGrow may be stuck unconnectable.
     // Resetting it is harmless while nothing is connected.
     if (s_rxDropAtMs && (uint32_t)(now - s_rxDropAtMs) >= 60000u && s_rxConn != 2 && !recentReset) {

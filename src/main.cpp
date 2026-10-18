@@ -10,6 +10,7 @@
 #include "core/telnet.h"
 #include "core/player.h"
 #include "core/display.h"
+#include "core/sdpark.h"
 #include "core/network.h"
 #include "core/netserver.h"
 #include "core/controls.h"
@@ -154,6 +155,9 @@ void setup() {
   config.init();
   clock_tts_setup();
 
+#ifdef SDPARK_ENABLED
+  sdpark_boot();    // SD card out of SD-native mode before the panel is initialised (see sdpark.h)
+#endif
   display.init();   // main's boot order: display first
 
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)

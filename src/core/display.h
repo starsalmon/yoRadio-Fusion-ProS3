@@ -57,6 +57,7 @@ class Display {
     volatile uint32_t _panelRecoverAt = 0;
     bool _pagerBuilt = false;
     void _panelRecover();
+    void _panelHwReinit();          // TFT_RST pulse + init sequence + full redraw (display task only)
     volatile bool panelAsleep = false;  // ILI9341 in SLPIN/DISPOFF (normally-white panel!)
     void setContrast();
     void lock()   { _locked=true; }

@@ -20,6 +20,7 @@
 #include "../displays/bitmaps/footer_icons_16.h"
 #include "../myoptions.h"
 #include "sdmanager.h"
+#include "sdpark.h"
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
 #include "sd_spi_shared.h"
 #endif
@@ -1102,6 +1103,24 @@ void Display::loop() {
     if (s_lastPlayMode >= 0 && pmode != s_lastPlayMode) requestPanelRecover(50);
     s_lastPlayMode = pmode;
   }
+#ifdef SDPARK_ENABLED
+  // Hot-inserted SD card: its power-up inrush on the shared LDO2 rail can reset the panel (white),
+  // and until it gets CMD0 it sits in SD-native mode and can drive MOSI. Probe every 1.5 s between
+  // draws (never inside a TFT transaction; skipped while the card is mounted/indexing). On a new
+  // card: it is parked by the probe itself, then the panel gets one full hardware re-init.
+  {
+    static uint32_t s_sdProbeMs = 0;
+    static bool s_hwReinitPending = false;
+    if (_bootStep == 2 && (uint32_t)(millis() - s_sdProbeMs) >= 1500u) {
+      s_sdProbeMs = millis();
+      if (sdpark_poll() > 0) s_hwReinitPending = true;
+    }
+    if (s_hwReinitPending && config.store.dspon && !panelAsleep) {
+      s_hwReinitPending = false;
+      _panelHwReinit();
+    }
+  }
+#endif
 #endif
 #endif
 
@@ -2624,6 +2643,16 @@ void Display::_panelRecover() {
   _volume();
   _stationLogoLastKey[0] = '\0';       // force the logo blit (its cache would skip it)
   _updateStationLogo();
+#endif
+}
+
+void Display::_panelHwReinit() {
+#if DSP_MODEL==DSP_ILI9341
+  if (!_pagerBuilt) return;
+  DSPLOG("DSP panel HW re-init (SD card inserted), mode=%d", (int)_mode);
+  dsp.initDisplay();                   // TFT_RST pulse + full init sequence (+ invert/flip), bus-locked
+  if (_mode == PLAYER) _panelRecover(); // full redraw of the player page
+  else putRequest(NEWMODE, PLAYER);    // other screens: back to the player page (full redraw)
 #endif
 }
 

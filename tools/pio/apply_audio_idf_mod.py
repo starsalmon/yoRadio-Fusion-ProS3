@@ -141,7 +141,20 @@ def apply_audio_idf_mod(*args, **kwargs):
         print(f"[audio-idf-mod] done (from {mod_dir})")
 
 
-# Apply patches during the build (also safe to re-run).
+# Apply patches during the build (also safe to re-run; both are idempotent hash-checked copies).
+#
+# The lwip/netif swap MUST land before the firmware ELF is linked. A "buildprog" pre-action
+# only runs after buildprog's dependencies (firmware.elf/.bin) are built, i.e. AFTER the link,
+# and pioarduino's hybrid (custom_sdkconfig) build recompiles the Arduino IDF libs - stock
+# liblwip.a / libesp_netif.a - right before linking. Those builds therefore linked STOCK lwip
+# (small TCP window -> ~1.5 s web-radio stalls) and only patched the files afterwards.
+# Fix: apply at script load (after any framework reinstall/lib rebuild of this pass) AND as a
+# pre-action of the ELF link itself.
+try:
+    apply_audio_idf_mod()
+except Exception as exc:  # never break the build from here
+    print(f"[audio-idf-mod] load-time apply warning: {exc}")
+env.AddPreAction("$BUILD_DIR/${PROGNAME}.elf", apply_audio_idf_mod)
 env.AddPreAction("buildprog", apply_audio_idf_mod)
 env.AddPreAction("buildprog", apply_gfx_glcdfont_patch)
 

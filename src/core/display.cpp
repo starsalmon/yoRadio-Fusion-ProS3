@@ -504,13 +504,13 @@ void Display::_buildPager(){
     _volip = new TextWidget(iptxtConf, 30, false, config.theme.ip, config.theme.background);
   #endif
   #ifndef HIDE_RSSI
-    #if DSP_MODEL!=DSP_ILI9341
+    #if DSP_MODEL!=DSP_ILI9341 && DSP_MODEL!=DSP_ST7789_240
       _rssi = new TextWidget(rssiConf, 20, false, config.theme.rssi, config.theme.background);
     #endif
   #endif
 
   // Footer icons for ILI9341: keep classic glyph icons alongside smooth text.
-  #if DSP_MODEL==DSP_ILI9341
+  #if DSP_MODEL==DSP_ILI9341 || DSP_MODEL==DSP_ST7789_240
     #ifndef HIDE_IP
       _ipIcon = new BitmapWidget(ipiconConf, ICON_LAN_16x18, ICON_LAN_W, ICON_LAN_H, config.theme.ip, config.theme.background, BitmapFormat::GFX_MSB);
     #endif
@@ -605,12 +605,14 @@ void Display::_buildPager(){
    #endif
   #endif
 
+#ifndef HIDE_STATION_LOGOS
   // Station logo (RGB565). Shown only for known stations.
   _stationLogo = new RgbImageWidget();
   _stationLogo->init({0, 0, 0, WA_LEFT}, config.theme.background);
   _stationLogo->lock(true);
+#endif
   
-  #if DSP_MODEL==DSP_ILI9341
+  #if DSP_MODEL==DSP_ILI9341 || DSP_MODEL==DSP_ST7789_240
     if(_btIcon)   _footer->addWidget(_btIcon);
     if(_volIcon)  _footer->addWidget(_volIcon);
     if(_ipIcon)   _footer->addWidget(_ipIcon);
@@ -648,11 +650,15 @@ void Display::_buildPager(){
     pages[PG_PLAYER]->addWidget( _fullbitrate);
     // Track time/duration line (for SD & Podcast) sits just above the bitrate badge.
     {
+#if defined(TRACKPOS_IN_VU_SLOT) && TRACKPOS_IN_VU_SLOT
+      WidgetConfig tp = getvuConf();   // same slot as the VU meter (shown only while VU is off)
+#else
       WidgetConfig tp = getfullbitrateConf().widget;
       // Lift it above the bitrate badge, then nudge down a touch for visual alignment.
       tp.top = (tp.top > 24) ? (tp.top - 24) : 0;
       // Center it like title/description: it's track info, not clock info.
       tp.left  = TFT_FRAMEWDT;
+#endif
       tp.align = WA_CENTER;
       // Use ScrollWidget even though we don't scroll: it draws via psFrameBuffer,
       // which avoids visible flicker on updates (no fillRect-on-screen blank frame).
@@ -668,12 +674,16 @@ void Display::_buildPager(){
     // Track time/duration line (for SD & Podcast) sits just above the bitrate badge.
     // Use the same anchor as bitrateConf so it stays aligned across custom layouts.
     {
+#if defined(TRACKPOS_IN_VU_SLOT) && TRACKPOS_IN_VU_SLOT
+      WidgetConfig tp = getvuConf();   // same slot as the VU meter (shown only while VU is off)
+#else
       WidgetConfig tp = bitrateConf;
       // Lift it into the empty strip above the "128 / MP3" badge.
       // Lift it above the bitrate badge, then nudge down a touch for visual alignment.
       tp.top = (tp.top > 24) ? (tp.top - 24) : 0;
       // Center it like title/description: it's track info, not clock info.
       tp.left  = TFT_FRAMEWDT;
+#endif
       tp.align = WA_CENTER;
       ScrollConfig sc = { tp, 40, false, MAX_WIDTH, 0, 1, 50 };
       _trackpos = new ScrollWidget("*", sc, config.theme.bitrate, config.theme.background);
@@ -1157,6 +1167,7 @@ void Display::loop() {
     if (s_lastPlayMode >= 0 && pmode != s_lastPlayMode) requestPanelRecover(50);
     s_lastPlayMode = pmode;
   }
+#endif
 #ifdef SDPARK_ENABLED
   // Hot-inserted SD card: its power-up inrush on the shared LDO2 rail can reset the panel (white),
   // and until it gets CMD0 it sits in SD-native mode and can drive MOSI. Probe every 1.5 s between
@@ -1174,7 +1185,6 @@ void Display::loop() {
       _panelHwReinit();
     }
   }
-#endif
 #endif
 #endif
 
@@ -1219,7 +1229,12 @@ void Display::loop() {
                 false
               #endif
               ;
+#if defined(TRACKPOS_IN_VU_SLOT) && TRACKPOS_IN_VU_SLOT
+            const bool vuShown = config.store.vumeter && _vuwidget && !_vuwidget->locked();
+            const bool canShow = wants && (!weatherOn || replaceWeather) && !vuShown;
+#else
             const bool canShow = wants && (!weatherOn || replaceWeather);
+#endif
 
             if (canShow) {
               if (weatherOn && replaceWeather && !_trackposHidWeather) {
@@ -1534,7 +1549,7 @@ void Display::_setRSSI(int rssi) {
   if(!_rssi && !_rssiIcon) return;
 
   // ILI9341 footer uses a bitmap WiFi icon: show a "not connected" glyph when not associated.
-  #if DSP_MODEL==DSP_ILI9341
+  #if DSP_MODEL==DSP_ILI9341 || DSP_MODEL==DSP_ST7789_240
     if (_rssiIcon) {
       if (WiFi.status() != WL_CONNECTED) {
         // Not associated to WiFi: show the "X" icon.
@@ -1582,7 +1597,7 @@ void Display::_setRSSI(int rssi) {
   if (_rssi) _rssi->setText(rssi, rssiFmt);
   return;
 #endif
-  #if DSP_MODEL!=DSP_ILI9341
+  #if DSP_MODEL!=DSP_ILI9341 && DSP_MODEL!=DSP_ST7789_240
   // If we have a dedicated RSSI icon widget, show bars there and keep digits on the main RSSI widget.
   if (_rssiIcon) {
     char rssiG[3];
@@ -1898,6 +1913,9 @@ static inline bool rectInside(const RectI16& r, int16_t w, int16_t h) {
 } // namespace
 
 void Display::_layoutStationLogo() {
+#ifdef HIDE_STATION_LOGOS
+  return;
+#endif
   if (!_stationLogo) return;
   const int16_t logoW = (int16_t)_stationLogoW;
   const int16_t logoH = (int16_t)_stationLogoH;
@@ -2047,6 +2065,9 @@ void Display::_layoutStationLogo() {
 }
 
 void Display::_updateStationLogo() {
+#ifdef HIDE_STATION_LOGOS
+  return;
+#endif
   if (!_stationLogo) return;
 
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
@@ -2701,7 +2722,7 @@ void Display::_volume() {
   if (vol < 0) vol = 0;
 
   // Update footer icons first; they clear a small area, so we'll redraw the bar after.
-  #if DSP_MODEL==DSP_ILI9341
+  #if DSP_MODEL==DSP_ILI9341 || DSP_MODEL==DSP_ST7789_240
     #ifndef HIDE_VOL
       #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
         // BT output icon (left of speaker)

@@ -501,6 +501,10 @@ static bool waitForPong(uint32_t timeoutMs) {
 }
 
 void btcompanion_init() {
+#if defined(BT_COMPANION_PINS_TODO) && BT_COMPANION_PINS_TODO
+  Serial.println("##[BOOT]#\tBT companion: compiled in, DISABLED (BT_COMPANION_PINS_TODO: UART/wake pins not confirmed)");
+  return;
+#endif
   // Wake pin held low by default.
   if (BT_COMPANION_WAKE_PIN != 255) {
     pinMode(BT_COMPANION_WAKE_PIN, OUTPUT);
@@ -584,6 +588,9 @@ void btcompanion_setPcmSampleRate(uint32_t hz) {
 }
 
 void btcompanion_setEnabled(bool enable) {
+#if defined(BT_COMPANION_PINS_TODO) && BT_COMPANION_PINS_TODO
+  return;   // companion wiring not confirmed yet: never touch the TODO pins
+#endif
   if (enable == s_enabled) return;
   // Backstop: TX bridge control (CONNECT/SR/DISCONNECT/SLEEP) must never run while the
   // HiGrow is in RX (phone sink) mode; RX enter/exit owns the HiGrow then.
@@ -661,6 +668,9 @@ bool btcompanion_enabled() { return s_enabled; }
 void btcompanion_toggle() { btcompanion_setEnabled(!s_enabled); }
 
 void btcompanion_pump() {
+#if defined(BT_COMPANION_PINS_TODO) && BT_COMPANION_PINS_TODO
+  return;   // companion wiring not confirmed yet: never touch the TODO pins
+#endif
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   pumpRx();
   rxHandoverAdvance();
@@ -687,6 +697,9 @@ static void rxResetHiGrow(const char *why) {
 }
 
 void btcompanion_loop() {
+#if defined(BT_COMPANION_PINS_TODO) && BT_COMPANION_PINS_TODO
+  return;   // companion wiring not confirmed yet: never touch the TODO pins
+#endif
   btcompanion_pump();
 
   // BT RX watchdogs (only between handovers).
@@ -869,6 +882,9 @@ void btcompanion_rxAvrcpToggle() {
 }
 
 void btcompanion_enterRxMode(const char* localName) {
+#if defined(BT_COMPANION_PINS_TODO) && BT_COMPANION_PINS_TODO
+  return;   // companion wiring not confirmed yet: never touch the TODO pins
+#endif
   if (localName && localName[0]) btcompanion_setRxLocalName(localName);
 
   if (s_enabled) btcompanion_setEnabled(false);

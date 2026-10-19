@@ -511,6 +511,12 @@ void Config::changeMode(int newmode) { // DLNA mod
         return;
     }
 
+#if defined(BT_COMPANION_PINS_TODO) && BT_COMPANION_PINS_TODO
+    if (newmode == PM_BLUETOOTH) {   // companion not wired/confirmed yet: no BT mode
+      Serial.println("##[MODE]#\tBluetooth mode unavailable (BT_COMPANION_PINS_TODO) -> web");
+      newmode = PM_WEB;
+    }
+#endif
     DSPLOG("PLAYMODE change %d -> %d", (int)getMode(), (int)newmode);
     const uint8_t oldMode = getMode();
     bool pir = player.isRunning();

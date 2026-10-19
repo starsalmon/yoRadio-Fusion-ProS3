@@ -651,11 +651,13 @@ void onBtnLongPressStart(int id) {
         break;
       }
     case EVT_BTNMODE: {
+#if !defined(MODE_BUTTON_LONG_PRESS_SLEEP) || MODE_BUTTON_LONG_PRESS_SLEEP
         // Give immediate UI feedback, then deep sleep.
         display.putRequest(NEWMODE, SLEEPING);
         delay(40);
         Serial.flush();
         config.doSleepW();
+#endif
         break;
       }
     default: break;
@@ -672,7 +674,9 @@ void onBtnLongPressStop(int id) {
         break;
       }
     case EVT_BTNMODE: {
+#if !defined(MODE_BUTTON_LONG_PRESS_SLEEP) || MODE_BUTTON_LONG_PRESS_SLEEP
         config.doSleepW();
+#endif
         break;
       }
     default:
@@ -720,6 +724,9 @@ void controlsEvent(bool toRight, int8_t volDelta) {
       display.putRequest(NEWMODE, VOL);          // Switch to volume screen.
     #endif
    if (volDelta != 0) {
+#if defined(BTN_VOLUME_INVERT_LR) && BTN_VOLUME_INVERT_LR
+      volDelta = (int8_t)(-volDelta);   // board buttons: A = up, B = down
+#endif
       int nv = config.store.volume + volDelta * config.store.volsteps;
       if (nv < 0)
         nv = 0;
@@ -727,10 +734,17 @@ void controlsEvent(bool toRight, int8_t volDelta) {
         nv = 100; 
       player.setVol((uint8_t)nv);
     } else {
+#if defined(BTN_VOLUME_INVERT_LR) && BTN_VOLUME_INVERT_LR
+      player.stepVol(!toRight);
+#else
       player.stepVol(toRight);
+#endif
     }
   }
   if (display.mode() == STATIONS) {
+#if defined(BTN_STATIONS_INVERT_LR) && BTN_STATIONS_INVERT_LR
+    toRight = !toRight;   // playlist scroll direction matches the board's button order
+#endif
     display.resetQueue();
     int p = toRight ? display.currentPlItem + 1 : display.currentPlItem - 1;
     uint16_t cs = config.playlistLength();

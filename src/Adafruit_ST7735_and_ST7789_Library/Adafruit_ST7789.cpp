@@ -103,10 +103,16 @@ void Adafruit_ST7789::init(uint16_t width, uint16_t height, uint8_t mode) {
 
   commonInit(NULL);
   if (width == 240 && height == 240) {
-    // 1.3", 1.54" displays (right justified)
+#if defined(TFT_ROW_OFFSET) && defined(TFT_COL_OFFSET)
+    // Pimoroni Pirate Audio and other full-bleed 240×240 modules
+    _rowstart = _rowstart2 = TFT_ROW_OFFSET;
+    _colstart = _colstart2 = TFT_COL_OFFSET;
+#else
+    // 1.3", 1.54" displays (right justified on 240×320 glass)
     _rowstart = (320 - height);
     _rowstart2 = 0;
     _colstart = _colstart2 = (240 - width);
+#endif
   } else if (width == 135 && height == 240) {
     // 1.14" display (centered, with odd size)
     _rowstart = _rowstart2 = (int)((320 - height) / 2);

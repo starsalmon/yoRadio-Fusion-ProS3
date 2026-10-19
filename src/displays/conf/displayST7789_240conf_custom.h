@@ -23,9 +23,8 @@
 #define bootLogoTop     20
 
 /* SROLLS  */
-// metaConf szűkítve: bal +48px (sorszám 46px + 2px gap), jobb -48px (mód 46px + 2px gap)
-// metaBG: top=0, height=38, box_h=23 → box_top=(38-23)/2=7
-const ScrollConfig metaConf       PROGMEM = {{ 36, 4, 3, WA_CENTER }, 140, true, MAX_WIDTH-72, 5000, 5, 30 };
+// ST7789_240 has no station-num / play-mode side widgets — use full header width.
+const ScrollConfig metaConf       PROGMEM = {{ TFT_FRAMEWDT, 4, 3, WA_CENTER }, 140, true, MAX_WIDTH, 5000, 5, 30 };
 const ScrollConfig title1Conf     PROGMEM = {{ TFT_FRAMEWDT, 40, 2, WA_LEFT }, 140, true, MAX_WIDTH-TITLE_FIX, 5000, 4, 30 };
 const ScrollConfig title2Conf     PROGMEM = {{ TFT_FRAMEWDT, 60, 2, WA_LEFT }, 140, false, MAX_WIDTH, 5000, 4, 30 };
 const ScrollConfig playlistConf   PROGMEM = {{ TFT_FRAMEWDT, 112, 2, WA_LEFT }, 140, true, MAX_WIDTH, 0, 2, 30 };
@@ -41,12 +40,36 @@ const FillConfig   volbarConf     PROGMEM = {{ TFT_FRAMEWDT, 240-TFT_FRAMEWDT-6,
 const FillConfig  playlBGConf     PROGMEM = {{ 0, 107, 0, WA_LEFT }, DSP_WIDTH, 24, false };
 const FillConfig  heapbarConf     PROGMEM = {{ 0, 239, 0, WA_LEFT }, DSP_WIDTH, 1, false };
 
+/* Footer (bitmap icons + DejaVu text — same idea as ILI9341 custom layout) */
+#define VOLBAR_TOP         (240 - TFT_FRAMEWDT - 6)
+#define ICON_BOTTOM_Y      (VOLBAR_TOP - 1)
+#define TEXT_BOTTOM_Y      (VOLBAR_TOP - 1)
+#define TEXT_ICON_SPACING  2
+#define LAN_ICON_W         18
+#define LAN_ICON_H         18
+#define VOL_ICON_W         18
+#define VOL_ICON_H         18
+#define RSSI_ICON_W        24
+#define RSSI_ICON_H        17
+#define LAN_ICON_TOP       (ICON_BOTTOM_Y - LAN_ICON_H)
+#define LAN_ICON_LEFT      (TFT_FRAMEWDT)
+#define IP_TEXT_LEFT       (LAN_ICON_LEFT + LAN_ICON_W + TEXT_ICON_SPACING)
+#define VOL_ICON_TOP       (ICON_BOTTOM_Y - VOL_ICON_H - 1)
+#define VOL_ICON_LEFT      ((DSP_WIDTH / 2) - 10)
+#define VOL_TEXT_LEFT      (VOL_ICON_LEFT + VOL_ICON_W + TEXT_ICON_SPACING)
+#define RSSI_ICON_TOP      (ICON_BOTTOM_Y - RSSI_ICON_H - 1)
+#define RSSI_ICON_LEFT     (DSP_WIDTH - TFT_FRAMEWDT - RSSI_ICON_W)
+#define BAR_TEXT_TOP       (TEXT_BOTTOM_Y - 10)
+
 /* WIDGETS  */
 const WidgetConfig bootstrConf    PROGMEM = { 0, 152, 0, WA_CENTER };
 const WidgetConfig bitrateConf    PROGMEM = { TFT_FRAMEWDT, 175, 0, WA_LEFT };
-const WidgetConfig voltxtConf     PROGMEM = { 80, 210, 0, WA_RIGHT };
-const WidgetConfig  iptxtConf     PROGMEM = { TFT_FRAMEWDT, 210, 0, WA_LEFT };
-const WidgetConfig   rssiConf     PROGMEM = { TFT_FRAMEWDT, 210, 0, WA_RIGHT };
+const WidgetConfig voltxtConf     PROGMEM = { VOL_TEXT_LEFT, BAR_TEXT_TOP, 7, WA_LEFT };
+const WidgetConfig  iptxtConf     PROGMEM = { IP_TEXT_LEFT, BAR_TEXT_TOP, 7, WA_LEFT };
+const WidgetConfig ipiconConf     PROGMEM = { LAN_ICON_LEFT, LAN_ICON_TOP, 0, WA_LEFT };
+const WidgetConfig voliconConf    PROGMEM = { VOL_ICON_LEFT, VOL_ICON_TOP, 0, WA_LEFT };
+const WidgetConfig rssibarConf    PROGMEM = { RSSI_ICON_LEFT, RSSI_ICON_TOP, 0, WA_RIGHT };
+const WidgetConfig   rssiConf     PROGMEM = { TFT_FRAMEWDT, BAR_TEXT_TOP, 7, WA_RIGHT };
 const WidgetConfig numConf        PROGMEM = { 0, 120+30, 0, WA_CENTER };
 const WidgetConfig apNameConf     PROGMEM = { TFT_FRAMEWDT, 66, 2, WA_CENTER };
 const WidgetConfig apName2Conf    PROGMEM = { TFT_FRAMEWDT, 90, 2, WA_CENTER };
@@ -104,8 +127,15 @@ inline WidgetConfig getclockConf() {
   }
 }
 
+inline WidgetConfig getWeatherIconConf() {
+  switch (config.store.vuLayout) {
+    case 1: case 2: case 3: return { TFT_FRAMEWDT, 80, 2, WA_LEFT };
+    default: return { DSP_WIDTH - TFT_FRAMEWDT - 55, 100, 2, WA_LEFT };
+  }
+}
+
 static constexpr ScrollConfig kDateBase = {
-  { TFT_FRAMEWDT, 175, 1, WA_RIGHT }, 128, false, 202, 5000, 1, 50 };
+  { TFT_FRAMEWDT, 175, 5, WA_RIGHT }, 128, false, 202, 5000, 3, 35 };
 
 static inline uint16_t dateTopByLayout(uint8_t ly) {
   switch (ly) { case 1: case 2: case 3: case 0: default: return 157; }
@@ -126,7 +156,8 @@ inline ScrollConfig getDateConf() { return getDateConf(config.store.vuLayout); }
 const char         numtxtFmt[]    PROGMEM = "%d";
 const char           rssiFmt[]    PROGMEM = "WiFi %d";
 const char          iptxtFmt[]    PROGMEM = "%s";
-const char         voltxtFmt[]    PROGMEM = "\023\025%d%%";
+const char         voltxtFmt[]    PROGMEM = "%d%%";
+const char         battxtFmt[]    PROGMEM = "%d%%";
 const char        bitrateFmt[]    PROGMEM = "%d kBs";
 
 /* MOVES  */

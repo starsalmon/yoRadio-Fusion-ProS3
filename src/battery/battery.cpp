@@ -287,6 +287,9 @@ void battery_prepare_for_deepsleep() {
 #endif
 
 
+#if defined(BATTERY_ENABLED) && (BATTERY_ENABLED == 0)
+bool battery_read_vcell_mv(uint16_t*) { return false; }   // no fuel gauge on this board
+#else
 bool battery_read_vcell_mv(uint16_t* mv) {
   if (!batteryReady || !mv) return false;
   uint16_t raw = 0;
@@ -294,3 +297,4 @@ bool battery_read_vcell_mv(uint16_t* mv) {
   *mv = (uint16_t)(((uint32_t)raw * 5u) / 64u);   // 78.125 uV/LSB
   return true;
 }
+#endif

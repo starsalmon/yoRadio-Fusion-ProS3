@@ -1,0 +1,12 @@
+; Copy to platformio_private.ini (gitignored). Required for USB upload.
+;
+; USB identity (ports change when you replug — use pio device list + esptool):
+;   April's Speaker  Waveshare S3-Zero   MAC ac:27:6e:b0:3e:3c   Embedded Flash 4MB
+;   GoL desk toy     Unexpected ProS3     MAC 60:55:f9:f5:59:6c   16MB flash — NEVER aprils-speaker here
+;
+; Unplug GoL before flashing April's Speaker.
+
+[env:aprils-speaker]
+; After unplugging GoL: pio device list, then esptool --port <port> chip-id
+; Must show MAC ac:27:6e:b0:3e:3c and Embedded Flash 4MB
+upload_port = /dev/cu.usbmodem112101

@@ -49,6 +49,8 @@ const FillConfig  heapbarConf     PROGMEM = {{ 0, 239, 0, WA_LEFT }, DSP_WIDTH, 
 #define LAN_ICON_H         18
 #define VOL_ICON_W         18
 #define VOL_ICON_H         18
+#define BT_ICON_W          17
+#define BT_ICON_H          16
 #define RSSI_ICON_W        24
 #define RSSI_ICON_H        17
 #define LAN_ICON_TOP       (ICON_BOTTOM_Y - LAN_ICON_H)
@@ -60,6 +62,8 @@ const FillConfig  heapbarConf     PROGMEM = {{ 0, 239, 0, WA_LEFT }, DSP_WIDTH, 
 #define RSSI_ICON_TOP      (ICON_BOTTOM_Y - RSSI_ICON_H - 1)
 #define RSSI_ICON_LEFT     (DSP_WIDTH - TFT_FRAMEWDT - RSSI_ICON_W)
 #define BAR_TEXT_TOP       (TEXT_BOTTOM_Y - 10)
+#define BT_ICON_TOP        (ICON_BOTTOM_Y - BT_ICON_H - 2)
+#define BT_ICON_LEFT       (VOL_ICON_LEFT - BT_ICON_W - TEXT_ICON_SPACING)
 
 /* WIDGETS  */
 const WidgetConfig bootstrConf    PROGMEM = { 0, 152, 0, WA_CENTER };
@@ -69,6 +73,7 @@ const WidgetConfig  iptxtConf     PROGMEM = { IP_TEXT_LEFT, BAR_TEXT_TOP, 7, WA_
 const WidgetConfig ipiconConf     PROGMEM = { LAN_ICON_LEFT, LAN_ICON_TOP, 0, WA_LEFT };
 const WidgetConfig voliconConf    PROGMEM = { VOL_ICON_LEFT, VOL_ICON_TOP, 0, WA_LEFT };
 const WidgetConfig rssibarConf    PROGMEM = { RSSI_ICON_LEFT, RSSI_ICON_TOP, 0, WA_RIGHT };
+const WidgetConfig bticonConf     PROGMEM = { BT_ICON_LEFT, BT_ICON_TOP, 0, WA_LEFT };   /* BT output/receive icon, left of the speaker */
 const WidgetConfig   rssiConf     PROGMEM = { TFT_FRAMEWDT, BAR_TEXT_TOP, 7, WA_RIGHT };
 const WidgetConfig numConf        PROGMEM = { 0, 120+30, 0, WA_CENTER };
 const WidgetConfig apNameConf     PROGMEM = { TFT_FRAMEWDT, 66, 2, WA_CENTER };

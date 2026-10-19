@@ -26,3 +26,6 @@ sdkconfig.defaults
 sdkconfig.*
 dependencies.lock
 CMakeLists.txt
+
+# Local per-machine PlatformIO overrides (upload_port etc.)
+platformio_private.ini

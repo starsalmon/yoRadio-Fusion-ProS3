@@ -150,6 +150,16 @@ void setup() {
 #endif
   if(REAL_LEDBUILTIN!=255) pinMode(REAL_LEDBUILTIN, OUTPUT);
   if (yoradio_on_setup) yoradio_on_setup();
+#if DSP_HSPI && defined(TFT_SCLK) && defined(TFT_MOSI)
+  // Display (and shared SD) on SPI2 with board pins (April's Speaker: SCK 12, MOSI 13, MISO 43).
+  // CS is driven by Adafruit_SPITFT; tools/pio/patch_adafruit_spitft_pins.py stops it re-running begin().
+  #if defined(TFT_MISO) && (TFT_MISO >= 0)
+    SPI2.begin(TFT_SCLK, TFT_MISO, TFT_MOSI);
+  #else
+    SPI2.begin(TFT_SCLK, -1, TFT_MOSI);
+  #endif
+  Serial.printf("##[BOOT]# SPI2 SCK=%d MOSI=%d CS=%d DC=%d\n", (int)TFT_SCLK, (int)TFT_MOSI, (int)TFT_CS, (int)TFT_DC);
+#endif
   pm.init();     // pluginsManager
   pm.on_setup();
   config.init();

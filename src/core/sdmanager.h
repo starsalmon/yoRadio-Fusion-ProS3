@@ -21,7 +21,7 @@ class SDManager : public SDFS {
 };
 
 extern SDManager sdman;
-#if defined(SD_SPIPINS) || SD_HSPI
+#if (defined(SD_SPIPINS) || SD_HSPI) && !(defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && DSP_HSPI)
 extern SPIClass  SDSPI;
 #endif
 #endif

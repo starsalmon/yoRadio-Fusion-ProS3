@@ -109,7 +109,7 @@ void Config::init() {
 #if IR_PIN!=255
     irBtnId = -1;
 #endif
-#if defined(SD_SPIPINS) || SD_HSPI
+#if (defined(SD_SPIPINS) || SD_HSPI) && !(defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && DSP_HSPI)
   #if !defined(SD_SPIPINS)
     SDSPI.begin();
   #else

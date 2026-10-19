@@ -5,6 +5,13 @@
 #include <SD.h>
 #include "sdmanager.h"
 #include "sd_spi_shared.h"
+
+#if DSP_HSPI
+extern SPIClass SPI2;   // TFT + SD share the display's SPI2 (main.cpp)
+#define SDPARK_SPI SPI2
+#else
+#define SDPARK_SPI SPI
+#endif
 #include "dsplog.h"
 
 // Card power-up: the SD spec allows up to 250 ms after VDD is stable before the card accepts
@@ -17,11 +24,11 @@ static bool s_present = false;
 
 // One command frame at 400 kHz, CS already low. Returns R1 (0xFF = no response).
 static uint8_t sdpark_cmd(const uint8_t (&frame)[6], uint8_t extraBytes) {
-  SPI.transfer(0xFF);
-  for (uint8_t b : frame) SPI.transfer(b);
+  SDPARK_SPI.transfer(0xFF);
+  for (uint8_t b : frame) SDPARK_SPI.transfer(b);
   uint8_t r1 = 0xFF;
-  for (int i = 0; i < 10 && (r1 & 0x80); i++) r1 = SPI.transfer(0xFF);
-  if (!(r1 & 0x80)) for (uint8_t i = 0; i < extraBytes; i++) SPI.transfer(0xFF);  // rest of R7
+  for (int i = 0; i < 10 && (r1 & 0x80); i++) r1 = SDPARK_SPI.transfer(0xFF);
+  if (!(r1 & 0x80)) for (uint8_t i = 0; i < extraBytes; i++) SDPARK_SPI.transfer(0xFF);  // rest of R7
   return r1;
 }
 
@@ -30,9 +37,9 @@ static uint8_t sdpark_cmd(const uint8_t (&frame)[6], uint8_t extraBytes) {
 static bool sdpark_probeLocked(uint8_t *r1out) {
   static const uint8_t CMD0[6] = {0x40, 0x00, 0x00, 0x00, 0x00, 0x95};
   static const uint8_t CMD8[6] = {0x48, 0x00, 0x00, 0x01, 0xAA, 0x87};
-  SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
+  SDPARK_SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
   digitalWrite(SDC_CS, HIGH);
-  for (int i = 0; i < 10; i++) SPI.transfer(0xFF);   // >= 74 clocks with CS high
+  for (int i = 0; i < 10; i++) SDPARK_SPI.transfer(0xFF);   // >= 74 clocks with CS high
   digitalWrite(SDC_CS, LOW);
   uint8_t r1 = sdpark_cmd(CMD0, 0);                  // -> idle, SPI mode: expect 0x01
   bool present = false;
@@ -42,8 +49,8 @@ static bool sdpark_probeLocked(uint8_t *r1out) {
     present = (r8 == 0x01 || r8 == 0x05);
   }
   digitalWrite(SDC_CS, HIGH);
-  SPI.transfer(0xFF);                                // 8 clocks with CS high: card releases DO
-  SPI.endTransaction();
+  SDPARK_SPI.transfer(0xFF);                                // 8 clocks with CS high: card releases DO
+  SDPARK_SPI.endTransaction();
   if (r1out) *r1out = r1;
   return present;
 }

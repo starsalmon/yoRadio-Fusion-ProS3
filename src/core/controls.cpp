@@ -856,6 +856,14 @@ static void toggleAudioOutputFromUi(controlEvt_e srcBtn) {
     Serial.println("[BT2] output toggle ignored in BT RX mode");
     return;
   }
+#if defined(BT_COMPANION_PINS_TODO) && BT_COMPANION_PINS_TODO
+  // Companion not wired yet: don't save output=BT (it would mute nothing, but switch the volume
+  // memory and footer icon to BT while audio stays on the speaker).
+  if (config.store.outputDevice != 1) {
+    Serial.println("[BT2] output toggle ignored (BT_COMPANION_PINS_TODO)");
+    return;
+  }
+#endif
   const bool wasBt = (config.store.outputDevice == 1);
 
   // Remember current volume for the currently active output.

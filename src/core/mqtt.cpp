@@ -1757,6 +1757,12 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         mqttPublishOutputDevice(true);
         return;
       }
+#if defined(BT_COMPANION_PINS_TODO) && BT_COMPANION_PINS_TODO
+      if (nowBt) {  // companion not wired yet: never select BT output
+        mqttPublishOutputDevice(true);
+        return;
+      }
+#endif
       if (nowBt == wasBt) {
         mqttPublishOutputDevice(true);
         return;

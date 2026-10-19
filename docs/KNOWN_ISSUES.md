@@ -1,6 +1,7 @@
-## Known issues / rough edges (PROS3 fork)
+## Known issues / rough edges
 
-This is intentionally “honest status”. Some of these are upstream issues, some are PROS3/ESP32‑S3 specific, and some are introduced by the fork.
+Honest status. Applies to both devices unless marked **ProS3** or **April**. Some items are upstream
+issues, some are ESP32-S3 specific, and some come from this fork.
 
 ### Streaming / audio
 
@@ -15,14 +16,37 @@ This is intentionally “honest status”. Some of these are upstream issues, so
 
 ### SD card
 
-- **SD mount errors during mode switching**: you may see `sd_diskio` warnings like “token error” / “The physical drive cannot work”.
-  - If SD playback still works afterwards, these are usually transient; SD bus/power timing is still being tuned.
-- **SD playback instability (~30s)**: some tracks restart from the beginning after ~30 seconds, may stop early before the song finishes, and selecting another track can sometimes reboot the device.
-- **SD album art**: currently disabled (JPEG decode was unstable / caused crashes on this target).
-- **macOS SD metadata**: fixed in this fork (indexing filters common junk like `._*`, `.DS_Store`, and other dotfiles so they can’t be selected).
+- **SD hot-insert: brief white flash (accepted, intentionally not fixed)**: inserting a card while
+  running can flash the display white for a moment. The TFT and SD share one SPI bus (and on the
+  ProS3 the card's power-up inrush is on the shared LDO2 rail); until the card gets CMD0 it can drive
+  MOSI. The SD park probe (every 1.5 s) parks the card and re-inits the panel, so it recovers by
+  itself. Changing SD-insert behaviour risks breaking the working fix, so leave it.
+- **SD track ends / restarts and `sd_diskio` "crc error" / "token error"**: the multi-block CMD12
+  bug behind these is fixed by `YORADIO_SD_DISKIO_FIX` (framework patch, checked by `fw_guard`).
+  If they come back, first check the build log for the two `[fw-guard] ... (OK)` lines.
+  Re-test the older "restart after ~30 s / reboot on track change" reports on current firmware before
+  removing them from this list.
+- **SD album art**: disabled (`SD_ALBUM_ART_ENABLE 0`); JPEG decode was unstable on this target.
+- **macOS SD metadata**: fixed (indexing skips `._*`, `.DS_Store` and other dotfiles).
+
+### Build / framework
+
+- The pioarduino framework under `~/.platformio` is shared and gets reinstalled when another project
+  or a different `custom_sdkconfig` builds, which drops the lwip and `sd_diskio` patches. The
+  pre-scripts re-apply them and `fw_guard.py` rejects any image without them. Build one env at a
+  time and never flash a `firmware.bin.REJECTED`.
+
+### Bluetooth
+
+- **April**: the BT companion is inert until wired (`BT_COMPANION_PINS_TODO`). Bluetooth mode
+  falls back to Web. X double-press still flips the stored output to "BT" (separate BT volume, BT
+  footer icon) while audio stays on the speaker; double-press again to go back.
+- BT send connect can take ~30 s depending on the speaker.
 
 ### UI / display
 
+- **April**: the ST7789 driver uses yoRadio's shared-bus lock instead of April's old `startWrite` mutex.
+  Not yet bench-tested on April's Speaker.
 - **VU Label font**: L and R labels are slightly too large for the grey boxes in the Studio VU style; in the default VU style they sit slightly too high.
 - **Scrolling text during playback** is intentionally throttled in this fork to protect audio (some stations make it feel “too slow”).
 

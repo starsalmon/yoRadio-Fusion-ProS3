@@ -1,26 +1,20 @@
 ## Documentation index
 
-This folder is the “human docs” for the ProS3 fork (how to build it, how to use/tune it, and what changed vs upstream).
+### Devices
 
-### Hardware (PCB / wiring)
+- **ProS3 radio** (hardware, PCB, controls, SD bus fixes, lwip guard): [`PROS3.md`](PROS3.md)
+- **April's Speaker** (S3-Zero + Pirate Audio pins, controls, BT status): [`APRILS_SPEAKER.md`](APRILS_SPEAKER.md)
+- **BT companion + UART protocol** (shared): [`BT_COMPANION.md`](BT_COMPANION.md)
+- **Controls overview**: [`CONTROLS.md`](CONTROLS.md)
 
-- **PCB + schematic**: [`HARDWARE_PCB.md`](HARDWARE_PCB.md)
-  - Exports live under `docs/hardware/*` (PDF schematic stays in `docs/`)
+Build and safe-flash steps: top-level [`README.md`](../README.md).
 
-### Fork overview / history
+### Status
+
+- **Known issues**: [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
+- **TODO / Roadmap**: [`TODO_ROADMAP.md`](TODO_ROADMAP.md)
+
+### History / upstream
 
 - **Worklog / polish notes (why this fork exists)**: [`WORKLOG_AND_POLISH_NOTES.md`](WORKLOG_AND_POLISH_NOTES.md)
 - **Upstream snapshot testing**: [`UPSTREAM_TESTING.md`](UPSTREAM_TESTING.md)
-
-### Usage / controls
-
-- **Controls (buttons/encoders/IR/touch)**: [`CONTROLS.md`](CONTROLS.md)
-
-### Troubleshooting
-
-- **Known issues**: [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
-
-### Roadmap
-
-- **TODO / Roadmap**: [`TODO_ROADMAP.md`](TODO_ROADMAP.md)
-

@@ -1,5 +1,9 @@
 ## Worklog / polish notes (why this fork exists)
 
+Historical log of ProS3 work. Current behaviour and pins are in [PROS3.md](PROS3.md),
+[APRILS_SPEAKER.md](APRILS_SPEAKER.md) and [BT_COMPANION.md](BT_COMPANION.md); board options moved from
+`myoptions.h` to `boards/<device>.h`.
+
 This fork isn’t “just a board config change”. A lot of time went into making upstream behave well on PROS3/ESP32‑S3 + ILI9341, and into hardening a few sharp edges that only show up after real-world use (station logos at scale, HLS AAC weirdness, UI stutter, button responsiveness under heavy decode load, etc.).
 
 ### Station logo system (SPIFFS `.ylg`) — end-to-end workflow
@@ -82,7 +86,7 @@ ESP32‑S3 is BLE-only, so this fork added an optional **companion Classic-BT ES
 - Implemented a ProS3-side control module (`src/core/bt_companion.{h,cpp}`):
   - UART control protocol (`PING/STATUS/CONNECT/DISCONNECT/SLEEP`)
   - Wake pin pulse to bring the companion out of deep sleep
-  - Output toggle on **MODE double-click** (internal speaker vs BT), with internal amp mute while keeping I2S audio flowing
+  - Output toggle (internal speaker vs BT), with internal amp mute while keeping I2S audio flowing (now on knob double-press; MODE double-press enters Bluetooth receive)
 - Output UX polish on the ProS3 footer (ILI9341):
   - Added a **separate BT icon widget** to the left of the speaker icon (so speaker volume icon stays a speaker).
   - BT icon shows **OFF / SEARCHING / CONNECTED / AUDIO**:
@@ -191,7 +195,7 @@ This fork adds an optional **bi-amp** mode using two MAX98357 I2S DAC/amps while
 ### Documentation cleanup (without deleting the good bits)
 
 - Rebuilt `README.md` as a hub with links to focused docs (`docs/*.md`, `images_src/station_logos/README.md`, plugin docs).
-- Moved the upstream “Controls” block into `docs/CONTROLS.md` so it stays intact and easy to find.
+- Moved the upstream “Controls” block into `docs/CONTROLS.md` (since replaced by per-device control tables).
 
 ### Podcast playback (Option A: flat episodes list)
 
@@ -222,6 +226,6 @@ This fork adds an optional **bi-amp** mode using two MAX98357 I2S DAC/amps while
 
 - **Upstream snapshot testing**: `docs/UPSTREAM_TESTING.md` (how to build/compare upstream snapshots)
 - **Known issues**: `docs/KNOWN_ISSUES.md`
-- **Controls**: `docs/CONTROLS.md`
+- **Controls**: `docs/CONTROLS.md`, `docs/PROS3.md`, `docs/APRILS_SPEAKER.md`
 - **Logo pipeline**: `images_src/station_logos/README.md`
 

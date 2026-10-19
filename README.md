@@ -1,66 +1,108 @@
-## yoRadio Fusion – PROS3 (ESP32‑S3) build
+## yoRadio Fusion: ProS3 radio + April's Speaker
 
-This is a PROS3-focused fork of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yoRadio-Fusion) (which itself builds on e2002’s ёRadio). It’s set up for **Unexpected Maker PROS3 (ESP32‑S3)** using **PlatformIO** and tuned around **ILI9341 + PSRAM**.
+A fork of [`SimZs/yoRadio-Fusion`](https://github.com/SimZs/yoRadio-Fusion) (built on e2002's ёRadio)
+for two devices, one codebase, one PlatformIO env per device:
 
-### Quick start
+| Device | Env | Board header | Doc |
+|--------|-----|--------------|-----|
+| ProS3 radio: Unexpected Maker ProS3 + ILI9341 + custom PCB + HiGrow BT companion | `yoradio-um_pros3-ili9341` (default) | [`boards/pros3.h`](boards/pros3.h) | [`docs/PROS3.md`](docs/PROS3.md) |
+| April's Speaker: Waveshare ESP32-S3-Zero + Pirate Audio 3W HAT + microSD | `aprils-speaker` | [`boards/aprils_speaker.h`](boards/aprils_speaker.h) | [`docs/APRILS_SPEAKER.md`](docs/APRILS_SPEAKER.md) |
 
-- **Build firmware**:
+The Bluetooth companion firmware (classic-BT ESP32 for A2DP send/receive) is a separate project:
+[BT-A2DP-Source-HiGrow](https://github.com/starsalmon/BT-A2DP-Source-HiGrow), protocol in
+[`docs/BT_COMPANION.md`](docs/BT_COMPANION.md).
 
-```bash
-platformio run -e yoradio-um_pros3-ili9341
-```
+### Build
 
-- **Upload firmware**:
-
-```bash
-platformio run -e yoradio-um_pros3-ili9341 -t upload
-```
-
-- **Build/upload filesystem (SPIFFS)**:
+Build one env at a time (the shared framework is reinstalled when envs/projects switch; see below):
 
 ```bash
-platformio run -e yoradio-um_pros3-ili9341 -t uploadfs
+pio run -e yoradio-um_pros3-ili9341      # ProS3
+pio run -e aprils-speaker                # April's Speaker
+pio run -e <env> -t buildfs              # SPIFFS image (logos are generated automatically)
+pio device monitor -b 115200
 ```
 
-- **Serial monitor**:
+Every firmware build must end with both guard lines. Otherwise the image is renamed
+`firmware.bin.REJECTED` and must not be flashed:
+
+```
+[fw-guard] lwip: Audio_IDF_MOD build linked (OK)
+[fw-guard] sd_diskio: CMD12 fix linked (OK)
+```
+
+### Safe flashing
+
+General rules:
+
+- **Never interrupt a flash** (no unplugging, no Ctrl-C, no second tool on the port).
+- **Never flash anything older than the tag `milestone-2026-10-18-bt-rx-stable`**:
+
+  ```bash
+  git merge-base --is-ancestor milestone-2026-10-18-bt-rx-stable HEAD && echo OK-to-flash
+  ```
+- Name the port explicitly and make sure it is the right device.
+- Keep the last known-good `.bin` so you can roll back.
+
+**ProS3: app only, at 0x10000.** Don't use `-t upload` (it rewrites the bootloader and partition
+table too). Write only the app image:
 
 ```bash
-platformio device monitor -b 115200
+pio run -e yoradio-um_pros3-ili9341      # check both [fw-guard] OK lines
+~/.platformio/penv/bin/python ~/.platformio/packages/tool-esptoolpy/esptool.py \
+  --chip esp32s3 --port <PROS3_PORT> --baud 921600 --before default_reset --after hard_reset \
+  write_flash 0x10000 .pio/build/yoradio-um_pros3-ili9341/firmware.bin
 ```
+
+0x10000 is `app0` in [`partitions/partition_16MB_ota_spiffs_bigspiffs.csv`](partitions/partition_16MB_ota_spiffs_bigspiffs.csv).
+SPIFFS (`uploadfs`) is separate and only needed when `data/` changed.
+
+**April's Speaker: upload check.**
+
+1. Copy `platformio_private.ini.example` to `platformio_private.ini` (gitignored) and set
+   `upload_port` to the S3-Zero.
+2. Unplug the "GoL" ProS3.
+3. Run `pio run -e aprils-speaker -t upload`.
+
+`tools/pio/verify_aprils_speaker_upload.py` refuses the upload if the port's MAC isn't
+`ac:27:6e:b0:3e:3c` with 4 MB embedded flash, or if the GoL ProS3 is on USB. It does not guard
+`uploadfs`.
 
 ### Repo layout
 
-- **User config**: [`myoptions.h`](myoptions.h)
-- **PlatformIO env**: [`platformio.ini`](platformio.ini) (`yoradio-um_pros3-ili9341`)
-- **Playlist**: [`data/data/playlist.csv`](data/data/playlist.csv) (`Name<TAB>URL<TAB>0`)
+- **Board config**: [`boards/<device>.h`](boards/); [`myoptions.h`](myoptions.h) only selects one
+- **PlatformIO envs**: [`platformio.ini`](platformio.ini); local overrides in `platformio_private.ini` (gitignored)
+- **Build scripts**: [`tools/pio/`](tools/pio/) (lwip swap, SD patch, fw guard, per-env data overlay, upload check)
+- **Playlist**: [`data/data/playlist.csv`](data/data/playlist.csv) (`Name<TAB>URL<TAB>0`), shared by both devices
+- **Per-device SPIFFS overlay**: `boards/<device>/data/` (`custom_data_overlay`)
 - **Wi‑Fi credentials**: `data/data/wifi.csv` (gitignored) from [`data/data/wifi.example.csv`](data/data/wifi.example.csv)
-- **Logos source**: [`images_src/station_logos/`](images_src/station_logos/) (tracked)
-- **Generated logos (SPIFFS)**: `data/logos/*.ylg` (gitignored)
+- **Logos source**: [`images_src/station_logos/`](images_src/station_logos/) (tracked); generated `data/logos/*.ylg` (gitignored)
 
 ### Documentation
 
 - **Docs index**: [`docs/README.md`](docs/README.md)
-- **Hardware (PCB + schematic)**: [`docs/HARDWARE_PCB.md`](docs/HARDWARE_PCB.md)
-- **Worklog / polish notes (why this fork exists)**: [`docs/WORKLOG_AND_POLISH_NOTES.md`](docs/WORKLOG_AND_POLISH_NOTES.md)
-- **Upstream snapshot testing**: [`docs/UPSTREAM_TESTING.md`](docs/UPSTREAM_TESTING.md)
-- **TODO / Roadmap**: [`docs/TODO_ROADMAP.md`](docs/TODO_ROADMAP.md)
+- **Devices**: [`docs/PROS3.md`](docs/PROS3.md), [`docs/APRILS_SPEAKER.md`](docs/APRILS_SPEAKER.md)
+- **BT companion + UART protocol**: [`docs/BT_COMPANION.md`](docs/BT_COMPANION.md)
+- **Controls**: [`docs/CONTROLS.md`](docs/CONTROLS.md)
 - **Known issues**: [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
-- **Controls (buttons/encoders/IR/touch)**: [`docs/CONTROLS.md`](docs/CONTROLS.md)
-- **Station logo pipeline (source images → SPIFFS `.ylg`)**: [`images_src/station_logos/README.md`](images_src/station_logos/README.md)
-- **Plugin API docs**: [`src/pluginsManager/README.md`](src/pluginsManager/README.md)
-- **Plugins folder notes**: [`src/plugins/README.md`](src/plugins/README.md)
-- **IRremote locales** (upstream lib docs): [`src/IRremoteESP8266/locale/README.md`](src/IRremoteESP8266/locale/README.md)
+- **TODO / Roadmap**: [`docs/TODO_ROADMAP.md`](docs/TODO_ROADMAP.md)
+- **Worklog (history)**: [`docs/WORKLOG_AND_POLISH_NOTES.md`](docs/WORKLOG_AND_POLISH_NOTES.md)
+- **Upstream snapshot testing**: [`docs/UPSTREAM_TESTING.md`](docs/UPSTREAM_TESTING.md)
+- **Station logo pipeline**: [`images_src/station_logos/README.md`](images_src/station_logos/README.md)
+- **Plugin API**: [`src/pluginsManager/README.md`](src/pluginsManager/README.md), [`src/plugins/README.md`](src/plugins/README.md)
 
 ## What’s custom in this fork
 
+Most of this is ProS3 hardware support; options are per board in `boards/<device>.h`.
+
 - **PROS3 hardware bring-up**: LDO2 (3V3_AUX) enable + optional external antenna init in `src/yoradio_user.cpp`
-- **Battery gauge**: MAX17048 via I2C (can be disabled in `myoptions.h` with `BATTERY_ENABLED 0`)
+- **Battery gauge**: MAX17048 via I2C (can be disabled in the board header with `BATTERY_ENABLED 0`)
   - Uses MAX17048 **ALRT** pin (ProS3: `BATTERY_INT` / GPIO10) for low-battery alert threshold (default 5%) to reduce reliance on slow % polling
   - Battery implementation lives in `src/battery/` (`battery.h/.cpp`)
 - **Ambient backlight auto-dimming (BH1750, optional)**:
   - Uses a BH1750 light sensor on the same I2C bus as the MAX17048 (ProS3: GPIO8/9)
   - Auto brightness is smoothed and respects the user’s brightness slider as a **max cap**
-  - **Build-time**: enable the sensor with `BH1750_ENABLE` in `myoptions.h`
+  - **Build-time**: enable the sensor with `BH1750_ENABLE` in the board header
   - **Runtime** (MQTT/HA): enable + tune ALS mapping without rebuilding (see MQTT section)
 - **Deep sleep power management**:
   - Wake pins: `WAKE_PIN1` + optional `WAKE_PIN2` (RTC GPIO only) via ext1 wake
@@ -92,6 +134,8 @@ platformio device monitor -b 115200
   - PNG alpha is supported (alpha → RGB565 color-key `0xF81F`; firmware treats that key as transparent)
   - Lookup uses the **stable playlist name** so logos don’t disappear when ICY metadata changes the displayed station title
   - `.ylg` header is packed (14 bytes) in both generator and firmware
+- **Bluetooth receive (phone -> radio) via the companion (optional)**: Bluetooth mode hands the I2S bus to the
+  companion (A2DP sink), shows title/artist, knob press mutes. See [`docs/BT_COMPANION.md`](docs/BT_COMPANION.md)
 - **Bluetooth audio output (A2DP Source) via companion ESP32 (optional)**:
   - ESP32‑S3 is BLE-only, so Classic-BT A2DP TX is handled by a second ESP32 over UART + I2S
   - Output can be toggled (speaker vs BT) and the footer shows BT **off/searching/connected/audio** state (separate BT icon left of the speaker)
@@ -104,7 +148,7 @@ platformio device monitor -b 115200
   - Note: older “tweeter protection HP” fields are retained for EEPROM compatibility but are currently **not used** in the DSP path.
 - **SD/Podcast playback UI**:
   - Optional **track position overlay** (`mm:ss / mm:ss`) shown while playing SD/Podcast
-  - Controlled via `myoptions.h`:
+  - Controlled via the board header:
     - `TRACKPOS_ENABLE` (0/1)
     - `TRACKPOS_REPLACE_WEATHER_WHILE_PLAYING` (0/1) — if enabled, temporarily hides weather while the counter is visible
 - **Audio/UI performance work** (opt-in diagnostics + throttling):
@@ -128,7 +172,7 @@ Source of truth is `src/displays/widgets/widgets.cpp`:
 
 ## MQTT + Home Assistant
 
-MQTT is enabled/disabled via `MQTT_DISABLE` in `myoptions.h`. This fork includes Home Assistant MQTT discovery and additional state topics.
+MQTT is enabled/disabled via `MQTT_DISABLE` in the board header. This fork includes Home Assistant MQTT discovery and additional state topics.
 
 - **Key options**:
   - `MQTT_DISABLE`: set to `1` to disable MQTT entirely
@@ -176,17 +220,17 @@ Notes:
   - Published under `homeassistant/<component>/<nodeId>/<objectId>/config`
   - Exposes sensors + buttons + sliders (volume/brightness stay in sync)
 
-## PlatformIO “pre” scripts (important)
+## PlatformIO scripts (important)
 
-Your `platformio.ini` runs these:
+`platformio.ini` runs these (`tools/pio/`):
 
-- `pre:tools/pio/apply_audio_idf_mod.py`
-  - Applies patched `liblwip.a` + `libesp_netif.a` (high-bitrate/audio stability work)
-  - Applies the Adafruit GFX `glcdfont` glyph set patch (icon glyphs)
-- `pre:tools/pio/ha_board_meta.py`
-  - Injects HA device metadata defines at build time
-- `pre:tools/pio/pre_fs_generate_logos.py`
-  - Runs the logo generator during `buildfs/uploadfs` so SPIFFS always matches your source images/playlist
+- `apply_audio_idf_mod.py`: swaps in the patched `liblwip.a` + `libesp_netif.a` (stops web-radio
+  stalls) before the link, and patches the Adafruit GFX `glcdfont` icon glyphs
+- `patch_sd_shared_spi.py`: patches the framework `sd_diskio.cpp` (shared-bus lock + CMD12 fix)
+- `fw_guard.py` (post): rejects an image without the lwip mod or the CMD12 fix
+- `ha_board_meta.py`: injects HA device metadata defines
+- `pre_fs_generate_logos.py`: generates logos during `buildfs/uploadfs`
+- April only: `patch_adafruit_spitft_pins.py`, `per_env_data_dir.py`, `verify_aprils_speaker_upload.py`
 
 ## Playlists
 
@@ -276,7 +320,7 @@ The full upstream-style controls reference (buttons/encoders/IR/touch) lives her
 
 ## Diagnostics / debug toggles
 
-All the usual “turn on logging” knobs live in `myoptions.h` under `/* DIAGNOSTICS */` (append-only section).
+All the usual “turn on logging” knobs live in the board header under `/* DIAGNOSTICS */`.
 
 - **IR / controls (reduce Serial noise)**:
   - `IR_WAKE_DIAG_LOG`: set to `1` to log the IR wake “waiting for POWER code” flow
@@ -319,7 +363,7 @@ This fork can run a small “NeoStatus” animation engine for either:
   - Spin rate: `NEOSTATUS_SPIN_PERIOD_MS` (default 500ms per full rotation)
   - Optional: `NEOSTATUS_COLORFUL_ENABLE 1` enables a multi-color “dual comet” effect for sequences
 
-- **Colors** (override in `myoptions.h`)
+- **Colors** (override in the board header)
   - `NEOSTATUS_BOOT_RGB`
   - `NEOSTATUS_NET_RGB`
   - `NEOSTATUS_SD_RGB`
@@ -343,7 +387,8 @@ More info: [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
 - **SD → WEB → HLS AAC stall (real bug)**: certain HLS AAC stations may fail to start after SD playback.
 - **Some AAC stations are “CPU heavy”** and can make UI responsiveness / VU refresh worse.
 - **FLAC**: currently very choppy.
-- **SD playback**: still has edge-case instability; album art is disabled.
+- **SD hot-insert**: brief white flash (shared SPI bus); accepted, intentionally not fixed.
+- **SD album art**: disabled.
 - **Podcast indexing**: indexing cannot be cancelled. Should probably not index during boot.
   - Cancellation is best-effort: switching modes or starting playback should abort indexing (may take a moment).
   - Booting directly into Podcast mode intentionally triggers indexing (handy for forcing a refresh).

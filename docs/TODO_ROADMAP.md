@@ -6,7 +6,6 @@ This file is intentionally **only pending work**. Completed items are tracked in
 
 - **Fix SD → WEB → HLS AAC stall properly** (not just workarounds)
 - **SD playback resume (position)**: track resume is implemented; resume *position* still WIP
-- **Album art**: revisit later (needs stable decoder/task model)
 
 ### Battery / power
 
@@ -28,11 +27,30 @@ This file is intentionally **only pending work**. Completed items are tracked in
 - **Podcast/SD playback UI**: show item length + current position while playing (e.g. `03:12 / 52:10`)
 - **Track position overlay**: runtime toggle (and define behavior when weather is enabled)
 
-### Bluetooth output (companion ESP32)
+### Bluetooth (companion ESP32)
 
-- Speed up BT connect (currently can take ~30s depending on speaker)
-- Consider a cleaner “connected/disconnected” status message from the companion (optional; ProS3 currently polls `STATUS`)
-- Implement **BT AVRCP controls** (if supported): play/pause, skip, volume via the speaker/headphones buttons
+- **Flash fix11 on the companion**: album + track length + play position (`META album=`, `POS`).
+  Commit `6760f4b` on local branch `cursor/bt-a2dp-sink-rx-fe2d`, not on main, not flashed. The radio
+  side already parses both (`87f5044`).
+- **BT logo re-blit hack**: in Bluetooth mode `display.cpp` redraws the BT logo every 500 ms because
+  other widget redraws clear its slot. Replace it with proper redraw ordering.
+- **Play/pause in Bluetooth receive**: `AVRCP TOGGLE` exists on both sides
+  (`btcompanion_rxAvrcpToggle()`), but no button or remote is mapped to it yet.
+- **April's BT pins**: confirm S3-Zero pads for UART TX/RX + wake and the Node ESP32 wiring, then set
+  the pins and `BT_COMPANION_PINS_TODO 0` ([APRILS_SPEAKER.md](APRILS_SPEAKER.md)).
+- Speed up BT send connect (can take ~30 s depending on the speaker).
+- AVRCP controls from the headphones/speaker buttons in send mode (play/pause, skip, volume).
+
+### Hardware follow-ups (ProS3)
+
+- **IO6 pull-up**: the LiPo SHIM LOW_BAT line on IO6 is only read by the boost-on diagnostic
+  (`src/core/boostprobe.cpp`, internal pull-up). Decide whether LOW_BAT needs a real pull-up / proper
+  handling.
+
+### Experiments
+
+- **Cover art**: album art is off (`SD_ALBUM_ART_ENABLE 0`) after decode instability. Retry as an
+  isolated, opt-in experiment.
 
 ### Web UI / MQTT
 

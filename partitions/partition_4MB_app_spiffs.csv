@@ -1,5 +1,0 @@
-# 4 MB flash — single large app (no OTA) + SPIFFS (Waveshare ESP32-S3-Zero)
-# yoRadio S3 + HTTPS is ~2.9 MB; OTA dual-slot does not fit on 4 MB.
-nvs,      data, nvs,     0x9000,  0x5000,
-app0,     app,  factory, 0x10000, 0x2E0000,
-spiffs,   data, spiffs,  0x2F0000,0x110000,

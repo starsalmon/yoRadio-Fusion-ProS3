@@ -1,10 +1,14 @@
-/* April's Speaker: Waveshare ESP32-S3-Zero + Pimoroni Pirate Audio 3W Amp HAT
- * (ST7789 240x240, PCM5102A I2S DAC + 3 W amp, 4 buttons) + microSD breakout on the TFT's SPI.
+/* April's Speaker: Unexpected Maker FeatherS3 (ESP32-S3, 16 MB QSPI flash, 8 MB QSPI PSRAM)
+ * + Pimoroni Pirate Audio 3W Amp HAT (ST7789 240x240, PCM5102A I2S DAC + 3 W amp, 4 buttons)
+ * + microSD breakout on the display's SPI bus + Node ESP32 BT companion.
  *
  *   pio run -e aprils-speaker                 build
- *   pio run -e aprils-speaker -t upload       (refused unless the S3-Zero's MAC is on upload_port,
- *                                              see platformio_private.ini.example)
- * Wiring: WIRING.md / PINOUT.md in the aprils-speaker repo (moving here in the docs step)
+ *   pio run -e aprils-speaker -t upload       (refused unless upload_port is the FeatherS3 and it is the
+ *                                              only Espressif USB device, see platformio_private.ini.example)
+ * Pins: PROPOSED (main PCB not final). Table + reasons: docs/APRILS_SPEAKER.md.
+ * FeatherS3 fixed functions (UM pinout card / arduino-esp32 variant um_feathers3): LDO2 EN + RGB power 39,
+ * RGB data 40, VBAT sense 2 (442k/160k), VBUS sense 34, ambient light 4, blue LED 13, I2C 8/9 (+15/16),
+ * SPI SCK 36 / MOSI 35 / MISO 37, UART0 43/44, straps 0/3, USB 19/20 (not broken out).
  */
 #ifndef boards_aprils_speaker_h
 #define boards_aprils_speaker_h
@@ -15,17 +19,20 @@
 #define CLOCK_TTS_LANGUAGE "en"
 
 /******************************************/
-/* Battery — add fuel gauge on custom PCB later */
-#define BATTERY_ENABLED 0
-#define HIDE_BAT 1
-//#define BATTERY_ADC_PIN 1
-//#define BATTERY_ADC_AUTO_SCALE 1
-//#define BATTERY_VOLT_EMPTY 3.30f
-//#define BATTERY_VOLT_FULL  4.20f
-//#define FOOTER_BATTERY_COLORIZE 1
+/* FeatherS3 LDO2 (3V3_2): IO39 HIGH enables it; it also powers the onboard RGB LED and shuts down in
+ * deep sleep. yoradio_user.cpp enables it at boot (ARDUINO_FEATHERS3) and then holds SD/TFT CS high. */
+#define LDO2_ENABLE   39
+/******************************************/
+/* Battery: onboard VBAT sense on GPIO2 (divider 442k / 160k -> x3.7625), 5 V presence on GPIO34 */
+#define BATTERY_ENABLED 1
+#define BATTERY_ADC_PIN 2
+#define BATTERY_ADC_SCALE 3.7625f
+#define BATTERY_VOLT_EMPTY 3.30f
+#define BATTERY_VOLT_FULL  4.20f
+#define CHARGE_SENSE_PIN 34
+#define HIDE_BAT 1              /* no battery footer layout for the 240x240 panel yet (MQTT still reports it) */
 /******************************************/
 
-//#define NEOSTATUS_ENABLE 0
 #define NEOSTATUS_ENABLE 1
 #define LED_BUILTIN_S3    255
 #define USE_BUILTIN_LED false
@@ -35,75 +42,61 @@
 // Pirate Audio: ST7789 240x240
 #define DSP_MODEL DSP_ST7789_240
 #define ROTATE_90 true
-/* Adafruit rotation 0–3. Enclosure needs +90° CW from Pimoroni default (rot 1).
- * Full-bleed 240×240 — zero glass offset (also in platformio.ini -D flags). */
+/* Adafruit rotation 0-3. Enclosure needs +90 deg CW from Pimoroni default (rot 1).
+ * Full-bleed 240x240, zero glass offset. */
 #define TFT_ROTATION 2
 /*****************************************/
-#define TFT_SPI_FREQ 20000000UL  /* shared HSPI with SD — 20 MHz stable on bench */
-#define DSP_HSPI 1
+/* Display + SD on the FeatherS3's default SPI (SCK 36 / MOSI 35 / MISO 37, variant defaults), the
+ * same shared-bus path as the ProS3 (SPI.begin() in sdpark_boot, no DSP_HSPI / SPI2). */
+#define TFT_SPI_FREQ 20000000UL  /* shared with SD; 20 MHz is the conservative shared-bus rate (ProS3 bench-proven) */
 #define TFT_COL_OFFSET 0
 #define TFT_ROW_OFFSET 0
 
 /*****************************************/
-/* Waveshare ESP32-S3-Zero + Pirate Audio HAT
- * Castellated GPIO 1–13; module pads 43/44 (UART); GPIO 21 onboard NeoPixel */
-#define TFT_CS  4
-#define TFT_DC  8
-#define TFT_RST -1
-#define TFT_SCLK 12
-#define TFT_MOSI 13
-#define TFT_MISO 43   /* SD DO — shared SPI with TFT (pad 43) */
-#define BRIGHTNESS_PIN 2
-#define I2S_DOUT 5
-#define I2S_BCLK 6
-#define I2S_LRC  7
+/* FeatherS3 pin map (PROPOSED) */
+#define TFT_CS  38              /* non-RTC pin: RTC pins are kept for buttons */
+#define TFT_DC  33              /* non-RTC */
+#define TFT_RST -1              /* Pirate Audio has no panel reset */
+#define BRIGHTNESS_PIN 10       /* backlight PWM */
+#define I2S_BCLK 17
+#define I2S_LRC  18
+#define I2S_DOUT 14             /* no MCLK on the PCM5102A HAT */
 
-/* Pirate Audio buttons (active low; HAT pull-ups) — see WIRING.md */
-#define BTN_LEFT    3           /* HAT A */
-#define BTN_RIGHT   9           /* HAT B */
-#define BTN_CENTER  1           /* HAT X — select (Pi pin 36) */
-#define BTN_MODE    10          /* HAT Y — mode   (Pi pin 18; old HATs: pin 38) */
-/* yoRadio default: LEFT=vol−, RIGHT=vol+ — invert so A=up, B=down (volume screen only) */
+/* Pirate Audio buttons (active low; HAT pull-ups). All on RTC GPIOs so any can wake from deep sleep. */
+#define BTN_LEFT    5           /* HAT A */
+#define BTN_RIGHT   6           /* HAT B */
+#define BTN_CENTER  12          /* HAT X - select (Pi pin 36) */
+#define BTN_MODE    11          /* HAT Y - mode   (Pi pin 18; old HATs: pin 38) */
+/* yoRadio default: LEFT=vol-, RIGHT=vol+ - invert so A=up, B=down (volume screen only) */
 #define BTN_VOLUME_INVERT_LR 1
 /* Invert playlist scroll so A/B match on-screen in station list */
 #define BTN_STATIONS_INVERT_LR 1
 
-#define BUILTIN_NEOPIXEL_PIN 21
+/* NeoStatus on the FeatherS3's onboard RGB LED (GPIO40, powered from LDO2) */
+#define BUILTIN_NEOPIXEL_PIN 40
 #define BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS 32
 
-/* microSD breakout: CS=44, shares TFT SPI (SCK 12, MOSI 13, MISO 43) — WIRING.md */
-#define SDC_CS       44
-#define SD_HSPI      1
+/* microSD breakout: CS 1, SCK/MOSI/MISO shared with the TFT (36/35/37) */
+#define SDC_CS       1
 #define SD_SHARE_TFT_SPI 1
 #define SD_FORCE_REINDEX 0   /* set 1 once to force a full card rescan */
 
 /* BT companion (Node ESP32 / NodeMCU-32S running BT-A2DP-Source-HiGrow env nodemcu32s_bt_companion):
  * A2DP receive (phone -> speaker, I2S bus handover like the ProS3) and send (speaker -> BT headphones).
- * Compiled in but INERT until the wiring is confirmed: BT_COMPANION_PINS_TODO keeps it from touching
- * any pin and redirects Bluetooth mode to web. GPIO 43/44 are taken by the SD card here.
- * TODO(Cain): confirm S3-Zero pads for UART TX/RX + wake, then set the three pins and
- *             BT_COMPANION_PINS_TODO 0. Placeholders below are NOT wired. */
+ * UART on the FeatherS3's UART0 pads 43/44 (free: Serial is native USB), same pins as the ProS3.
+ * Still INERT: BT_COMPANION_PINS_TODO keeps it off every pin and redirects Bluetooth mode to web.
+ * TODO(Cain): once the companion is wired as below, set BT_COMPANION_PINS_TODO 0. */
 #define BT_COMPANION_ENABLE 1
 #define BT_COMPANION_PINS_TODO 1
 #define BT_COMPANION_UART_PORT 1
 #define BT_COMPANION_UART_BAUD 115200
-#define BT_COMPANION_UART_TX   15   /* TODO placeholder -> Node ESP32 RX GPIO16 */
-#define BT_COMPANION_UART_RX   16   /* TODO placeholder <- Node ESP32 TX GPIO17 */
-#define BT_COMPANION_WAKE_PIN  11   /* TODO placeholder -> Node ESP32 WAKE GPIO33 */
+#define BT_COMPANION_UART_TX   43   /* -> Node ESP32 RX GPIO16 (proposed) */
+#define BT_COMPANION_UART_RX   44   /* <- Node ESP32 TX GPIO17 (proposed) */
+#define BT_COMPANION_WAKE_PIN  7    /* -> Node ESP32 WAKE GPIO33 (EXT0, active high) (proposed) */
 #define BT_COMPANION_WAKE_PULSE_MS 600
 #define BT_RX_VOL_GAIN_PCT 100
 #define BT_COMPANION_SINK_NAME "HiFi-IIS"
 #define BT_COMPANION_RX_LOCAL_NAME "April's Speaker"
-
-//#define BT_COMPANION_UART_PORT 1
-//#define BT_COMPANION_UART_BAUD 115200
-//#define BT_COMPANION_UART_TX 43
-//#define BT_COMPANION_UART_RX 44
-//#define BT_COMPANION_WAKE_PIN 11
-//#ifndef BT_COMPANION_WAKE_PULSE_MS
-//  #define BT_COMPANION_WAKE_PULSE_MS 600
-//#endif
-//#define BT_COMPANION_SINK_NAME "HiFi-IIS"
 /*****************************************/
 
 /*****************************************/
@@ -149,8 +142,8 @@
 #define CLOCK_TTS_ENABLED false
 #define I2S_INTERNAL false
 
-#define WAKE_PIN1 255
-#define WAKE_PIN2 255           /* was BTN_CENTER — tied deep-sleep wake to select button */
+#define WAKE_PIN1 BTN_MODE      /* Y wakes from deep sleep (low-battery sleep only; idle sleep is off) */
+#define WAKE_PIN2 255
 #define WAKE_PIN3 255
 #define MODE_BUTTON_LONG_PRESS_SLEEP 0   /* Y = mode cycle; no accidental deep sleep on bench */
 #define AUTO_DEEPSLEEP_IDLE_MINUTES 0

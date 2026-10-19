@@ -13,7 +13,7 @@
 #  error YOU MUST CHOOSE BETWEEN I2S DAC AND VS1053 BY DISABLING THE SECOND MODULE IN THE myoptions.h
 #endif
 
-#if !(defined(ARDUINO_ESP32_DEV) || defined(ARDUINO_ESP32S3_DEV) || defined(ARDUINO_ESP32C3_DEV) || defined(ARDUINO_PROS3))
+#if !(defined(ARDUINO_ESP32_DEV) || defined(ARDUINO_ESP32S3_DEV) || defined(ARDUINO_ESP32C3_DEV) || defined(ARDUINO_PROS3) || defined(ARDUINO_FEATHERS3))
 #  error ONLY MODULES "ESP32 Dev Module", "ESP32 Wrover Module", "ESP32 S3 Dev Module" (and compatible ESP32-S3 variants) ARE SUPPORTED. PLEASE SELECT ONE OF THEM IN THE MENU >> TOOLS >> BOARD
 #endif
 

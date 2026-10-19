@@ -16,6 +16,9 @@ void yoradio_on_setup() {
 #if defined(ARDUINO_PROS3)
     Serial.println("board: PROS3");
 #endif
+#if defined(ARDUINO_FEATHERS3)
+    Serial.println("board: FEATHERS3");
+#endif
 #if defined(PROS3_USE_EXTERNAL_ANTENNA)
     Serial.printf("PROS3_USE_EXTERNAL_ANTENNA=%d\n", (int)PROS3_USE_EXTERNAL_ANTENNA);
 #endif
@@ -50,8 +53,8 @@ void yoradio_on_setup() {
     Serial.printf("MQTT_QUIET_LOGS=%d\n", (int)MQTT_QUIET_LOGS);
 #endif
 
-    // PROS3-only hardware init. Guarded so this repo can be built on other boards.
-    #if defined(ARDUINO_PROS3)
+    // UM ProS3 / FeatherS3 hardware init (LDO2 + CS lines). Guarded so this repo can be built on other boards.
+    #if defined(ARDUINO_PROS3) || defined(ARDUINO_FEATHERS3)
       #if defined(LDO2_ENABLE) && (LDO2_ENABLE != 255)
         pinMode(LDO2_ENABLE, OUTPUT);
         digitalWrite(LDO2_ENABLE, HIGH);   // enable LDO2 (3V3_AUX)

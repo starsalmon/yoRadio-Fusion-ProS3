@@ -1,12 +1,16 @@
-; Copy to platformio_private.ini (gitignored). Required for USB upload.
+; Copy to platformio_private.ini (gitignored). Required for USB upload of April's Speaker.
 ;
-; USB identity (ports change when you replug — use pio device list + esptool):
-;   April's Speaker  Waveshare S3-Zero   MAC ac:27:6e:b0:3e:3c   Embedded Flash 4MB
-;   GoL desk toy     Unexpected ProS3     MAC 60:55:f9:f5:59:6c   16MB flash — NEVER aprils-speaker here
+; tools/pio/verify_aprils_speaker_upload.py refuses upload/uploadfs unless upload_port is the
+; FeatherS3 AND it is the only Espressif (VID 303A) USB device plugged in. Unplug the ProS3 radio
+; (and the "GoL" ProS3, MAC 60:55:f9:f5:59:6c) first.
 ;
-; Unplug GoL before flashing April's Speaker.
+; While yoRadio runs (or in ROM download mode) every ESP32-S3 shows up as 303A:1001 "USB JTAG/serial
+; debug unit"; its USB serial number is the chip MAC. With only the FeatherS3 plugged in, run
+;   pio device list
+; and copy that port + serial number below. No serial port is opened by the check.
 
 [env:aprils-speaker]
-; After unplugging GoL: pio device list, then esptool --port <port> chip-id
-; Must show MAC ac:27:6e:b0:3e:3c and Embedded Flash 4MB
-upload_port = /dev/cu.usbmodem112101
+upload_port = /dev/cu.usbmodemXXXX
+custom_upload_mac = xx:xx:xx:xx:xx:xx
+; Extra boards to always refuse (space/comma separated MACs). Default: the GoL ProS3.
+;custom_refuse_macs = 60:55:f9:f5:59:6c

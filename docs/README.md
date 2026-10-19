@@ -3,7 +3,7 @@
 ### Devices
 
 - **ProS3 radio** (hardware, PCB, controls, SD bus fixes, lwip guard): [`PROS3.md`](PROS3.md)
-- **April's Speaker** (S3-Zero + Pirate Audio pins, controls, BT status): [`APRILS_SPEAKER.md`](APRILS_SPEAKER.md)
+- **April's Speaker** (FeatherS3 + Pirate Audio proposed pins, power, controls, BT status): [`APRILS_SPEAKER.md`](APRILS_SPEAKER.md)
 - **BT companion + UART protocol** (shared): [`BT_COMPANION.md`](BT_COMPANION.md)
 - **Controls overview**: [`CONTROLS.md`](CONTROLS.md)
 

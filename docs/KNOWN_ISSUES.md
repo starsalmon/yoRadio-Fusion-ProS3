@@ -39,8 +39,9 @@ issues, some are ESP32-S3 specific, and some come from this fork.
 ### Bluetooth
 
 - **April**: the BT companion is inert until wired (`BT_COMPANION_PINS_TODO`). Bluetooth mode
-  falls back to Web. X double-press still flips the stored output to "BT" (separate BT volume, BT
-  footer icon) while audio stays on the speaker; double-press again to go back.
+  falls back to Web, and X double-press / MQTT `output_device=bt` are ignored (fixed in 861ca0f).
+- **April**: moved to the UM FeatherS3; the pin map, power wiring and battery reading are proposed
+  and not bench-tested.
 - BT send connect can take ~30 s depending on the speaker.
 
 ### UI / display

@@ -6,7 +6,7 @@ for two devices, one codebase, one PlatformIO env per device:
 | Device | Env | Board header | Doc |
 |--------|-----|--------------|-----|
 | ProS3 radio: Unexpected Maker ProS3 + ILI9341 + custom PCB + HiGrow BT companion | `yoradio-um_pros3-ili9341` (default) | [`boards/pros3.h`](boards/pros3.h) | [`docs/PROS3.md`](docs/PROS3.md) |
-| April's Speaker: Waveshare ESP32-S3-Zero + Pirate Audio 3W HAT + microSD | `aprils-speaker` | [`boards/aprils_speaker.h`](boards/aprils_speaker.h) | [`docs/APRILS_SPEAKER.md`](docs/APRILS_SPEAKER.md) |
+| April's Speaker: Unexpected Maker FeatherS3 + Pirate Audio 3W HAT + microSD (pins proposed) | `aprils-speaker` | [`boards/aprils_speaker.h`](boards/aprils_speaker.h) | [`docs/APRILS_SPEAKER.md`](docs/APRILS_SPEAKER.md) |
 
 The Bluetooth companion firmware (classic-BT ESP32 for A2DP send/receive) is a separate project:
 [BT-A2DP-Source-HiGrow](https://github.com/starsalmon/BT-A2DP-Source-HiGrow), protocol in
@@ -60,13 +60,14 @@ SPIFFS (`uploadfs`) is separate and only needed when `data/` changed.
 **April's Speaker: upload check.**
 
 1. Copy `platformio_private.ini.example` to `platformio_private.ini` (gitignored) and set
-   `upload_port` to the S3-Zero.
-2. Unplug the "GoL" ProS3.
+   `upload_port` to the FeatherS3 and `custom_upload_mac` to its MAC (`pio device list`).
+2. Unplug the "GoL" ProS3 (and any other ESP32-S3).
 3. Run `pio run -e aprils-speaker -t upload`.
 
-`tools/pio/verify_aprils_speaker_upload.py` refuses the upload if the port's MAC isn't
-`ac:27:6e:b0:3e:3c` with 4 MB embedded flash, or if the GoL ProS3 is on USB. It does not guard
-`uploadfs`.
+`tools/pio/verify_aprils_speaker_upload.py` guards `upload` and `uploadfs`. From the USB descriptors
+only, it refuses unless the port is the only Espressif device plugged in, is not a ProS3, and is a
+FeatherS3 (UM USB PID/product, or the MAC in `custom_upload_mac`). Details:
+[`docs/APRILS_SPEAKER.md`](docs/APRILS_SPEAKER.md#build--upload).
 
 ### Repo layout
 

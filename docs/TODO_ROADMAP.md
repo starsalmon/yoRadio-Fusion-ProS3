@@ -36,8 +36,8 @@ This file is intentionally **only pending work**. Completed items are tracked in
   other widget redraws clear its slot. Replace it with proper redraw ordering.
 - **Play/pause in Bluetooth receive**: `AVRCP TOGGLE` exists on both sides
   (`btcompanion_rxAvrcpToggle()`), but no button or remote is mapped to it yet.
-- **April's BT pins**: confirm S3-Zero pads for UART TX/RX + wake and the Node ESP32 wiring, then set
-  the pins and `BT_COMPANION_PINS_TODO 0` ([APRILS_SPEAKER.md](APRILS_SPEAKER.md)).
+- **April's FeatherS3 pins**: wire and bench-test the proposed map (BT UART 43/44, wake 7, Node
+  16/17/33), decide the amp 5 V on battery, add the FeatherS3 MAC locally, then set `BT_COMPANION_PINS_TODO 0` ([APRILS_SPEAKER.md](APRILS_SPEAKER.md)).
 - Speed up BT send connect (can take ~30 s depending on the speaker).
 - AVRCP controls from the headphones/speaker buttons in send mode (play/pause, skip, volume).
 

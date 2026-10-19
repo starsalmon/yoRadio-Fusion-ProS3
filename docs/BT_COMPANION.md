@@ -14,16 +14,16 @@ Radio side: `src/core/bt_companion.cpp` (`BT_COMPANION_*` in the board header). 
 
 ### Wiring
 
-| Signal | ProS3 | HiGrow (`higrow_a2dp_source`) | April's S3-Zero | Node ESP32 (`nodemcu32s_bt_companion`) |
-|--------|-------|-------------------------------|-----------------|---------------------------------------|
-| UART radio TX -> companion RX | 43 | 39 (~1k series) | TBD | 16 (proposed) |
-| UART radio RX <- companion TX | 44 | 13 (~1k series) | TBD | 17 (proposed) |
-| Wake (EXT0, active high) | 38 | 38 | TBD | 33 (proposed) |
-| I2S BCK | 41 | 17 | 6 | 26 (proposed) |
-| I2S LRCK / WS | 42 | 23 | 7 | 25 (proposed) |
-| I2S data (radio DOUT / companion DIN, also its DOUT in RX) | 40 | 19 | 5 | 22 (proposed) |
+| Signal | ProS3 | HiGrow (`higrow_a2dp_source`) | April's FeatherS3 (proposed) | Node ESP32 (`nodemcu32s_bt_companion`) |
+|--------|-------|-------------------------------|------------------------------|---------------------------------------|
+| UART radio TX -> companion RX | 43 | 39 (~1k series) | 43 | 16 (proposed) |
+| UART radio RX <- companion TX | 44 | 13 (~1k series) | 44 | 17 (proposed) |
+| Wake (EXT0, active high) | 38 | 38 | 7 | 33 (proposed) |
+| I2S BCK | 41 | 17 | 17 | 26 (proposed) |
+| I2S LRCK / WS | 42 | 23 | 18 | 25 (proposed) |
+| I2S data (radio DOUT / companion DIN, also its DOUT in RX) | 40 | 19 | 14 | 22 (proposed) |
 
-UART 115200 8N1. April's pins wait for the wiring; until then `BT_COMPANION_PINS_TODO 1` keeps the
+UART 115200 8N1. April's pins are proposed (PCB not final) and not wired; until then `BT_COMPANION_PINS_TODO 1` keeps the
 radio side inert ([APRILS_SPEAKER.md](APRILS_SPEAKER.md)).
 
 ### Commands (radio -> companion)

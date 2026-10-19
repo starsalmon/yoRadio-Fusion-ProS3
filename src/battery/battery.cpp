@@ -8,6 +8,9 @@
 #include "../core/mqtt.h"
 #endif
 
+// FeatherS3-style VBAT divider on an ADC pin: implemented in battery_adc.cpp instead.
+#if !(defined(BATTERY_ENABLED) && (BATTERY_ENABLED != 0) && defined(BATTERY_ADC_PIN) && (BATTERY_ADC_PIN != 255))
+
 extern Display display;
 
 static Adafruit_MAX17048 maxlipo;
@@ -298,3 +301,5 @@ bool battery_read_vcell_mv(uint16_t* mv) {
   return true;
 }
 #endif
+
+#endif  // !BATTERY_ADC_PIN

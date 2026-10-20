@@ -114,6 +114,17 @@ def apply_gfx_glcdfont_patch(*args, **kwargs):
         print(f"[gfx-font] done (using {os.path.relpath(src, project_dir)})")
 
 
+DEFAULT_VARIANT = "CORE_3.3.6-IDF_ver5.5.2"
+
+
+def audio_idf_mod_variant() -> str:
+    try:
+        v = str(env.GetProjectOption("custom_audio_idf_mod_variant", "")).strip()
+    except Exception:
+        v = ""
+    return v or DEFAULT_VARIANT
+
+
 def apply_audio_idf_mod(*args, **kwargs):
     project_dir = env["PROJECT_DIR"]
     mod_dir = _locate_audio_idf_mod_dir(project_dir)
@@ -124,8 +135,17 @@ def apply_audio_idf_mod(*args, **kwargs):
         )
         return
 
-    src_lwip = _find_first(mod_dir, "liblwip.a")
-    src_netif = _find_first(mod_dir, "libesp_netif.a")
+    # Variant = sub-folder of Audio_IDF_MOD, selectable per env with `custom_audio_idf_mod_variant`
+    # (default: the original 32 KB-window tuned lib). See tools/Audio_IDF_MOD/*/README.md.
+    variant = audio_idf_mod_variant()
+    vdir = os.path.join(mod_dir, variant)
+    if not os.path.isdir(vdir):
+        print(f"[audio-idf-mod] variant folder missing: {vdir}")
+        return
+    src_lwip = os.path.join(vdir, "liblwip.a")
+    src_netif = os.path.join(vdir, "libesp_netif.a")
+    if not (os.path.isfile(src_lwip) and os.path.isfile(src_netif)):
+        src_lwip = src_netif = None
     if not src_lwip or not src_netif:
         print(f"[audio-idf-mod] invalid Audio_IDF_MOD folder (missing .a files): {mod_dir}")
         return
@@ -138,7 +158,7 @@ def apply_audio_idf_mod(*args, **kwargs):
     ok1 = _copy_if_different(src_lwip, os.path.join(dst_libdir, "liblwip.a"))
     ok2 = _copy_if_different(src_netif, os.path.join(dst_libdir, "libesp_netif.a"))
     if ok1 and ok2:
-        print(f"[audio-idf-mod] done (from {mod_dir})")
+        print(f"[audio-idf-mod] done (variant {variant})")
 
 
 # Apply patches during the build (also safe to re-run; both are idempotent hash-checked copies).

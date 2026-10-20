@@ -28,5 +28,6 @@ This is intentionally “honest status”. Some of these are upstream issues, so
 
 ### Podcast mode
 
-- **Podcast indexing cancellation**: cancellation is best-effort (if you switch modes or start playback, the index task should abort, but it may take a moment to stop).
-- **Boot-time indexing**: booting directly into Podcast mode intentionally triggers an index (handy for forcing a refresh), which can make startup feel slower.
+- **Podcast indexing cancellation**: a MODE button press cancels a running refresh (worst case ~4 s while a connection/redirect times out); the previous list is kept and the mode change then runs. Mode changes from the web UI, MQTT or telnet can't cancel it: they're handled by the main loop, which waits for the refresh (by design, to avoid a playlist-swap race).
+- **Boot-time indexing**: booting into Podcast mode uses the existing episode list and defers the refresh to the next entry into Podcast mode. Only a first boot with no list builds one at boot (not cancellable, controls aren't running yet).
+- **ABC feeds** don't send `ETag`/`Last-Modified`, so they're downloaded in full on every refresh (BBC and risky.biz feeds answer `304` when unchanged).

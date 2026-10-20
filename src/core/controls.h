@@ -14,6 +14,8 @@ void loopControls();
 bool startControlsTask();
 bool controlsTaskRunning();
 void processControlsEvents();
+// True (once) if a MODE button event was queued since the last call. Does not consume the event.
+bool controls_takeModePress();
 #if (ENC_BTNL!=255 && ENC_BTNR!=255) || (ENC2_BTNL!=255 && ENC2_BTNR!=255)
 class yoEncoder;
 void encodersLoop(yoEncoder *enc, bool first=true);

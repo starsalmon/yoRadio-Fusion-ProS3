@@ -96,10 +96,6 @@ bool FlacDecoder::isValid() {
 
 uint32_t FlacDecoder::readUint(uint8_t nBits, int32_t* bytesLeft) {
 
-    const uint32_t mask[33] = {0x00000000, 0x00000001, 0x00000003, 0x00000007, 0x0000000f, 0x0000001f, 0x0000003f, 0x0000007f, 0x000000ff, 0x000001ff, 0x000003ff,
-                               0x000007ff, 0x00000fff, 0x00001fff, 0x00003fff, 0x00007fff, 0x0000ffff, 0x0001ffff, 0x0003ffff, 0x0007ffff, 0x000fffff, 0x001fffff,
-                               0x003fffff, 0x007fffff, 0x00ffffff, 0x01ffffff, 0x03ffffff, 0x07ffffff, 0x0fffffff, 0x1fffffff, 0x3fffffff, 0x7fffffff, 0xffffffff};
-
     while (m_flacBitBufferLen < nBits) {
         uint8_t temp = *(m_flacInptr + m_rIndex);
         m_rIndex++;
@@ -128,7 +124,7 @@ uint32_t FlacDecoder::readUint(uint8_t nBits, int32_t* bytesLeft) {
     }
     m_flacBitBufferLen -= nBits;
     uint32_t result = m_flac_bitBuffer >> m_flacBitBufferLen;
-    if (nBits < 32) result &= mask[nBits];
+    if (nBits < 32) result &= (1u << nBits) - 1u;
     return result;
 }
 
@@ -1215,11 +1211,24 @@ int8_t FlacDecoder::decodeResiduals(uint8_t warmup, uint8_t ch, int32_t* bytesLe
             while (dst < dstEnd) {
                 if (m_f_bitReaderError) break;
 
+                // Rice unary prefix: count leading zero bits a whole bit-buffer at a time (bit-identical to reading 1 bit per call)
                 uint32_t val = 0;
-                // Inline Rice unary prefix
-                while (readUint(1, bytesLeft) == 0) {
-                    val++;
-                    if (m_f_bitReaderError) { break; }
+                for (;;) {
+                    if (m_flacBitBufferLen == 0) {
+                        readUint(8, bytesLeft); // refill one byte (handles the Ogg page boundary), then un-consume it
+                        if (m_f_bitReaderError) break;
+                        m_flacBitBufferLen += 8;
+                    }
+                    uint32_t bits = (uint32_t)(m_flac_bitBuffer & ((1ull << m_flacBitBufferLen) - 1));
+                    if (bits == 0) {
+                        val += m_flacBitBufferLen;
+                        m_flacBitBufferLen = 0;
+                        continue;
+                    }
+                    int32_t lz = __builtin_clz(bits) - (32 - m_flacBitBufferLen);
+                    val += lz;
+                    m_flacBitBufferLen -= lz + 1; // also consume the terminating 1 bit
+                    break;
                 }
 
                 // Append remainder bits

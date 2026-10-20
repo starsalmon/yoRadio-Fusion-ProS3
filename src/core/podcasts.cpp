@@ -147,13 +147,17 @@ static bool resolveRedirectUrl(const String& baseUrl, const String& location, St
   return true;
 }
 
-static int httpGetWithRedirects(HTTPClient& http, String& url, uint8_t maxHops) {
+static int httpGetWithRedirects(HTTPClient& http, String& url, uint8_t maxHops,
+                                const char* ifNoneMatch = nullptr, const char* ifModifiedSince = nullptr) {
   for (uint8_t hop = 0; hop <= maxHops; hop++) {
     if (shouldAbortBuild()) return -3;
     if (!httpBeginForUrl(http, url.c_str())) return -1;
-    // Ensure we can read Location headers on redirect responses.
-    const char* hdrs[] = {"Location", "location"};
-    http.collectHeaders(hdrs, 2);
+    // Conditional GET (per-feed cache): server answers 304 if the feed is unchanged.
+    if (ifNoneMatch && ifNoneMatch[0]) http.addHeader("If-None-Match", ifNoneMatch);
+    if (ifModifiedSince && ifModifiedSince[0]) http.addHeader("If-Modified-Since", ifModifiedSince);
+    // Ensure we can read Location (redirects) and the cache validators.
+    const char* hdrs[] = {"Location", "location", "ETag", "Last-Modified"};
+    http.collectHeaders(hdrs, 4);
     http.setConnectTimeout(4000);
     http.setTimeout(4000);
     const int code = http.GET();
@@ -208,6 +212,7 @@ static uint16_t countPodcastSources() {
 
 struct FeedCtx {
   File* out;
+  File* cache;   // per-feed cache being written (may be null)
   const char* show;
   uint16_t lim;
   uint16_t got;
@@ -224,6 +229,13 @@ static bool onItem(const podrss::Item& it, void* user) {
   c->out->print(it.url);
   c->out->print('\t');
   c->out->println('0');
+  if (c->cache && *c->cache) {
+    c->cache->print(safeTitle);
+    c->cache->print('\t');
+    c->cache->print(it.url);
+    c->cache->print('\t');
+    c->cache->println('0');
+  }
   c->got++;
   return c->got < c->lim;
 }
@@ -253,6 +265,107 @@ static bool allocBuffers() {
   if (!rx) rx = (uint8_t*)podAlloc(POD_RX_CHUNK);
   if (!sc || !rx) { freeBuffers(); return false; }
   return true;
+}
+
+// ---- Per-feed episode cache (SPIFFS) ----------------------------------------------------
+// /data/pc_<hash>.tsv : header "#pc1\t<limit>\t<etag>\t<last-modified>" + that feed's lines
+// (same format as podcast_episodes.csv). Lets unchanged feeds answer 304 (no body) and
+// keeps a feed's last episodes if it fails to download.
+#define POD_CACHE_DIR "/data"
+#define POD_CACHE_PREFIX "pc_"
+#define POD_CACHE_MIN_FREE 16384u   // don't write caches when SPIFFS is nearly full
+#define POD_MAX_SOURCES 64
+
+static uint32_t s_cacheIds[POD_MAX_SOURCES];
+static uint16_t s_cacheIdCount = 0;
+
+static uint32_t feedHash(const char* show, const char* url) {
+  uint32_t h = 2166136261u;
+  for (const char* p = show; *p; p++) { h ^= (uint8_t)*p; h *= 16777619u; }
+  h ^= '\t'; h *= 16777619u;
+  for (const char* p = url; *p; p++) { h ^= (uint8_t)*p; h *= 16777619u; }
+  return h;
+}
+
+static void cachePath(uint32_t id, const char* ext, char* out, size_t outSz) {
+  snprintf(out, outSz, POD_CACHE_DIR "/" POD_CACHE_PREFIX "%08lx.%s", (unsigned long)id, ext);
+}
+
+// Reads the cache header. Returns true if a cache with the same limit exists.
+static bool cacheReadMeta(const char* path, uint16_t lim, char* etag, size_t etagSz, char* lm, size_t lmSz) {
+  etag[0] = '\0'; lm[0] = '\0';
+  File c = SPIFFS.open(path, "r");
+  if (!c) return false;
+  char line[256];
+  size_t n = c.readBytesUntil('\n', line, sizeof(line) - 1);
+  line[n] = '\0';
+  c.close();
+  if (strncmp(line, "#pc1\t", 5) != 0) return false;
+  char* p = line + 5;
+  char* t1 = strchr(p, '\t');
+  if (!t1) return false;
+  *t1 = '\0';
+  if ((uint16_t)atoi(p) != lim) return false;
+  char* e = t1 + 1;
+  char* t2 = strchr(e, '\t');
+  if (!t2) return false;
+  *t2 = '\0';
+  strlcpy(etag, e, etagSz);
+  strlcpy(lm, t2 + 1, lmSz);
+  return true;
+}
+
+// Appends the cached episode lines to `out`. Returns how many were copied.
+static uint32_t cacheCopyTo(const char* path, File& out) {
+  File c = SPIFFS.open(path, "r");
+  if (!c) return 0;
+  char line[1024];
+  uint32_t lines = 0;
+  bool first = true;
+  while (c.available()) {
+    size_t n = c.readBytesUntil('\n', line, sizeof(line) - 1);
+    line[n] = '\0';
+    if (n > 0 && line[n - 1] == '\r') line[--n] = '\0';
+    if (first) { first = false; continue; }  // header
+    if (n == 0) continue;
+    out.println(line);
+    lines++;
+  }
+  c.close();
+  return lines;
+}
+
+static bool spiffsHasRoom() {
+  const size_t total = SPIFFS.totalBytes();
+  const size_t used = SPIFFS.usedBytes();
+  return total > used && (total - used) >= POD_CACHE_MIN_FREE;
+}
+
+// Remove caches of feeds that are no longer in podcasts.csv (only after a full pass).
+static void cachePruneUnused() {
+  File dir = SPIFFS.open(POD_CACHE_DIR);
+  if (!dir || !dir.isDirectory()) return;
+  char toRemove[8][40];
+  uint8_t nRemove = 0;
+  for (File e = dir.openNextFile(); e; e = dir.openNextFile()) {
+    const char* nm = e.name();
+    const char* base = strrchr(nm, '/');
+    base = base ? base + 1 : nm;
+    if (strncmp(base, POD_CACHE_PREFIX, 3) == 0 && strlen(base) == 15) {
+      const uint32_t id = (uint32_t)strtoul(base + 3, nullptr, 16);
+      bool used = false;
+      for (uint16_t i = 0; i < s_cacheIdCount; i++) if (s_cacheIds[i] == id) { used = true; break; }
+      if (!used || strcmp(base + 12, "tmp") == 0) {
+        if (nRemove < 8) snprintf(toRemove[nRemove++], sizeof(toRemove[0]), POD_CACHE_DIR "/%s", base);
+      }
+    }
+    e.close();
+  }
+  dir.close();
+  for (uint8_t i = 0; i < nRemove; i++) {
+    Serial.printf("[POD] cache prune %s\n", toRemove[i]);
+    SPIFFS.remove(toRemove[i]);
+  }
 }
 
 } // namespace
@@ -328,6 +441,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
     return 0;
   }
 
+  s_cacheIdCount = 0;
   uint32_t written = 0;
   uint32_t sources = 0;
   uint16_t progressCur = 0;
@@ -361,20 +475,71 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       Serial.printf("[POD] source %u/%u\n", (unsigned)progressCur, (unsigned)totalSources);
     }
 
+    const uint32_t cid = feedHash(show, feedUrl);
+    if (s_cacheIdCount < POD_MAX_SOURCES) s_cacheIds[s_cacheIdCount++] = cid;
+    char cPath[40], cTmp[40];
+    cachePath(cid, "tsv", cPath, sizeof(cPath));
+    cachePath(cid, "tmp", cTmp, sizeof(cTmp));
+    char etag[128], lastMod[64];
+    const bool haveCache = cacheReadMeta(cPath, lim, etag, sizeof(etag), lastMod, sizeof(lastMod));
+
     HTTPClient http;
     String effectiveUrl(feedUrl);
-    const int code = httpGetWithRedirects(http, effectiveUrl, 5);
+    const int code = haveCache ? httpGetWithRedirects(http, effectiveUrl, 5, etag, lastMod)
+                               : httpGetWithRedirects(http, effectiveUrl, 5);
+    if (code == -3) {  // cancelled during connect/redirects
+      out.close();
+      f.close();
+      SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+      setProgress(0, 0, "");
+      freeBuffers();
+      return 0;
+    }
+    if (code == 304 && haveCache) {
+      const uint32_t n = cacheCopyTo(cPath, out);
+      Serial.printf("[POD] unchanged (304), %lu cached episodes\n", (unsigned long)n);
+      written += n;
+      delay(0);
+      continue;
+    }
     if (code <= 0 || code >= 300) {
       Serial.printf("[POD] feed HTTP %d for %s\n", code, effectiveUrl.c_str());
+      if (haveCache) {
+        const uint32_t n = cacheCopyTo(cPath, out);
+        Serial.printf("[POD] using %lu cached episodes\n", (unsigned long)n);
+        written += n;
+      }
       delay(0);
       continue;
     }
 
     WiFiClient* s = http.getStreamPtr();
-    if (!s) { http.end(); continue; }
+    if (!s) {
+      http.end();
+      if (haveCache) written += cacheCopyTo(cPath, out);
+      continue;
+    }
+
+    // New cache file for this feed (written alongside the playlist, swapped in on success).
+    File cache;
+    if (spiffsHasRoom()) {
+      SPIFFS.remove(cTmp);
+      cache = SPIFFS.open(cTmp, "w");
+      if (cache) {
+        char hdr[256];
+        String et = http.header("ETag");
+        String lmv = http.header("Last-Modified");
+        char etS[128], lmS[64];
+        sanitizeTsvField(et.c_str(), etS, sizeof(etS));
+        sanitizeTsvField(lmv.c_str(), lmS, sizeof(lmS));
+        snprintf(hdr, sizeof(hdr), "#pc1\t%u\t%s\t%s", (unsigned)lim, etS, lmS);
+        cache.println(hdr);
+      }
+    }
 
     FeedCtx ctx;
     ctx.out = &out;
+    ctx.cache = &cache;
     ctx.show = show;
     ctx.lim = lim;
     ctx.got = 0;
@@ -401,7 +566,9 @@ uint32_t podcasts_buildEpisodesPlaylist() {
     }
 
     http.end();
+    if (cache) cache.close();
     if (aborted) {
+      SPIFFS.remove(cTmp);
       out.close();
       f.close();
       SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
@@ -409,9 +576,20 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       freeBuffers();
       return 0;
     }
-    written += ctx.got;
-    if (ctx.items == 0) {
+    if (ctx.got > 0) {
+      written += ctx.got;
+      if (SPIFFS.exists(cTmp)) {
+        SPIFFS.remove(cPath);
+        if (!SPIFFS.rename(cTmp, cPath)) SPIFFS.remove(cTmp);
+      }
+    } else {
+      SPIFFS.remove(cTmp);
       Serial.printf("[POD] no <item> parsed for %s (%s)\n", show, effectiveUrl.c_str());
+      if (haveCache) {
+        const uint32_t n = cacheCopyTo(cPath, out);
+        Serial.printf("[POD] using %lu cached episodes\n", (unsigned long)n);
+        written += n;
+      }
     }
     delay(0);
   }
@@ -420,6 +598,8 @@ uint32_t podcasts_buildEpisodesPlaylist() {
   out.close();
   f.close();
   freeBuffers();
+  // Full pass finished (not cancelled): drop caches of feeds no longer listed.
+  if (s_cacheIdCount < POD_MAX_SOURCES) cachePruneUnused();
 
   if (written > 0) {
     // Swap without a "missing file" window (avoids UI briefly seeing playlistLength()==0).

@@ -75,6 +75,15 @@ static TaskHandle_t s_controlsTaskHandle = nullptr;
 enum : uint8_t { CE_CLICK=1, CE_DBL=2, CE_LP_START=3, CE_LP_STOP=4, CE_LP_DURING=5 };
 struct controls_evt_t { uint8_t type; int8_t id; };
 static QueueHandle_t s_controlsEvtQ = nullptr;
+// Set when a MODE button event is queued. Lets long blocking work in loop() (podcast
+// indexing wait) notice a MODE press without touching/reordering the event queue.
+static volatile bool s_modePressPending = false;
+
+bool controls_takeModePress(){
+  const bool v = s_modePressPending;
+  s_modePressPending = false;
+  return v;
+}
 
 static inline void controlsEvtSend(uint8_t type, int id){
   // If the controls task/queue isn't enabled, fall back to original behavior:
@@ -93,6 +102,9 @@ static inline void controlsEvtSend(uint8_t type, int id){
   controls_evt_t e;
   e.type = type;
   e.id = (int8_t)id;
+  // New presses only (click, double, hold start); not the repeating DURING events of a
+  // hold that may have started the mode switch itself.
+  if (id == EVT_BTNMODE && (type == CE_CLICK || type == CE_DBL || type == CE_LP_START)) s_modePressPending = true;
   (void)xQueueSend(s_controlsEvtQ, &e, 0);
 }
 

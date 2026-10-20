@@ -267,11 +267,13 @@ static bool resolveRedirectUrl(const String& baseUrl, const String& location, St
 
 static int httpGetWithRedirects(HTTPClient& http, String& url, uint8_t maxHops) {
   for (uint8_t hop = 0; hop <= maxHops; hop++) {
+    if (shouldAbortBuild()) return -3;
     if (!httpBeginForUrl(http, url.c_str())) return -1;
     // Ensure we can read Location headers on redirect responses.
     const char* hdrs[] = {"Location", "location"};
     http.collectHeaders(hdrs, 2);
-    http.setTimeout(8000);
+    http.setConnectTimeout(4000);
+    http.setTimeout(4000);
     const int code = http.GET();
     if (code > 0 && code < 300) {
       return code;
@@ -443,7 +445,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       }
 
       if (!s->available()) {
-        if ((uint32_t)(millis() - lastRxMs) > 6000u) break;
+        if ((uint32_t)(millis() - lastRxMs) > 4000u) break;
         delay(1);
         continue;
       }
@@ -616,7 +618,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
 static void podcastBuildTask(void*) {
   const bool force = s_forceBuild;
   s_forceBuild = false;
-  s_cancelBuild = false;
+  // Don't clear s_cancelBuild here: a cancel requested before the task started must win.
 
   // Only build if it makes sense (or forced).
   if (!force) {

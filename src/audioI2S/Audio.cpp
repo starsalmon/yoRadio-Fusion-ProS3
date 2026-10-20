@@ -3766,7 +3766,7 @@ i2swrite:
 
     if (!(m_plCh.err == ESP_OK || m_plCh.err == ESP_ERR_TIMEOUT)) goto exit;
     m_validSamples -= m_plCh.i2s_bytesConsumed / BYTES_PER_FRAME;
-    m_plCh.count += m_plCh.i2s_bytesConsumed / 2;
+    m_plCh.count += m_plCh.i2s_bytesConsumed / sizeof(int32_t); // count indexes int32_t samples (was /2 from the int16_t era)
     if (m_validSamples <= 0) {
         m_validSamples = 0;
         m_plCh.count = 0;

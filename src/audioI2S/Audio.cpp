@@ -633,7 +633,11 @@ void Audio::destroy_decoder() {
 std::unique_ptr<Decoder> Audio::createDecoder(const std::string& type) {
     destroy_decoder();
     if (type == "MP3") return std::make_unique<MP3Decoder>(*this);
-    if (type == "FLAC") return std::make_unique<FlacDecoder>(*this);
+    if (type == "FLAC") {
+        auto dec = std::make_unique<FlacDecoder>(*this);
+        dec->setOutBuffSize(m_outbuffSize); // cap each FLAC output chunk to the real m_outBuff capacity
+        return dec;
+    }
     if (type == "OPUS") return std::make_unique<OpusDecoder>(*this);
     if (type == "AAC") return std::make_unique<AACDecoder>(*this);
     if (type == "VORBIS") return std::make_unique<VorbisDecoder>(*this);

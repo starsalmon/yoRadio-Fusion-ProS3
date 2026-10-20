@@ -54,6 +54,7 @@ public:
     const char*           arg2() override;
     virtual int32_t       val1() override;
     virtual int32_t       val2() override;
+    void                  setOutBuffSize(uint32_t values) { m_outBuffSize = values; } // capacity of outbuf in int32_t values (stereo interleaved)
 
     enum : int8_t {
         FLAC_PARSE_OGG_DONE = 100,
@@ -200,6 +201,7 @@ private:
     uint16_t        m_flacValidSamples = 0;
     uint16_t        m_rIndex = 0;
     uint16_t        m_offset = 0;
+    uint32_t        m_outBuffSize = FLAC_MAX_OUTBUFFSIZE; // int32_t values; set by Audio to the real outbuf capacity
     uint8_t         m_flacStatus = 0;
     uint8_t*        m_flacInptr;
     float           m_flacCompressionRatio = 0;

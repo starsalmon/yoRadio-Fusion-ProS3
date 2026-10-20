@@ -355,7 +355,7 @@ struct audioItems_t {
 };
 
 #define DMA_DESC_NUM  16  // number of I2S DMA buffer
-#define DMA_FRAME_NUM 192 // number of frames in one DMA buffer
+#define DMA_FRAME_NUM 384 // number of frames in one DMA buffer
 struct i2s_items_t {
     uint16_t DESC_NUM = DMA_DESC_NUM;
     uint16_t FRAME_NUM = DMA_FRAME_NUM;

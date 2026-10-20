@@ -1157,7 +1157,7 @@ int8_t FlacDecoder::decodeFixedPredictionSubframe(uint8_t predOrder, uint8_t sam
         FLAC_LOG_ERROR("Flac preorder too big: %i", predOrder);
         return FLAC_ERR;
     } // Error: preorder > 4"
-    restoreLinearPrediction(ch, 0);
+    restoreLinearPrediction(ch, 0, sampleDepth, 4); // fixed coefs |c| <= 6 fit in 4 bits signed
     return FLAC_NONE;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -1174,7 +1174,7 @@ int8_t FlacDecoder::decodeLinearPredictiveCodingSubframe(int32_t lpcOrder, int32
     }
     ret = decodeResiduals(lpcOrder, ch, bytesLeft);
     if (ret) return ret;
-    restoreLinearPrediction(ch, shift);
+    restoreLinearPrediction(ch, shift, sampleDepth, precision);
     return FLAC_NONE;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -1259,12 +1259,29 @@ int8_t FlacDecoder::decodeResiduals(uint8_t warmup, uint8_t ch, int32_t* bytesLe
     return FLAC_NONE;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-void FlacDecoder::restoreLinearPrediction(uint8_t ch, uint8_t shift) {
-
-    for (int32_t i = coefs.size(); i < m_numOfOutSamples; i++) {
-        int64_t sum = 0;
-        for (int32_t j = 0; j < coefs.size(); j++) { sum += m_samplesBuffer[ch][i - 1 - j] * coefs[j]; }
-        m_samplesBuffer[ch][i] += (sum >> shift);
+void FlacDecoder::restoreLinearPrediction(uint8_t ch, uint8_t shift, int32_t sampleDepth, int32_t precision) {
+    // raw pointers (ps_ptr operator[] is bounds-checked per access); 32-bit accumulator when it provably cannot overflow
+    // (sampleDepth + coef precision + ceil(log2(order)) <= 32, the same rule libFLAC uses), else the original 64-bit sum.
+    const int32_t  order = (int32_t)coefs.size();
+    const int32_t* c = coefs.data();
+    int64_t*       s = m_samplesBuffer[ch].get();
+    const int32_t  n = m_numOfOutSamples;
+    int32_t        lg = 0;
+    while ((1 << lg) < order) lg++;
+    if (sampleDepth + precision + lg <= 32) {
+        for (int32_t i = order; i < n; i++) {
+            int32_t        sum = 0;
+            const int64_t* p = s + i - 1;
+            for (int32_t j = 0; j < order; j++) sum += (int32_t)p[-j] * c[j];
+            s[i] += (sum >> shift);
+        }
+    } else {
+        for (int32_t i = order; i < n; i++) {
+            int64_t        sum = 0;
+            const int64_t* p = s + i - 1;
+            for (int32_t j = 0; j < order; j++) sum += p[-j] * c[j];
+            s[i] += (sum >> shift);
+        }
     }
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————

@@ -240,7 +240,7 @@ private:
     int8_t   decodeFixedPredictionSubframe(uint8_t predOrder, uint8_t sampleDepth, uint8_t ch, int32_t* bytesLeft);
     int8_t   decodeLinearPredictiveCodingSubframe(int32_t lpcOrder, int32_t sampleDepth, uint8_t ch, int32_t* bytesLeft);
     int8_t   decodeResiduals(uint8_t warmup, uint8_t ch, int32_t* bytesLeft);
-    void     restoreLinearPrediction(uint8_t ch, uint8_t shift);
+    void                  restoreLinearPrediction(uint8_t ch, uint8_t shift, int32_t sampleDepth, int32_t precision);
     int32_t  specialIndexOf(uint8_t* base, const char* str, int32_t baselen, bool exact = false);
 
 

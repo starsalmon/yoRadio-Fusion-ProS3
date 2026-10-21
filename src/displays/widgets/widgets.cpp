@@ -14,6 +14,9 @@
 #include "Arduino.h"
 #include "widgets.h"
 #include "esp_heap_caps.h"
+#ifdef YORADIO_STREAM_DIAG
+extern volatile uint32_t g_plActive;
+#endif
 #include "../../core/player.h"    //  for VU widget
 #include "../../core/network.h"   //  for Clock widget
 #include "../fonts/yo_freefonts.h"   //  FreeSans proporcionális fontok
@@ -2172,7 +2175,7 @@ void PlayListWidget::_loadPlaylistPage(int pageIndex, int itemsPerPage) {
 
 void PlayListWidget::drawPlaylist(uint16_t currentItem) {
 #ifdef YORADIO_STREAM_DIAG
-  struct _PlT { uint32_t t0=millis(); uint16_t it; _PlT(uint16_t i):it(i){} ~_PlT(){ Serial.printf("[PLDIAG] drawPlaylist item=%u mode=%d took=%lu ms heap=%u\n", (unsigned)it, (int)config.getMode(), (unsigned long)(millis()-t0), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL)); } } _plt(currentItem);
+  struct _PlT { uint32_t t0=millis(); uint16_t it; _PlT(uint16_t i):it(i){ g_plActive=1; } ~_PlT(){ g_plActive=0; Serial.printf("[PLDIAG] drawPlaylist item=%u mode=%d took=%lu ms heap=%u\n", (unsigned)it, (int)config.getMode(), (unsigned long)(millis()-t0), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL)); } } _plt(currentItem);
 #endif
 
   // If the active playlist source changed (mode switch, DLNA<->WEB, podcast refresh),

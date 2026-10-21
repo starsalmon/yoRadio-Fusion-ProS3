@@ -1957,8 +1957,14 @@ void Config::initDLNAPlaylist() {
 }
 #endif
 
+#if defined(YORADIO_STREAM_DIAG) && defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI
+extern volatile uint32_t g_plLenCalls;
+#endif
 uint16_t Config::playlistLength(){
   uint16_t out = 0;
+#if defined(YORADIO_STREAM_DIAG) && defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI
+  g_plLenCalls++;
+#endif
   if (SDPLFS()->exists(REAL_INDEX)) {
     File index = SDPLFS()->open(REAL_INDEX, "r");
     out = index.size() / 4;

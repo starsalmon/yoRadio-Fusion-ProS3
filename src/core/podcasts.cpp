@@ -8,6 +8,10 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <time.h>
+#include <new>
+#include <esp_heap_caps.h>
+
+#include "podcast_rss.h"
 
 namespace {
 
@@ -56,129 +60,7 @@ static void setProgress(uint16_t cur, uint16_t total, const char* show) {
   portEXIT_CRITICAL(&s_progMux);
 }
 
-static void sanitizeTsvField(const char* in, char* out, size_t outSz) {
-  if (!out || outSz == 0) return;
-  out[0] = '\0';
-  if (!in) return;
-  size_t o = 0;
-  for (size_t i = 0; in[i] && (o + 1) < outSz; i++) {
-    const char c = in[i];
-    if (c == '\t' || c == '\r' || c == '\n') {
-      out[o++] = ' ';
-    } else {
-      out[o++] = c;
-    }
-  }
-  out[o] = '\0';
-  // trim right
-  while (o > 0 && out[o - 1] == ' ') out[--o] = '\0';
-}
-
-static void decodeBasicXmlEntities(char* s) {
-  if (!s) return;
-  // Minimal in-place decoding for common entities in titles.
-  struct Ent { const char* from; const char* to; };
-  static const Ent ents[] = {
-    {"&amp;", "&"},
-    {"&lt;", "<"},
-    {"&gt;", ">"},
-    {"&quot;", "\""},
-    {"&apos;", "'"},
-  };
-
-  for (const auto& e : ents) {
-    for (;;) {
-      char* p = strstr(s, e.from);
-      if (!p) break;
-      const size_t fromLen = strlen(e.from);
-      const size_t toLen = strlen(e.to);
-      // move tail left/right as needed
-      if (toLen <= fromLen) {
-        memcpy(p, e.to, toLen);
-        memmove(p + toLen, p + fromLen, strlen(p + fromLen) + 1);
-      } else {
-        // Expand only if space; otherwise just stop decoding this instance.
-        const size_t tailLen = strlen(p + fromLen);
-        const size_t curLen = strlen(s);
-        if (curLen + (toLen - fromLen) + 1 >= BUFLEN * 3) return;
-        memmove(p + toLen, p + fromLen, tailLen + 1);
-        memcpy(p, e.to, toLen);
-      }
-    }
-  }
-}
-
-static void trimInPlace(char* s) {
-  if (!s) return;
-  // left trim
-  while (*s == ' ') memmove(s, s + 1, strlen(s));
-  // right trim
-  size_t n = strlen(s);
-  while (n > 0 && s[n - 1] == ' ') s[--n] = '\0';
-}
-
-static void truncateEllipsis(char* s, size_t maxChars) {
-  if (!s || maxChars == 0) return;
-  const size_t n = strlen(s);
-  if (n < maxChars) return;
-  if (maxChars <= 4) {
-    s[maxChars - 1] = '\0';
-    return;
-  }
-  // Keep room for "..."
-  s[maxChars - 4] = '.';
-  s[maxChars - 3] = '.';
-  s[maxChars - 2] = '.';
-  s[maxChars - 1] = '\0';
-}
-
-static bool extractTagText(const String& item, const char* tag, char* out, size_t outSz) {
-  if (!out || outSz == 0) return false;
-  out[0] = '\0';
-  const String open = String("<") + tag + ">";
-  const String close = String("</") + tag + ">";
-  int s = item.indexOf(open);
-  if (s < 0) return false;
-  s += open.length();
-  int e = item.indexOf(close, s);
-  if (e < 0) return false;
-  String t = item.substring(s, e);
-  t.trim();
-  // CDATA
-  if (t.startsWith("<![CDATA[")) {
-    const int end = t.indexOf("]]>");
-    if (end > 0) t = t.substring(9, end);
-  }
-  sanitizeTsvField(t.c_str(), out, outSz);
-  decodeBasicXmlEntities(out);
-  return out[0] != '\0';
-}
-
-static bool extractAttrUrl(const String& item, const char* tag, const char* attr, char* out, size_t outSz) {
-  if (!out || outSz == 0) return false;
-  out[0] = '\0';
-  int t = item.indexOf(String("<") + tag);
-  if (t < 0) return false;
-  int end = item.indexOf(">", t);
-  if (end < 0) return false;
-  String head = item.substring(t, end);
-  const String needle = String(attr) + "=\"";
-  int a = head.indexOf(needle);
-  if (a < 0) return false;
-  a += needle.length();
-  int q = head.indexOf("\"", a);
-  if (q < 0) return false;
-  String u = head.substring(a, q);
-  u.trim();
-  // BBC podcast feeds often use the "audio-nondrm-download-rss" mediaset, but the
-  // playable direct links use "audio-nondrm-download". Rewriting here keeps the
-  // playlist URLs compatible with the audio engine.
-  if (u.indexOf("open.live.bbc.co.uk/mediaselector/") >= 0) {
-    u.replace("audio-nondrm-download-rss", "audio-nondrm-download");
-  }
-  sanitizeTsvField(u.c_str(), out, outSz);
-  return out[0] != '\0';
-}
+using podrss::sanitizeTsvField;
 
 static bool parsePodcastLine(const char* line, char* name, size_t nameSz, char* url, size_t urlSz, uint16_t& limit) {
   if (!line) return false;
@@ -265,13 +147,19 @@ static bool resolveRedirectUrl(const String& baseUrl, const String& location, St
   return true;
 }
 
-static int httpGetWithRedirects(HTTPClient& http, String& url, uint8_t maxHops) {
+static int httpGetWithRedirects(HTTPClient& http, String& url, uint8_t maxHops,
+                                const char* ifNoneMatch = nullptr, const char* ifModifiedSince = nullptr) {
   for (uint8_t hop = 0; hop <= maxHops; hop++) {
+    if (shouldAbortBuild()) return -3;
     if (!httpBeginForUrl(http, url.c_str())) return -1;
-    // Ensure we can read Location headers on redirect responses.
-    const char* hdrs[] = {"Location", "location"};
-    http.collectHeaders(hdrs, 2);
-    http.setTimeout(8000);
+    // Conditional GET (per-feed cache): server answers 304 if the feed is unchanged.
+    if (ifNoneMatch && ifNoneMatch[0]) http.addHeader("If-None-Match", ifNoneMatch);
+    if (ifModifiedSince && ifModifiedSince[0]) http.addHeader("If-Modified-Since", ifModifiedSince);
+    // Ensure we can read Location (redirects) and the cache validators.
+    const char* hdrs[] = {"Location", "location", "ETag", "Last-Modified"};
+    http.collectHeaders(hdrs, 4);
+    http.setConnectTimeout(4000);
+    http.setTimeout(4000);
     const int code = http.GET();
     if (code > 0 && code < 300) {
       return code;
@@ -316,6 +204,168 @@ static uint16_t countPodcastSources() {
   }
   f.close();
   return count;
+}
+
+#ifndef POD_RX_CHUNK
+#define POD_RX_CHUNK 1536
+#endif
+
+struct FeedCtx {
+  File* out;
+  File* cache;   // per-feed cache being written (may be null)
+  const char* show;
+  uint16_t lim;
+  uint16_t got;
+  uint16_t items;
+};
+
+static bool onItem(const podrss::Item& it, void* user) {
+  FeedCtx* c = (FeedCtx*)user;
+  c->items++;
+  char safeTitle[520];
+  podrss::formatEpisodeLabel(c->show, it, safeTitle, sizeof(safeTitle));
+  c->out->print(safeTitle);
+  c->out->print('\t');
+  c->out->print(it.url);
+  c->out->print('\t');
+  c->out->println('0');
+  if (c->cache && *c->cache) {
+    c->cache->print(safeTitle);
+    c->cache->print('\t');
+    c->cache->print(it.url);
+    c->cache->print('\t');
+    c->cache->println('0');
+  }
+  c->got++;
+  return c->got < c->lim;
+}
+
+// Scanner (~4 KB) + RX chunk live in PSRAM when available, only during a build.
+static podrss::Scanner* sc = nullptr;
+static uint8_t* rx = nullptr;
+
+static void* podAlloc(size_t n) {
+#if defined(BOARD_HAS_PSRAM)
+  void* p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (p) return p;
+#endif
+  return malloc(n);
+}
+
+static void freeBuffers() {
+  if (sc) { sc->~Scanner(); free(sc); sc = nullptr; }
+  if (rx) { free(rx); rx = nullptr; }
+}
+
+static bool allocBuffers() {
+  if (!sc) {
+    void* m = podAlloc(sizeof(podrss::Scanner));
+    if (m) sc = new (m) podrss::Scanner();
+  }
+  if (!rx) rx = (uint8_t*)podAlloc(POD_RX_CHUNK);
+  if (!sc || !rx) { freeBuffers(); return false; }
+  return true;
+}
+
+// ---- Per-feed episode cache (SPIFFS) ----------------------------------------------------
+// /data/pc_<hash>.tsv : header "#pc1\t<limit>\t<etag>\t<last-modified>" + that feed's lines
+// (same format as podcast_episodes.csv). Lets unchanged feeds answer 304 (no body) and
+// keeps a feed's last episodes if it fails to download.
+#define POD_CACHE_DIR "/data"
+#define POD_CACHE_PREFIX "pc_"
+#define POD_CACHE_MIN_FREE 16384u   // don't write caches when SPIFFS is nearly full
+#define POD_MAX_SOURCES 64
+
+static uint32_t s_cacheIds[POD_MAX_SOURCES];
+static uint16_t s_cacheIdCount = 0;
+
+static uint32_t feedHash(const char* show, const char* url) {
+  uint32_t h = 2166136261u;
+  for (const char* p = show; *p; p++) { h ^= (uint8_t)*p; h *= 16777619u; }
+  h ^= '\t'; h *= 16777619u;
+  for (const char* p = url; *p; p++) { h ^= (uint8_t)*p; h *= 16777619u; }
+  return h;
+}
+
+static void cachePath(uint32_t id, const char* ext, char* out, size_t outSz) {
+  snprintf(out, outSz, POD_CACHE_DIR "/" POD_CACHE_PREFIX "%08lx.%s", (unsigned long)id, ext);
+}
+
+// Reads the cache header. Returns true if a cache with the same limit exists.
+static bool cacheReadMeta(const char* path, uint16_t lim, char* etag, size_t etagSz, char* lm, size_t lmSz) {
+  etag[0] = '\0'; lm[0] = '\0';
+  File c = SPIFFS.open(path, "r");
+  if (!c) return false;
+  char line[256];
+  size_t n = c.readBytesUntil('\n', line, sizeof(line) - 1);
+  line[n] = '\0';
+  c.close();
+  if (strncmp(line, "#pc1\t", 5) != 0) return false;
+  char* p = line + 5;
+  char* t1 = strchr(p, '\t');
+  if (!t1) return false;
+  *t1 = '\0';
+  if ((uint16_t)atoi(p) != lim) return false;
+  char* e = t1 + 1;
+  char* t2 = strchr(e, '\t');
+  if (!t2) return false;
+  *t2 = '\0';
+  strlcpy(etag, e, etagSz);
+  strlcpy(lm, t2 + 1, lmSz);
+  return true;
+}
+
+// Appends the cached episode lines to `out`. Returns how many were copied.
+static uint32_t cacheCopyTo(const char* path, File& out) {
+  File c = SPIFFS.open(path, "r");
+  if (!c) return 0;
+  char line[1024];
+  uint32_t lines = 0;
+  bool first = true;
+  while (c.available()) {
+    size_t n = c.readBytesUntil('\n', line, sizeof(line) - 1);
+    line[n] = '\0';
+    if (n > 0 && line[n - 1] == '\r') line[--n] = '\0';
+    if (first) { first = false; continue; }  // header
+    if (n == 0) continue;
+    out.println(line);
+    lines++;
+  }
+  c.close();
+  return lines;
+}
+
+static bool spiffsHasRoom() {
+  const size_t total = SPIFFS.totalBytes();
+  const size_t used = SPIFFS.usedBytes();
+  return total > used && (total - used) >= POD_CACHE_MIN_FREE;
+}
+
+// Remove caches of feeds that are no longer in podcasts.csv (only after a full pass).
+static void cachePruneUnused() {
+  File dir = SPIFFS.open(POD_CACHE_DIR);
+  if (!dir || !dir.isDirectory()) return;
+  char toRemove[8][40];
+  uint8_t nRemove = 0;
+  for (File e = dir.openNextFile(); e; e = dir.openNextFile()) {
+    const char* nm = e.name();
+    const char* base = strrchr(nm, '/');
+    base = base ? base + 1 : nm;
+    if (strncmp(base, POD_CACHE_PREFIX, 3) == 0 && strlen(base) == 15) {
+      const uint32_t id = (uint32_t)strtoul(base + 3, nullptr, 16);
+      bool used = false;
+      for (uint16_t i = 0; i < s_cacheIdCount; i++) if (s_cacheIds[i] == id) { used = true; break; }
+      if (!used || strcmp(base + 12, "tmp") == 0) {
+        if (nRemove < 8) snprintf(toRemove[nRemove++], sizeof(toRemove[0]), POD_CACHE_DIR "/%s", base);
+      }
+    }
+    e.close();
+  }
+  dir.close();
+  for (uint8_t i = 0; i < nRemove; i++) {
+    Serial.printf("[POD] cache prune %s\n", toRemove[i]);
+    SPIFFS.remove(toRemove[i]);
+  }
 }
 
 } // namespace
@@ -382,6 +432,16 @@ uint32_t podcasts_buildEpisodesPlaylist() {
     return 0;
   }
 
+  if (!allocBuffers()) {
+    out.close();
+    f.close();
+    SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+    Serial.println("[POD] out of memory for RSS buffers");
+    setProgress(0, 0, "");
+    return 0;
+  }
+
+  s_cacheIdCount = 0;
   uint32_t written = 0;
   uint32_t sources = 0;
   uint16_t progressCur = 0;
@@ -393,6 +453,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       f.close();
       SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
       setProgress(0, 0, "");
+      freeBuffers();
       return 0;
     }
 
@@ -414,161 +475,121 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       Serial.printf("[POD] source %u/%u\n", (unsigned)progressCur, (unsigned)totalSources);
     }
 
+    const uint32_t cid = feedHash(show, feedUrl);
+    if (s_cacheIdCount < POD_MAX_SOURCES) s_cacheIds[s_cacheIdCount++] = cid;
+    char cPath[40], cTmp[40];
+    cachePath(cid, "tsv", cPath, sizeof(cPath));
+    cachePath(cid, "tmp", cTmp, sizeof(cTmp));
+    char etag[128], lastMod[64];
+    const bool haveCache = cacheReadMeta(cPath, lim, etag, sizeof(etag), lastMod, sizeof(lastMod));
+
     HTTPClient http;
     String effectiveUrl(feedUrl);
-    const int code = httpGetWithRedirects(http, effectiveUrl, 5);
+    const int code = haveCache ? httpGetWithRedirects(http, effectiveUrl, 5, etag, lastMod)
+                               : httpGetWithRedirects(http, effectiveUrl, 5);
+    if (code == -3) {  // cancelled during connect/redirects
+      out.close();
+      f.close();
+      SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+      setProgress(0, 0, "");
+      freeBuffers();
+      return 0;
+    }
+    if (code == 304 && haveCache) {
+      const uint32_t n = cacheCopyTo(cPath, out);
+      Serial.printf("[POD] unchanged (304), %lu cached episodes\n", (unsigned long)n);
+      written += n;
+      delay(0);
+      continue;
+    }
     if (code <= 0 || code >= 300) {
       Serial.printf("[POD] feed HTTP %d for %s\n", code, effectiveUrl.c_str());
+      if (haveCache) {
+        const uint32_t n = cacheCopyTo(cPath, out);
+        Serial.printf("[POD] using %lu cached episodes\n", (unsigned long)n);
+        written += n;
+      }
       delay(0);
       continue;
     }
 
     WiFiClient* s = http.getStreamPtr();
-    if (!s) { http.end(); continue; }
+    if (!s) {
+      http.end();
+      if (haveCache) written += cacheCopyTo(cPath, out);
+      continue;
+    }
 
-    uint16_t got = 0;
-    String buf;
-    buf.reserve(4096);
-    uint32_t lastRxMs = millis();
-    bool sawAnyItem = false;
-
-    while (s->connected() && got < lim) {
-      if (shouldAbortBuild()) {
-        http.end();
-        out.close();
-        f.close();
-        SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
-        setProgress(0, 0, "");
-        return 0;
+    // New cache file for this feed (written alongside the playlist, swapped in on success).
+    File cache;
+    if (spiffsHasRoom()) {
+      SPIFFS.remove(cTmp);
+      cache = SPIFFS.open(cTmp, "w");
+      if (cache) {
+        char hdr[256];
+        String et = http.header("ETag");
+        String lmv = http.header("Last-Modified");
+        char etS[128], lmS[64];
+        sanitizeTsvField(et.c_str(), etS, sizeof(etS));
+        sanitizeTsvField(lmv.c_str(), lmS, sizeof(lmS));
+        snprintf(hdr, sizeof(hdr), "#pc1\t%u\t%s\t%s", (unsigned)lim, etS, lmS);
+        cache.println(hdr);
       }
+    }
 
-      if (!s->available()) {
-        if ((uint32_t)(millis() - lastRxMs) > 6000u) break;
+    FeedCtx ctx;
+    ctx.out = &out;
+    ctx.cache = &cache;
+    ctx.show = show;
+    ctx.lim = lim;
+    ctx.got = 0;
+    ctx.items = 0;
+    sc->reset(onItem, &ctx);
+
+    uint32_t lastRxMs = millis();
+    bool aborted = false;
+    // Chunked reads + streaming scanner: each byte is touched once, no String churn.
+    while (!sc->stopped() && (s->connected() || s->available())) {
+      if (shouldAbortBuild()) { aborted = true; break; }
+      const int avail = s->available();
+      if (avail <= 0) {
+        if ((uint32_t)(millis() - lastRxMs) > 4000u) break;
         delay(1);
         continue;
       }
-
-      while (s->available() && got < lim) {
-        if (shouldAbortBuild()) {
-          http.end();
-          out.close();
-          f.close();
-          SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
-          setProgress(0, 0, "");
-          return 0;
-        }
-
-        const char c = (char)s->read();
-        lastRxMs = millis();
-        buf += c;
-        // Keep buffer bounded
-        if (buf.length() > 16384) {
-          buf.remove(0, buf.length() - 8192);
-        }
-
-        // Extract items
-        for (;;) {
-          int is = buf.indexOf("<item");
-          if (is < 0) break;
-          int ie = buf.indexOf("</item>", is);
-          if (ie < 0) break;
-          const int end = ie + 7;
-          String item = buf.substring(is, end);
-          buf.remove(0, end);
-          sawAnyItem = true;
-
-          char title[192];
-          char subtitle[256];
-          char url[320];
-          bool okTitle = extractTagText(item, "title", title, sizeof(title));
-          const bool okSubtitle = extractTagText(item, "itunes:subtitle", subtitle, sizeof(subtitle));
-
-          // Prefer HTTPS enclosure URLs when available (e.g. BBC provides both).
-          bool okUrl = extractAttrUrl(item, "ppg:enclosureSecure", "url", url, sizeof(url));
-          if (!okUrl) okUrl = extractAttrUrl(item, "enclosure", "url", url, sizeof(url));
-          if (!okUrl) okUrl = extractAttrUrl(item, "media:content", "url", url, sizeof(url));
-          if (!okTitle || !okUrl) continue;
-
-          // We render 3 lines as:
-          //   meta:  station.name (show)
-          //   line2: title1 (episode name)
-          //   line3: title2 (short episode description)
-          //
-          // `Config::loadStation()` already splits the playlist label on the first " - "
-          // to populate (show, episode). Then Display::_title() splits station.title on
-          // " - " to populate (title1, title2). So we can populate line 3 by ensuring
-          // the episode portion contains one more " - ".
-          //
-          // Example:
-          //   "<show> - Risky Business #838 -- GitHub investigates..."
-          // becomes:
-          //   "<show> - Risky Business #838 - GitHub investigates..."
-
-          char epTitle[192];
-          char epDesc[256];
-          strlcpy(epTitle, title, sizeof(epTitle));
-          epDesc[0] = '\0';
-
-          // Split on common "title — description" patterns inside the episode title.
-          // (ASCII double-hyphen, en dash, em dash)
-          {
-            const char* seps[] = {" -- ", " – ", " — "};
-            const char* sepHit = nullptr;
-            char* dd = nullptr;
-            for (size_t i = 0; i < (sizeof(seps) / sizeof(seps[0])); i++) {
-              dd = strstr(epTitle, seps[i]);
-              if (dd) {
-                sepHit = seps[i];
-                break;
-              }
-            }
-            if (dd && sepHit) {
-              *dd = '\0';
-              dd += strlen(sepHit);
-              strlcpy(epDesc, dd, sizeof(epDesc));
-            }
-          }
-          if (epDesc[0] == '\0' && okSubtitle && subtitle[0]) {
-            // Fallback: use itunes:subtitle (truncated) for line 3.
-            strlcpy(epDesc, subtitle, sizeof(epDesc));
-          }
-
-          trimInPlace(epTitle);
-          trimInPlace(epDesc);
-
-          // Keep line 3 short enough to be useful on small displays.
-          truncateEllipsis(epDesc, 96);
-
-          char episodeField[480];
-          if (epDesc[0]) {
-            snprintf(episodeField, sizeof(episodeField), "%s - %s", epTitle, epDesc);
-          } else {
-            strlcpy(episodeField, epTitle, sizeof(episodeField));
-          }
-
-          char fullTitle[520];
-          snprintf(fullTitle, sizeof(fullTitle), "%s - %s", show, episodeField);
-          // Don't sanitize in-place: sanitizeTsvField() clears the output first.
-          char safeTitle[520];
-          sanitizeTsvField(fullTitle, safeTitle, sizeof(safeTitle));
-
-          out.print(safeTitle);
-          out.print('\t');
-          out.print(url);
-          out.print('\t');
-          out.println('0');
-          written++;
-          got++;
-
-          if (got >= lim) break;
-        }
-      }
+      const int want = (avail < (int)POD_RX_CHUNK) ? avail : (int)POD_RX_CHUNK;
+      const int n = s->read(rx, (size_t)want);
+      if (n <= 0) { delay(1); continue; }
+      lastRxMs = millis();
+      sc->feed((const char*)rx, (size_t)n);
       delay(0);
     }
 
     http.end();
-    if (!sawAnyItem) {
+    if (cache) cache.close();
+    if (aborted) {
+      SPIFFS.remove(cTmp);
+      out.close();
+      f.close();
+      SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+      setProgress(0, 0, "");
+      freeBuffers();
+      return 0;
+    }
+    if (ctx.got > 0) {
+      written += ctx.got;
+      if (SPIFFS.exists(cTmp)) {
+        SPIFFS.remove(cPath);
+        if (!SPIFFS.rename(cTmp, cPath)) SPIFFS.remove(cTmp);
+      }
+    } else {
+      SPIFFS.remove(cTmp);
       Serial.printf("[POD] no <item> parsed for %s (%s)\n", show, effectiveUrl.c_str());
+      if (haveCache) {
+        const uint32_t n = cacheCopyTo(cPath, out);
+        Serial.printf("[POD] using %lu cached episodes\n", (unsigned long)n);
+        written += n;
+      }
     }
     delay(0);
   }
@@ -576,6 +597,9 @@ uint32_t podcasts_buildEpisodesPlaylist() {
   out.flush();
   out.close();
   f.close();
+  freeBuffers();
+  // Full pass finished (not cancelled): drop caches of feeds no longer listed.
+  if (s_cacheIdCount < POD_MAX_SOURCES) cachePruneUnused();
 
   if (written > 0) {
     // Swap without a "missing file" window (avoids UI briefly seeing playlistLength()==0).
@@ -616,7 +640,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
 static void podcastBuildTask(void*) {
   const bool force = s_forceBuild;
   s_forceBuild = false;
-  s_cancelBuild = false;
+  // Don't clear s_cancelBuild here: a cancel requested before the task started must win.
 
   // Only build if it makes sense (or forced).
   if (!force) {

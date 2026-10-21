@@ -266,10 +266,13 @@ Notes:
 
 Indexing behavior:
 
-- **Entering Podcast mode** will perform a full RSS fetch + index build at most **once every ~3 hours** and shows **progress** on the player screen.
+- **Entering Podcast mode** will perform an RSS refresh + index build at most **once every ~3 hours** and shows **progress** on the player screen.
   - Switching into Podcast mode again within that window reuses the cached `podcast_episodes.csv` list (no refresh).
-  - Booting straight into Podcast mode is a convenient way to force a refresh when you want it.
-  - If you ever hit a `Stack canary` crash during indexing, increase `PODBUILD_STACK` in `src/core/podcasts.cpp` (RSS parsing can be stack-heavy).
+  - **Press MODE while it's indexing to cancel.** The build stops (within ~4 s worst case, usually immediately), the previous episode list is kept, and the mode change then happens as normal.
+  - **Booting into Podcast mode uses the existing list** (controls aren't running yet at boot, so a refresh there couldn't be cancelled). The refresh happens the next time you enter Podcast mode. With no list yet (first boot), boot still builds one.
+- Feeds are read in 1.5 KB chunks through a streaming parser (`src/core/podcast_rss.h`) that only keeps title / `itunes:subtitle` / enclosure URL, so long show notes no longer slow it down or cause episodes to be dropped.
+- **Per-feed cache**: each feed's last episodes are stored in `SPIFFS:/data/pc_<hash>.tsv` with its `ETag` / `Last-Modified`. Refreshes send a conditional GET; an unchanged feed answers `304` with no body (BBC and risky.biz feeds do; ABC feeds don't, so they're always fetched). A feed that fails or times out keeps its cached episodes instead of disappearing. Caches of feeds removed from `podcasts.csv` are deleted after the next full refresh; caches are not written if SPIFFS has less than 16 KB free.
+- If you ever hit a `Stack canary` crash during indexing, increase `PODBUILD_STACK` in `src/core/podcasts.cpp`.
 
 Resume behavior:
 
@@ -387,12 +390,10 @@ More info: [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
 
 - **SD → WEB → HLS AAC stall (real bug)**: certain HLS AAC stations may fail to start after SD playback.
 - **Some AAC stations are “CPU heavy”** and can make UI responsiveness / VU refresh worse.
-- **FLAC**: currently very choppy.
+- **FLAC**: decodes cleanly; very high-bitrate streams from distant servers can underrun (32 KB TCP window, see KNOWN_ISSUES).
 - **SD hot-insert**: brief white flash (shared SPI bus); accepted, intentionally not fixed.
 - **SD album art**: disabled.
-- **Podcast indexing**: indexing cannot be cancelled. Should probably not index during boot.
-  - Cancellation is best-effort: switching modes or starting playback should abort indexing (may take a moment).
-  - Booting directly into Podcast mode intentionally triggers indexing (handy for forcing a refresh).
+- **Podcast indexing**: press MODE to cancel (the old list is kept). Boot uses the existing list and defers the refresh. Web UI / MQTT mode changes still can't cancel it, because they're handled by the same blocked loop.
 
 ## TODO / Roadmap
 

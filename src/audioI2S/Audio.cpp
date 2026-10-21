@@ -633,7 +633,11 @@ void Audio::destroy_decoder() {
 std::unique_ptr<Decoder> Audio::createDecoder(const std::string& type) {
     destroy_decoder();
     if (type == "MP3") return std::make_unique<MP3Decoder>(*this);
-    if (type == "FLAC") return std::make_unique<FlacDecoder>(*this);
+    if (type == "FLAC") {
+        auto dec = std::make_unique<FlacDecoder>(*this);
+        dec->setOutBuffSize(m_outbuffSize); // cap each FLAC output chunk to the real m_outBuff capacity
+        return dec;
+    }
     if (type == "OPUS") return std::make_unique<OpusDecoder>(*this);
     if (type == "AAC") return std::make_unique<AACDecoder>(*this);
     if (type == "VORBIS") return std::make_unique<VorbisDecoder>(*this);
@@ -3766,7 +3770,7 @@ i2swrite:
 
     if (!(m_plCh.err == ESP_OK || m_plCh.err == ESP_ERR_TIMEOUT)) goto exit;
     m_validSamples -= m_plCh.i2s_bytesConsumed / BYTES_PER_FRAME;
-    m_plCh.count += m_plCh.i2s_bytesConsumed / 2;
+    m_plCh.count += m_plCh.i2s_bytesConsumed / sizeof(int32_t); // count indexes int32_t samples (was /2 from the int16_t era)
     if (m_validSamples <= 0) {
         m_validSamples = 0;
         m_plCh.count = 0;

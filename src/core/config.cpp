@@ -928,7 +928,14 @@ void Config::initPlaylistMode() {
     if (getMode() == PM_PODCAST) {
       // Throttle expensive RSS indexing. Within the interval we just use the
       // cached episode list and index file.
-      const bool doIndex = PODCAST_INDEX_ENABLE && podcasts_isIndexDue(3u * 60u * 60u); // 3 hours
+      bool doIndex = PODCAST_INDEX_ENABLE && podcasts_isIndexDue(3u * 60u * 60u); // 3 hours
+      // Boot: controls/netserver aren't running yet, so a blocking refresh can't be
+      // cancelled. If a cached list exists, use it; the refresh happens on the next
+      // entry into Podcast mode.
+      if (doIndex && !_bootDone && SPIFFS.exists(PLAYLIST_PODCAST_PATH)) {
+        Serial.println("[POD] boot: using cached episode list (refresh deferred)");
+        doIndex = false;
+      }
       if (doIndex) {
         // Build RSS playlist and wait for it to complete.
         //
@@ -940,8 +947,10 @@ void Config::initPlaylistMode() {
           display.putRequest(SDFILEINDEX, 0);
         }
 
+        (void)controls_takeModePress(); // ignore presses from before this wait
         podcasts_requestBuild(true);
         const uint32_t t0 = millis();
+        bool cancelReq = false;
         int lastPct = -1;
         char lastShow[96];
         lastShow[0] = '\0';
@@ -949,6 +958,13 @@ void Config::initPlaylistMode() {
           uint16_t cur = 0, tot = 0;
           char show[96];
           memset(show, 0, sizeof(show));
+          // MODE press while indexing: cancel the build. The queued MODE event itself is
+          // left in the controls queue and runs normally once this wait returns.
+          if (!cancelReq && controls_takeModePress()) {
+            cancelReq = true;
+            Serial.println("[POD] MODE pressed: cancelling index build");
+            podcasts_requestCancel();
+          }
           podcasts_getProgress(&cur, &tot, show, sizeof(show));
 
           if (show[0] != '\0' && strcmp(show, lastShow) != 0) {

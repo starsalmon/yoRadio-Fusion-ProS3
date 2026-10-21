@@ -21,6 +21,21 @@ import os
 import subprocess
 
 LWIP_MOD = {"netconn_alloc": 0x78, "tcp_recved": 0x72, "poll_tcp": 0x69, "tcp_rst_common": 0x5F}
+# Known-good Audio_IDF_MOD variants: lib md5s + linked marker sizes (see tools/Audio_IDF_MOD/<variant>/README.md)
+VARIANTS = {
+    "CORE_3.3.6-IDF_ver5.5.2": {
+        "liblwip.a": "16e4a2d94615a86b506f2b7999adb693", "libesp_netif.a": "a4c11c7f5c9f3ed6ec9e7a123c2876e0",
+        "markers": LWIP_MOD, "tcp_wnd": 0x8000,
+    },
+    "CORE_3.3.6-IDF_ver5.5.2-wnd64k": {
+        "liblwip.a": "65a4e6502d190691e53fe9c99bcc3368", "libesp_netif.a": "a4c11c7f5c9f3ed6ec9e7a123c2876e0",
+        "markers": {"netconn_alloc": 0x78, "tcp_recved": 0x6E, "poll_tcp": 0x69, "tcp_rst_common": 0x62}, "tcp_wnd": 0xFFFF,
+    },
+    "CORE_3.3.6-IDF_ver5.5.2-wnd48k": {
+        "liblwip.a": "4f3d8bf471a390e41c9dc77f3b449ef9", "libesp_netif.a": "a4c11c7f5c9f3ed6ec9e7a123c2876e0",
+        "markers": LWIP_MOD, "tcp_wnd": 0xC000,
+    },
+}
 LWIP_STOCK = {"netconn_alloc": 0x77, "tcp_recved": 0x6F, "poll_tcp": 0x65, "tcp_rst_common": 0x62}
 CMD12_STRINGS = (b"CMD12: card stayed busy", b"stop transmission failed")
 
@@ -51,6 +66,68 @@ def _nm_sizes(elf: str) -> dict:
     return sizes
 
 
+def _framework_libdir():
+    import glob
+    hits = glob.glob(os.path.expanduser("~/.platformio/packages/framework-arduinoespressif32-libs/esp32s3/lib"))
+    return hits[0] if hits else None
+
+
+def _md5(path):
+    import hashlib
+    if not os.path.isfile(path):
+        return None
+    with open(path, "rb") as f:
+        return hashlib.md5(f.read()).hexdigest()
+
+
+def _tcp_alloc_wnd(elf):
+    """rcv_wnd/rcv_ann_wnd init in tcp_alloc (ELF bytes; the host objdump can't decode xtensa-s3):
+    wnd64k: movi.n a8,-1 ; s32i a8,a2,84  -> bytes 7c f8 82 62 15  => 0xFFFF
+    32k:    l32r a8,<lit 0x80008000> ; s32i a8,a2,84 (literal 00 80 00 80 in the pool before it) => 0x8000
+    wnd48k: same with literal 0xc000c000 (00 c0 00 c0) => 0xC000"""
+    import struct
+    nm = env.subst("$CC").replace("gcc", "nm")
+    out = subprocess.run([nm, "-S", elf], capture_output=True, text=True, env=env["ENV"]).stdout
+    addr = size = None
+    for line in out.splitlines():
+        p = line.split()
+        if len(p) == 4 and p[3] == "tcp_alloc":
+            addr, size = int(p[0], 16), int(p[1], 16)
+    if addr is None:
+        return None
+    with open(elf, "rb") as f:
+        d = f.read()
+    shoff, = struct.unpack_from("<I", d, 0x20)
+    shentsize, shnum = struct.unpack_from("<HH", d, 0x2E)
+    code = None
+    for k in range(shnum):
+        _, _, _, sh_addr, sh_off, sh_size = struct.unpack_from("<IIIIII", d, shoff + k * shentsize)
+        if sh_addr <= addr < sh_addr + sh_size:
+            code = d[sh_off + addr - sh_addr: sh_off + addr - sh_addr + size]
+            lit = d[max(sh_off, sh_off + addr - sh_addr - 1024): sh_off + addr - sh_addr]
+            sec_addr, sec_off, sec_size = sh_addr, sh_off, sh_size
+            break
+    if code is None:
+        return None
+    if b"\x7c\xf8\x82\x62\x15" in code:
+        return 0xFFFF
+    # l32r a8,<lit> (bytes 81 lo hi) feeding s32i a8,a2,84: decode the PC-relative literal (the linker may
+    # pool it far from the function, so scanning nearby bytes is not reliable)
+    for i in range(len(code) - 2):
+        if code[i] == 0x81 and b"\x82\x62\x15" in code[i + 3:i + 12]:
+            imm = code[i + 1] | (code[i + 2] << 8)
+            pc = addr + i
+            tgt = ((pc + 3) & ~3) + (((imm - 0x10000) if imm else -0x10000) << 2)
+            off = tgt - sec_addr + sec_off
+            if sec_off <= off < sec_off + sec_size - 3:
+                v, = struct.unpack_from("<I", d, off)
+                if v in (0x80008000, 0xC000C000) or (v & 0xFFFF) == (v >> 16):
+                    return v & 0xFFFF
+    if b"\x82\x62\x15" in code and b"\x00\x80\x00\x80" in lit:
+        return 0x8000
+    return None
+
+
 def _guard(target, source, env):
     if os.environ.get("YORADIO_FW_GUARD", "1") == "0":
         print("[fw-guard] BYPASSED (YORADIO_FW_GUARD=0)")
@@ -61,13 +138,31 @@ def _guard(target, source, env):
     binf = os.path.join(build_dir, progname + ".bin")
     errors = []
 
+    try:
+        variant = str(env.GetProjectOption("custom_audio_idf_mod_variant", "")).strip() or "CORE_3.3.6-IDF_ver5.5.2"
+    except Exception:
+        variant = "CORE_3.3.6-IDF_ver5.5.2"
+    want = VARIANTS.get(variant)
     sizes = _nm_sizes(elf)
-    if sizes == LWIP_MOD:
-        print("[fw-guard] lwip: Audio_IDF_MOD build linked (OK)")
-    elif sizes == LWIP_STOCK:
-        errors.append("lwip: STOCK liblwip.a linked (Audio_IDF_MOD swap missing)")
+    if want is None:
+        errors.append(f"lwip: unknown Audio_IDF_MOD variant {variant!r} (add it to VARIANTS with md5s/markers)")
     else:
-        errors.append(f"lwip: unexpected symbol sizes {sizes}")
+        libdir = _framework_libdir()
+        for lib in ("liblwip.a", "libesp_netif.a"):
+            got = _md5(os.path.join(libdir, lib)) if libdir else None
+            if got != want[lib]:
+                errors.append(f"lwip: framework {lib} md5 {got} != variant {variant} {want[lib]}")
+        if sizes == LWIP_STOCK:
+            errors.append("lwip: STOCK liblwip.a linked (Audio_IDF_MOD swap missing)")
+        elif want["markers"] is not None and sizes != want["markers"]:
+            errors.append(f"lwip: marker sizes {sizes} != variant {variant} {want['markers']}")
+        elif want["markers"] is None:
+            errors.append(f"lwip: variant {variant} has no recorded markers; measured {sizes}")
+        wnd = _tcp_alloc_wnd(elf)
+        if wnd != want["tcp_wnd"]:
+            errors.append(f"lwip: tcp_alloc receive window {wnd} != {want['tcp_wnd']:#x}")
+        if not errors:
+            print(f"[fw-guard] lwip: Audio_IDF_MOD variant {variant} linked, tcp window {wnd:#x} (OK)")
 
     if _flag_on("YORADIO_SD_DISKIO_FIX"):
         with open(binf, "rb") as f:

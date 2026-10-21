@@ -14,6 +14,7 @@
 #include "Arduino.h"
 #include "widgets.h"
 #include "esp_heap_caps.h"
+#include "../../core/sdlock.h"
 #ifdef YORADIO_STREAM_DIAG
 extern volatile uint32_t g_plActive;
 #endif
@@ -2133,44 +2134,52 @@ void PlayListWidget::init(ScrollWidget* current) {
 #endif
 }
 
-void PlayListWidget::_loadPlaylistPage(int pageIndex, int itemsPerPage) {
-
-  for (int i = 0; i < MAX_PL_PAGE_ITEMS; i++)
-      _plCache[i] = "";
-
-  if (config.playlistLength() == 0) return;
-
-  File playlist = config.SDPLFS()->open(REAL_PLAYL, "r");
-  File index    = config.SDPLFS()->open(REAL_INDEX, "r");
-  if (!playlist || !index) return;
-
-  int startIdx = pageIndex * itemsPerPage;
-
-  for (int i = 0; i < itemsPerPage; i++) {
-
-    int globalIdx = startIdx + i;
-    if (globalIdx >= config.playlistLength()) break;
-
-    index.seek(globalIdx * 4, SeekSet);
-
-    uint32_t posAddr;
-    if (index.readBytes((char*)&posAddr, 4) != 4) break;
-
-    playlist.seek(posAddr, SeekSet);
-
-    String line = playlist.readStringUntil('\n');
-    int tabIdx = line.indexOf('\t');
-    if (tabIdx > 0) line = line.substring(0, tabIdx);
-    line.trim();
-
-    if (config.store.numplaylist && line.length() > 0)
-      _plCache[i] = String(globalIdx + 1) + " " + line;
-    else
-      _plCache[i] = line;
+// Read playlist rows [first, first+count) (0-based) into out[] in ONE pass: playlistLength()
+// once, each file opened once. In SD mode the whole pass holds sdlock (the audio file lock +
+// shared bus), so no TFT drawing ever happens while SD is being read and the display task
+// never interleaves SD reads with TFT transactions (that interleaving stalled ~10 s per row
+// against SD playback). Rows outside the list are left "". Returns rows read.
+static uint8_t plReadRows(int first, uint8_t count, String* out, bool numbered, int numBase) {
+  for (uint8_t i = 0; i < count; i++) out[i] = "";
+  const bool sd = (config.getMode() == PM_SDCARD);
+  if (sd && !sdlock_take(pdMS_TO_TICKS(3000))) return 0;
+  uint8_t got = 0;
+  const int len = (int)config.playlistLength();
+  if (len > 0) {
+    File playlist = config.SDPLFS()->open(REAL_PLAYL, "r");
+    File index    = config.SDPLFS()->open(REAL_INDEX, "r");
+    if (playlist && index) {
+      int startRow = first < 0 ? 0 : first;
+      if (startRow < len && startRow < first + (int)count) {
+        index.seek((uint32_t)startRow * 4, SeekSet);
+        uint32_t pos = 0;
+        if (index.readBytes((char*)&pos, 4) == 4) {
+          playlist.seek(pos, SeekSet);   // rows are contiguous in the playlist file
+          for (int r = startRow; r < first + (int)count && r < len; r++) {
+            if (!playlist.available()) break;
+            String line = playlist.readStringUntil('\n');
+            int tabIdx = line.indexOf('\t');
+            if (tabIdx >= 0) line = line.substring(0, tabIdx);
+            line.trim();
+            if (numbered && line.length() > 0) line = String(numBase + (r - first)) + " " + line;
+            out[r - first] = line;
+            got++;
+          }
+        }
+      }
+    }
+    if (playlist) playlist.close();
+    if (index) index.close();
   }
+  if (sd) sdlock_give();
+  return got;
+}
 
-  playlist.close();
-  index.close();
+void PlayListWidget::_loadPlaylistPage(int pageIndex, int itemsPerPage) {
+  if (itemsPerPage > MAX_PL_PAGE_ITEMS) itemsPerPage = MAX_PL_PAGE_ITEMS;
+  for (int i = 0; i < MAX_PL_PAGE_ITEMS; i++) _plCache[i] = "";
+  const int startIdx = pageIndex * itemsPerPage;
+  plReadRows(startIdx, (uint8_t)itemsPerPage, _plCache, config.store.numplaylist, startIdx + 1);
 }
 
 void PlayListWidget::drawPlaylist(uint16_t currentItem) {
@@ -2372,48 +2381,16 @@ void PlayListWidget::_printScroll(uint8_t pos,
 }
 
 uint8_t PlayListWidget::_fillPlMenu(int from, uint8_t count) {
-    int     ls = from;
-    uint8_t c = 0;
-    bool    finded = false;
+    // from is 1-based (station numbers). Read everything first, then draw.
+    if (count > MAX_PL_PAGE_ITEMS) count = MAX_PL_PAGE_ITEMS;
     if (config.playlistLength() == 0) {
-      // Clear list area to avoid showing stale content.
-      dsp.fillRect(0, _plYStart,
-                   dsp.width(),
-                   _plTtemsCount * _plItemHeight,
-                   config.theme.background);
+      dsp.fillRect(0, _plYStart, dsp.width(), _plTtemsCount * _plItemHeight, config.theme.background);
       return 0;
     }
-    File playlist = config.SDPLFS()->open(REAL_PLAYL, "r");
-    File index = config.SDPLFS()->open(REAL_INDEX, "r");
-    while (true) {
-        if (ls < 1) {
-            ls++;
-            _printScroll(c, "");
-            c++;
-            continue;
-        }
-        if (!finded) {
-            index.seek((ls - 1) * 4, SeekSet);
-            uint32_t pos;
-            index.readBytes((char*)&pos, 4);
-            finded = true;
-            index.close();
-            playlist.seek(pos, SeekSet);
-        }
-        bool pla = true;
-        while (pla) {
-            pla = playlist.available();
-            String stationName = playlist.readStringUntil('\n');
-            stationName = stationName.substring(0, stationName.indexOf('\t'));
-            if (config.store.numplaylist && stationName.length() > 0) { stationName = String(from + c) + " " + stationName; }
-            _printScroll(c, stationName.c_str());
-            c++;
-            if (c >= count) { break; }
-        }
-        break;
-    }
-    playlist.close();
-    return c;
+    String rows[MAX_PL_PAGE_ITEMS];
+    plReadRows(from - 1, count, rows, config.store.numplaylist, from);
+    for (uint8_t c = 0; c < count; c++) _printScroll(c, rows[c].c_str());
+    return count;
 }
 /**************************
       DATE WIDGET

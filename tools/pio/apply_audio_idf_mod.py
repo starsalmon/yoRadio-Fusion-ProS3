@@ -114,8 +114,37 @@ def apply_gfx_glcdfont_patch(*args, **kwargs):
         print(f"[gfx-font] done (using {os.path.relpath(src, project_dir)})")
 
 
+def _sdkconfig_lwip_mode() -> bool:
+    try:
+        return str(env.GetProjectOption("custom_audio_lwip", "")).strip().lower() == "sdkconfig"
+    except Exception:
+        return False
+
+
+def _check_sdkconfig_lwip(*args, **kwargs):
+    # custom_audio_lwip = sdkconfig: lwip/netif are compiled by the hybrid build from custom_sdkconfig
+    # (bigger TCP window). Guard: refuse to link if the framework config does not carry the big window.
+    if os.path.isfile(os.path.join(env["PROJECT_DIR"], "CMakeLists.txt")):
+        print("[audio-idf-mod] sdkconfig lwip mode: hybrid IDF lib-build phase, check deferred to the Arduino link")
+        return
+    libdir = _locate_esp32s3_libdir()
+    cfg = os.path.join(os.path.dirname(libdir), "sdkconfig") if libdir else None
+    wnd = 0
+    if cfg and os.path.isfile(cfg):
+        for line in open(cfg):
+            if line.startswith("CONFIG_LWIP_TCP_WND_DEFAULT="):
+                wnd = int(line.split("=", 1)[1])
+    print(f"[audio-idf-mod] sdkconfig lwip mode: CONFIG_LWIP_TCP_WND_DEFAULT={wnd} ({cfg})")
+    if wnd < 32768:
+        print("[audio-idf-mod] ERROR: framework lwip window < 32768 (stock config) - refusing to link")
+        env.Exit(1)
+
+
 def apply_audio_idf_mod(*args, **kwargs):
     project_dir = env["PROJECT_DIR"]
+    if _sdkconfig_lwip_mode():
+        _check_sdkconfig_lwip()
+        return
     mod_dir = _locate_audio_idf_mod_dir(project_dir)
     if not mod_dir:
         print(
@@ -151,7 +180,8 @@ def apply_audio_idf_mod(*args, **kwargs):
 # Fix: apply at script load (after any framework reinstall/lib rebuild of this pass) AND as a
 # pre-action of the ELF link itself.
 try:
-    apply_audio_idf_mod()
+    if not _sdkconfig_lwip_mode():  # sdkconfig mode: only check right before the ELF link (after the hybrid lib rebuild)
+        apply_audio_idf_mod()
 except Exception as exc:  # never break the build from here
     print(f"[audio-idf-mod] load-time apply warning: {exc}")
 env.AddPreAction("$BUILD_DIR/${PROGNAME}.elf", apply_audio_idf_mod)

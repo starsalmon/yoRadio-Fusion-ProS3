@@ -39,6 +39,15 @@ constexpr size_t AUDIO_STACK_SIZE = 3500;
 
 // static allocations for Audio task
 StaticTask_t __attribute__((unused)) xAudioTaskBuffer;
+#ifdef YORADIO_STREAM_DIAG
+#include "esp_timer.h"
+#include "esp_heap_caps.h"
+static struct { volatile uint32_t rx, dec, decUs, decMax, loopWait, waitUs, i2sCalls, i2sPart, i2sUs, i2sMax, fillMin, errs; int64_t waitStart; } g_sd = {0,0,0,0,0,0,0,0,0,0,0xFFFFFFFF,0,0};
+static int64_t _sdT0, _sdI0; static int32_t _sdReq;
+static volatile uint32_t g_sdUnderrun = 0;
+static bool IRAM_ATTR sdiagOnSendQOvf(i2s_chan_handle_t, i2s_event_data_t*, void*) { g_sdUnderrun++; return false; }
+#endif
+
 StackType_t __attribute__((unused))  xAudioStack[AUDIO_STACK_SIZE];
 
 // weak default implementation - can be overridden by user
@@ -608,6 +617,9 @@ Audio::Audio(uint8_t i2sPort) {
     m_i2s_std_cfg.clk_cfg.clk_src = I2S_CLK_SRC_DEFAULT;
     m_i2s_std_cfg.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
     i2s_channel_init_std_mode(m_i2s_tx_handle, &m_i2s_std_cfg);
+#ifdef YORADIO_STREAM_DIAG
+    { i2s_event_callbacks_t cbs = {}; cbs.on_send_q_ovf = sdiagOnSendQOvf; i2s_channel_register_event_callback(m_i2s_tx_handle, &cbs, nullptr); }
+#endif
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 Audio::~Audio() {
@@ -3762,12 +3774,19 @@ void IRAM_ATTR Audio::playChunk() {
     //------------------------------------------------------------------------------------------------------
 
 i2swrite:
+#ifdef YORADIO_STREAM_DIAG
+    _sdI0 = esp_timer_get_time(); _sdReq = m_validSamples * BYTES_PER_FRAME;
+#endif
     if (m_f_output48KHz && m_i2s_items.sampleRate != 48000) { // with resampler
         m_plCh.err = i2s_channel_write(m_i2s_tx_handle, m_samplesBuff48K.get() + m_plCh.count, m_validSamples * BYTES_PER_FRAME, &m_plCh.i2s_bytesConsumed, 50);
     } else { // without resampler
         m_plCh.err = i2s_channel_write(m_i2s_tx_handle, m_outBuff.get() + m_plCh.count, m_validSamples * BYTES_PER_FRAME, &m_plCh.i2s_bytesConsumed, 20);
     }
 
+#ifdef YORADIO_STREAM_DIAG
+    { uint32_t d = (uint32_t)(esp_timer_get_time() - _sdI0); g_sd.i2sCalls++; g_sd.i2sUs += d; if (d > g_sd.i2sMax) g_sd.i2sMax = d;
+      if ((int32_t)m_plCh.i2s_bytesConsumed < _sdReq) g_sd.i2sPart++; }
+#endif
     if (!(m_plCh.err == ESP_OK || m_plCh.err == ESP_ERR_TIMEOUT)) goto exit;
     m_validSamples -= m_plCh.i2s_bytesConsumed / BYTES_PER_FRAME;
     m_plCh.count += m_plCh.i2s_bytesConsumed / sizeof(int32_t); // count indexes int32_t samples (was /2 from the int16_t era)
@@ -3804,6 +3823,17 @@ exit:
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 void Audio::loop() {
     if (!m_f_running) return;
+#ifdef YORADIO_STREAM_DIAG
+    { static uint32_t last = 0; static bool once = false; uint32_t now = millis();
+      uint32_t f = InBuff.bufferFilled(); if (f < g_sd.fillMin) g_sd.fillMin = f;
+      if (!once) { once = true; printf("[SDIAG] audioTask core=%u prio=4 loopTask core=%u prio=%u heap=%u psram=%u inbuf=%u\n", (unsigned)m_audioTaskCoreId, (unsigned)xPortGetCoreID(), (unsigned)uxTaskPriorityGet(NULL), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM), (unsigned)InBuff.getBufsize()); }
+      if (now - last >= 1000) { last = now;
+        uint32_t w = g_sd.waitUs + (g_sd.waitStart ? (uint32_t)(esp_timer_get_time() - g_sd.waitStart) : 0); if (g_sd.waitStart) g_sd.waitStart = esp_timer_get_time();
+        printf("[SDIAG] fill=%u min=%u free=%u rx=%uB/s slow=%u stream=%d dec=%u avg=%uus max=%uus loopWait=%u waitMs=%u errs=%u i2s=%u part=%u i2sMs=%u i2sMax=%uus underrun=%u heap=%u\n",
+          (unsigned)f, (unsigned)g_sd.fillMin, (unsigned)InBuff.freeSpace(), (unsigned)g_sd.rx, (unsigned)m_sdet.cnt_slow, (int)m_f_stream, (unsigned)g_sd.dec, (unsigned)(g_sd.dec ? g_sd.decUs / g_sd.dec : 0), (unsigned)g_sd.decMax,
+          (unsigned)g_sd.loopWait, (unsigned)(w / 1000), (unsigned)g_sd.errs, (unsigned)g_sd.i2sCalls, (unsigned)g_sd.i2sPart, (unsigned)(g_sd.i2sUs / 1000), (unsigned)g_sd.i2sMax, (unsigned)g_sdUnderrun, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+        g_sd.rx = g_sd.dec = g_sd.decUs = g_sd.decMax = g_sd.loopWait = g_sd.waitUs = g_sd.i2sCalls = g_sd.i2sPart = g_sd.i2sUs = g_sd.i2sMax = g_sd.errs = 0; g_sd.fillMin = 0xFFFFFFFF; g_sdUnderrun = 0; } }
+#endif
 
     if (m_f_firstLoop) {
         m_f_firstLoop = false;
@@ -4559,6 +4589,9 @@ void Audio::processWebStream() {
             if (m_f_metadata) m_metacount -= bytesAddedToBuffer;
             if (m_f_chunked) m_pwst.chunkSize -= bytesAddedToBuffer;
             InBuff.bytesWritten(bytesAddedToBuffer);
+#ifdef YORADIO_STREAM_DIAG
+            g_sd.rx += bytesAddedToBuffer;
+#endif
         }
     }
     if (!m_decoder && InBuff.bufferFilled() > 127) {
@@ -5998,7 +6031,17 @@ int Audio::sendBytes(uint8_t* data, size_t len) {
     if (!m_f_decode_ready) return 0;                                        // find sync first
 
     //-----------------------------------------------------------------
+#ifdef YORADIO_STREAM_DIAG
+    _sdT0 = esp_timer_get_time();
+#endif
     res = m_decoder->decode(data, &m_sbyt.bytesLeft, m_outBuff.get());
+#ifdef YORADIO_STREAM_DIAG
+    { uint32_t d = (uint32_t)(esp_timer_get_time() - _sdT0);
+      if (res == FlacDecoder::FLAC_DECODE_FRAMES_LOOP && m_codec == CODEC_FLAC) { g_sd.loopWait++; if (!g_sd.waitStart) g_sd.waitStart = _sdT0; }
+      else if (res >= 0 && res < 100) { g_sd.dec++; g_sd.decUs += d; if (d > g_sd.decMax) g_sd.decMax = d;
+        if (g_sd.waitStart) { g_sd.waitUs += (uint32_t)(_sdT0 - g_sd.waitStart); g_sd.waitStart = 0; } }
+      else if (res < 0) g_sd.errs++; }
+#endif
     bytesDecoded = len - m_sbyt.bytesLeft;
     //-----------------------------------------------------------------
 

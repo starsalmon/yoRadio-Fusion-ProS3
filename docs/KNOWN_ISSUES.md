@@ -7,7 +7,11 @@ issues, some are ESP32-S3 specific, and some come from this fork.
 
 - **AAC streams vary wildly in CPU cost** even at the same bitrate; some 128k AAC stations can peg the audio core and make UI interactions sluggish.
 - **AAC HLS stability**: some HLS AAC stations may stutter occasionally; this appears stream-dependent.
-- **FLAC playback**: currently very choppy.
+- **FLAC playback**: decode is now ~16 ms/frame (was 27 ms), but **high-bitrate FLAC still underruns** on long-RTT servers.
+  - Radio Paradise Ogg FLAC (44.1 kHz/16-bit, ~100–108 KB/s needed, ~256 ms RTT from here): the stock tuned lwip's **32 KB TCP window** caps throughput at ~125 KB/s in theory; measured ~90–98 KB/s, so the buffer drains on busy/loud passages (build 810df1e).
+  - Tried tuned lwip rebuilds with a **48 KB (643aa6c, RECVMBOX 32)** and **64 KB (367a0ce, RECVMBOX 64)** window: both **kill Wi-Fi within 2–10 s** of starting RP (errno 113, ping and web UI dead, app keeps running). Internal heap stayed ~49 KB, so not heap exhaustion.
+  - Suspected cause (unconfirmed): Wi-Fi driver RX buffer count (dynamic/static RX buffers, AMPDU RX window) too small for a >32 KB advertised window.
+  - Goal: a general fix for any high-bitrate stream, not an RP-specific workaround. Rolled back to 810df1e.
 
 ### Mode switching / stalls
 

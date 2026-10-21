@@ -96,10 +96,6 @@ bool FlacDecoder::isValid() {
 
 uint32_t FlacDecoder::readUint(uint8_t nBits, int32_t* bytesLeft) {
 
-    const uint32_t mask[33] = {0x00000000, 0x00000001, 0x00000003, 0x00000007, 0x0000000f, 0x0000001f, 0x0000003f, 0x0000007f, 0x000000ff, 0x000001ff, 0x000003ff,
-                               0x000007ff, 0x00000fff, 0x00001fff, 0x00003fff, 0x00007fff, 0x0000ffff, 0x0001ffff, 0x0003ffff, 0x0007ffff, 0x000fffff, 0x001fffff,
-                               0x003fffff, 0x007fffff, 0x00ffffff, 0x01ffffff, 0x03ffffff, 0x07ffffff, 0x0fffffff, 0x1fffffff, 0x3fffffff, 0x7fffffff, 0xffffffff};
-
     while (m_flacBitBufferLen < nBits) {
         uint8_t temp = *(m_flacInptr + m_rIndex);
         m_rIndex++;
@@ -128,7 +124,7 @@ uint32_t FlacDecoder::readUint(uint8_t nBits, int32_t* bytesLeft) {
     }
     m_flacBitBufferLen -= nBits;
     uint32_t result = m_flac_bitBuffer >> m_flacBitBufferLen;
-    if (nBits < 32) result &= mask[nBits];
+    if (nBits < 32) result &= (1u << nBits) - 1u;
     return result;
 }
 
@@ -1161,7 +1157,7 @@ int8_t FlacDecoder::decodeFixedPredictionSubframe(uint8_t predOrder, uint8_t sam
         FLAC_LOG_ERROR("Flac preorder too big: %i", predOrder);
         return FLAC_ERR;
     } // Error: preorder > 4"
-    restoreLinearPrediction(ch, 0);
+    restoreLinearPrediction(ch, 0, sampleDepth, 4); // fixed coefs |c| <= 6 fit in 4 bits signed
     return FLAC_NONE;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -1178,7 +1174,7 @@ int8_t FlacDecoder::decodeLinearPredictiveCodingSubframe(int32_t lpcOrder, int32
     }
     ret = decodeResiduals(lpcOrder, ch, bytesLeft);
     if (ret) return ret;
-    restoreLinearPrediction(ch, shift);
+    restoreLinearPrediction(ch, shift, sampleDepth, precision);
     return FLAC_NONE;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -1215,11 +1211,24 @@ int8_t FlacDecoder::decodeResiduals(uint8_t warmup, uint8_t ch, int32_t* bytesLe
             while (dst < dstEnd) {
                 if (m_f_bitReaderError) break;
 
+                // Rice unary prefix: count leading zero bits a whole bit-buffer at a time (bit-identical to reading 1 bit per call)
                 uint32_t val = 0;
-                // Inline Rice unary prefix
-                while (readUint(1, bytesLeft) == 0) {
-                    val++;
-                    if (m_f_bitReaderError) { break; }
+                for (;;) {
+                    if (m_flacBitBufferLen == 0) {
+                        readUint(8, bytesLeft); // refill one byte (handles the Ogg page boundary), then un-consume it
+                        if (m_f_bitReaderError) break;
+                        m_flacBitBufferLen += 8;
+                    }
+                    uint32_t bits = (uint32_t)(m_flac_bitBuffer & ((1ull << m_flacBitBufferLen) - 1));
+                    if (bits == 0) {
+                        val += m_flacBitBufferLen;
+                        m_flacBitBufferLen = 0;
+                        continue;
+                    }
+                    int32_t lz = __builtin_clz(bits) - (32 - m_flacBitBufferLen);
+                    val += lz;
+                    m_flacBitBufferLen -= lz + 1; // also consume the terminating 1 bit
+                    break;
                 }
 
                 // Append remainder bits
@@ -1250,12 +1259,29 @@ int8_t FlacDecoder::decodeResiduals(uint8_t warmup, uint8_t ch, int32_t* bytesLe
     return FLAC_NONE;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-void FlacDecoder::restoreLinearPrediction(uint8_t ch, uint8_t shift) {
-
-    for (int32_t i = coefs.size(); i < m_numOfOutSamples; i++) {
-        int64_t sum = 0;
-        for (int32_t j = 0; j < coefs.size(); j++) { sum += m_samplesBuffer[ch][i - 1 - j] * coefs[j]; }
-        m_samplesBuffer[ch][i] += (sum >> shift);
+void FlacDecoder::restoreLinearPrediction(uint8_t ch, uint8_t shift, int32_t sampleDepth, int32_t precision) {
+    // raw pointers (ps_ptr operator[] is bounds-checked per access); 32-bit accumulator when it provably cannot overflow
+    // (sampleDepth + coef precision + ceil(log2(order)) <= 32, the same rule libFLAC uses), else the original 64-bit sum.
+    const int32_t  order = (int32_t)coefs.size();
+    const int32_t* c = coefs.data();
+    int64_t*       s = m_samplesBuffer[ch].get();
+    const int32_t  n = m_numOfOutSamples;
+    int32_t        lg = 0;
+    while ((1 << lg) < order) lg++;
+    if (sampleDepth + precision + lg <= 32) {
+        for (int32_t i = order; i < n; i++) {
+            int32_t        sum = 0;
+            const int64_t* p = s + i - 1;
+            for (int32_t j = 0; j < order; j++) sum += (int32_t)p[-j] * c[j];
+            s[i] += (sum >> shift);
+        }
+    } else {
+        for (int32_t i = order; i < n; i++) {
+            int64_t        sum = 0;
+            const int64_t* p = s + i - 1;
+            for (int32_t j = 0; j < order; j++) sum += p[-j] * c[j];
+            s[i] += (sum >> shift);
+        }
     }
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————

@@ -1,3 +1,4 @@
+#include "../core/b3diag.h"
 
 /*****************************************************************************************************************************************************
     audio.cpp
@@ -1309,6 +1310,7 @@ bool Audio::httpRange(uint32_t seek, uint32_t length) {
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 bool Audio::connecttoFS(fs::FS& fs, const char* path, int32_t fileStartTime) {
+    B3MARK("connecttoFS");
 
     xSemaphoreTakeRecursive(mutex_playAudioData, 0.3 * configTICK_RATE_HZ);
     ps_ptr<char> c_path;
@@ -3495,6 +3497,7 @@ size_t Audio::process_m3u8_ID3_Header(uint8_t* packet) {
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 uint32_t Audio::stopSong() {
+    B3MARK("stopSong");
     uint8_t  maxWait = 0;
     uint32_t currTime = getAudioCurrentTime();
 
@@ -6543,6 +6546,7 @@ int32_t Audio::audioFileRead(uint8_t* buff, size_t len) {
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 int32_t Audio::audioFileSeek(uint32_t position, size_t len) {
+    B3MARK("audioFileSeek");
     int32_t res = -1;
 
     if (m_dataMode == AUDIO_LOCALFILE) {

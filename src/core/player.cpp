@@ -1,3 +1,4 @@
+#include "b3diag.h"
 #include "driver/gpio.h"
 #include "dsplog.h"
 // Modified ("vol_step") by Tamás Várai
@@ -663,6 +664,7 @@ bool Player::reclaimI2sBusFromCompanion() {
 }
 
 void Player::_play(uint16_t stationId) {
+    B3MARK("Player::_play");
   log_i("%s called, stationId=%d", __func__, stationId);
   _hasError=false;
   //setDefaults();
@@ -779,6 +781,7 @@ void Player::browseUrl(){
 #endif
 
 void Player::prev() {
+    B3MARK("Player::prev");
   uint16_t lastStation = config.lastStation();
   if (config.getMode() != PM_SDCARD) {
     // WEB + DLNA: always sequential wrap
@@ -798,6 +801,7 @@ void Player::prev() {
 }
 
 void Player::next() {
+    B3MARK("Player::next");
   uint16_t lastStation = config.lastStation();
   if (config.getMode() != PM_SDCARD) {
     // WEB + DLNA: always sequential wrap

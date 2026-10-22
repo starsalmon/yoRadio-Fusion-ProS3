@@ -383,6 +383,7 @@ bool podcasts_isIndexDue(uint32_t minIntervalSeconds) {
   uint32_t lastEpoch = config.store.lastPodcastIndexEpoch;
   if (lastEpoch == 0xFFFFFFFFu) lastEpoch = 0u;
   if (epochLooksValid(now) && epochLooksValid(lastEpoch)) {
+    if (lastEpoch > now) return true;  // stored time in the future: don't let it block
     return (now - lastEpoch) >= minIntervalSeconds;
   }
 
@@ -719,7 +720,7 @@ void podcasts_requestBuild(bool force) {
   if (!force) {
     // Throttle refreshes so switching into Podcast mode isn't always expensive.
     // (Forced builds bypass this gate.)
-    if (!podcasts_isIndexDue(3u * 60u * 60u)) return; // 3 hours
+    if (!podcasts_isIndexDue(5u * 60u)) return; // 5 minutes
 
     // Keep this low-impact: only refresh while you're in Podcast mode and not playing.
     if (config.getMode() != PM_PODCAST) return;

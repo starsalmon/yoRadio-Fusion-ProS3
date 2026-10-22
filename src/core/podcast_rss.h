@@ -20,6 +20,8 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
 
 namespace podrss {
 
@@ -126,7 +128,36 @@ struct Item {
   bool okTitle;
   bool okSubtitle;
   bool okUrl;
+  uint32_t pubEpoch;  // UTC seconds from <pubDate>, 0 if missing/unparsable
 };
+
+// RFC 822 date ("Wed, 22 Oct 2026 06:00:00 +0000" / "GMT" / "+1100") -> UTC epoch, 0 on failure.
+static inline uint32_t parseRfc822(const char* s) {
+  static const char* mon = "JanFebMarAprMayJunJulAugSepOctNovDec";
+  while (*s && !isdigit((unsigned char)*s)) s++;  // skip weekday
+  int d = 0, y = 0, hh = 0, mm = 0, ss = 0; char m[4] = {0};
+  if (sscanf(s, "%d %3s %d %d:%d:%d", &d, m, &y, &hh, &mm, &ss) < 5) return 0;
+  const char* mp = strstr(mon, m);
+  if (!mp || m[0] == 0) return 0;
+  int mo = (int)(mp - mon) / 3 + 1;
+  if (y < 100) y += 2000;
+  if (y < 1990 || y > 2100 || d < 1 || d > 31) return 0;
+  // days from civil (Howard Hinnant)
+  int yy = y - (mo <= 2); int era = yy / 400; int yoe = yy - era * 400;
+  int doy = (153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+  int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  long days = (long)era * 146097 + doe - 719468;
+  long t = days * 86400L + hh * 3600L + mm * 60L + ss;
+  // zone offset
+  const char* z = s; int sp = 0;
+  while (*z && sp < 4) { if (*z == ' ') sp++; z++; }
+  while (*z == ' ') z++;
+  if ((*z == '+' || *z == '-') && isdigit((unsigned char)z[1])) {
+    int v = atoi(z + 1); long off = (v / 100) * 3600L + (v % 100) * 60L;
+    t -= (*z == '+') ? off : -off;
+  }
+  return t > 0 ? (uint32_t)t : 0;
+}
 
 // Build the playlist label exactly like the old podcasts.cpp did.
 static inline void formatEpisodeLabel(const char* show, const Item& it, char* safeTitle, size_t safeSz) {
@@ -178,7 +209,7 @@ class Scanner {
 
  private:
   enum State : uint8_t { S_TEXT, S_TAG, S_CAPTURE, S_SKIP_CDATA, S_SKIP_COMMENT };
-  enum Cap : uint8_t { C_NONE, C_TITLE, C_SUBTITLE };
+  enum Cap : uint8_t { C_NONE, C_TITLE, C_SUBTITLE, C_PUBDATE };
   static const size_t TAG_MAX = 1024;
   static const size_t CAP_MAX = 1024;
 
@@ -196,12 +227,12 @@ class Scanner {
   size_t _closeLen = 0;
   size_t _matchPos = 0;
   uint8_t _skipMatch = 0;
-  bool _haveTitle, _haveSub, _haveEncSec, _haveEnc, _haveMedia;
+  bool _haveTitle, _haveSub, _haveDate, _haveEncSec, _haveEnc, _haveMedia;
   char _urlEncSec[320], _urlEnc[320], _urlMedia[320];
   Item _it;
 
   void clearItem() {
-    _haveTitle = _haveSub = _haveEncSec = _haveEnc = _haveMedia = false;
+    _haveTitle = _haveSub = _haveDate = _haveEncSec = _haveEnc = _haveMedia = false;
     _urlEncSec[0] = _urlEnc[0] = _urlMedia[0] = '\0';
     memset(&_it, 0, sizeof(_it));
   }
@@ -256,6 +287,8 @@ class Scanner {
     } else if (_cap == C_SUBTITLE) {
       finishText(_capBuf, _it.subtitle, sizeof(_it.subtitle));
       _it.okSubtitle = _it.subtitle[0] != '\0';
+    } else if (_cap == C_PUBDATE) {
+      _it.pubEpoch = parseRfc822(_capBuf);
     }
     _cap = C_NONE; _capLen = 0; _matchPos = 0;
     _st = S_TEXT;
@@ -287,6 +320,7 @@ class Scanner {
     if (strcmp(_tag, "/item") == 0) { endItem(); return; }
     if (!_haveTitle && strcmp(_tag, "title") == 0) { _haveTitle = true; startCapture(C_TITLE, "</title>"); return; }
     if (!_haveSub && strcmp(_tag, "itunes:subtitle") == 0) { _haveSub = true; startCapture(C_SUBTITLE, "</itunes:subtitle>"); return; }
+    if (!_haveDate && strcmp(_tag, "pubDate") == 0) { _haveDate = true; startCapture(C_PUBDATE, "</pubDate>"); return; }
     // Prefix matches, like the old indexOf("<" + tag).
     if (!_haveEncSec && strncmp(_tag, "ppg:enclosureSecure", 19) == 0) { _haveEncSec = true; urlFromTag(_tag, _urlEncSec, sizeof(_urlEncSec)); return; }
     if (!_haveEnc && strncmp(_tag, "enclosure", 9) == 0) { _haveEnc = true; urlFromTag(_tag, _urlEnc, sizeof(_urlEnc)); return; }

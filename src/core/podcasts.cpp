@@ -148,7 +148,8 @@ static bool resolveRedirectUrl(const String& baseUrl, const String& location, St
 }
 
 static int httpGetWithRedirects(HTTPClient& http, String& url, uint8_t maxHops,
-                                const char* ifNoneMatch = nullptr, const char* ifModifiedSince = nullptr) {
+                                const char* ifNoneMatch = nullptr, const char* ifModifiedSince = nullptr,
+                                String* respEtag = nullptr, String* respLm = nullptr) {
   for (uint8_t hop = 0; hop <= maxHops; hop++) {
     if (shouldAbortBuild()) return -3;
     if (!httpBeginForUrl(http, url.c_str())) return -1;
@@ -181,6 +182,10 @@ static int httpGetWithRedirects(HTTPClient& http, String& url, uint8_t maxHops,
       continue;
     }
 
+    // Keep the 304's validators so the caller can check them (some servers send 304 on
+    // If-Modified-Since alone and ignore If-None-Match).
+    if (respEtag) *respEtag = http.header("ETag");
+    if (respLm) *respLm = http.header("Last-Modified");
     http.end();
     return code;
   }
@@ -210,34 +215,59 @@ static uint16_t countPodcastSources() {
 #define POD_RX_CHUNK 1536
 #endif
 
+// Per-feed top-N by pubDate. Feeds are normally newest-first, so we can stop after
+// `lim` items once they are seen in non-increasing date order; if a feed is oldest-first
+// or unordered (or undated items are mixed with dated ones) we read the whole feed.
+struct PodEp { uint32_t epoch; uint32_t seq; char label[520]; char url[320]; };
+
 struct FeedCtx {
-  File* out;
-  File* cache;   // per-feed cache being written (may be null)
   const char* show;
   uint16_t lim;
-  uint16_t got;
-  uint16_t items;
+  uint16_t got;        // items accepted (title+url)
+  uint16_t kept;       // entries in eps[]
+  uint32_t prevEpoch;
+  bool ordered;        // so far every dated item is <= the previous one
+  bool anyUndated;
+  PodEp* eps;          // lim entries
 };
+
+static bool epBetter(const PodEp& a, const PodEp& b) {  // a should list before b
+  if (a.epoch != b.epoch) return a.epoch > b.epoch;
+  return a.seq < b.seq;
+}
 
 static bool onItem(const podrss::Item& it, void* user) {
   FeedCtx* c = (FeedCtx*)user;
-  c->items++;
-  char safeTitle[520];
-  podrss::formatEpisodeLabel(c->show, it, safeTitle, sizeof(safeTitle));
-  c->out->print(safeTitle);
-  c->out->print('\t');
-  c->out->print(it.url);
-  c->out->print('\t');
-  c->out->println('0');
-  if (c->cache && *c->cache) {
-    c->cache->print(safeTitle);
-    c->cache->print('\t');
-    c->cache->print(it.url);
-    c->cache->print('\t');
-    c->cache->println('0');
+  const uint32_t e = it.pubEpoch;
+  if (e == 0) c->anyUndated = true;
+  else {
+    if (c->got > 0 && c->prevEpoch != 0 && e > c->prevEpoch) c->ordered = false;
+    c->prevEpoch = e;
   }
+  PodEp cand;
+  cand.epoch = e;
+  cand.seq = c->got;
   c->got++;
-  return c->got < c->lim;
+  // Insert into top-lim (sorted newest first).
+  int pos = c->kept;
+  if (c->kept == c->lim) {
+    if (!epBetter(cand, c->eps[c->lim - 1])) goto check;
+    pos = c->lim - 1;
+  } else {
+    c->kept++;
+  }
+  while (pos > 0 && epBetter(cand, c->eps[pos - 1])) { c->eps[pos] = c->eps[pos - 1]; pos--; }
+  c->eps[pos].epoch = cand.epoch;
+  c->eps[pos].seq = cand.seq;
+  podrss::formatEpisodeLabel(c->show, it, c->eps[pos].label, sizeof(c->eps[pos].label));
+  strlcpy(c->eps[pos].url, it.url, sizeof(c->eps[pos].url));
+check:
+  if (c->got < c->lim) return true;
+  // Early stop is safe only for a newest-first feed: all dated, non-increasing.
+  // Undated feeds keep the old behaviour (first `lim` in document order).
+  if (c->ordered && !c->anyUndated) return false;
+  if (c->prevEpoch == 0 && c->anyUndated) return false;  // no dates at all
+  return true;
 }
 
 // Scanner (~4 KB) + RX chunk live in PSRAM when available, only during a build.
@@ -378,6 +408,7 @@ bool podcasts_isIndexDue(uint32_t minIntervalSeconds) {
   uint32_t lastEpoch = config.store.lastPodcastIndexEpoch;
   if (lastEpoch == 0xFFFFFFFFu) lastEpoch = 0u;
   if (epochLooksValid(now) && epochLooksValid(lastEpoch)) {
+    if (lastEpoch > now) return true;  // stored time in the future: don't let it block
     return (now - lastEpoch) >= minIntervalSeconds;
   }
 
@@ -475,18 +506,10 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       Serial.printf("[POD] source %u/%u\n", (unsigned)progressCur, (unsigned)totalSources);
     }
 
-    const uint32_t cid = feedHash(show, feedUrl);
-    if (s_cacheIdCount < POD_MAX_SOURCES) s_cacheIds[s_cacheIdCount++] = cid;
-    char cPath[40], cTmp[40];
-    cachePath(cid, "tsv", cPath, sizeof(cPath));
-    cachePath(cid, "tmp", cTmp, sizeof(cTmp));
-    char etag[128], lastMod[64];
-    const bool haveCache = cacheReadMeta(cPath, lim, etag, sizeof(etag), lastMod, sizeof(lastMod));
-
     HTTPClient http;
     String effectiveUrl(feedUrl);
-    const int code = haveCache ? httpGetWithRedirects(http, effectiveUrl, 5, etag, lastMod)
-                               : httpGetWithRedirects(http, effectiveUrl, 5);
+    // Always a full, unconditional GET (no If-None-Match / If-Modified-Since).
+    const int code = httpGetWithRedirects(http, effectiveUrl, 5);
     if (code == -3) {  // cancelled during connect/redirects
       out.close();
       f.close();
@@ -495,55 +518,28 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       freeBuffers();
       return 0;
     }
-    if (code == 304 && haveCache) {
-      const uint32_t n = cacheCopyTo(cPath, out);
-      Serial.printf("[POD] unchanged (304), %lu cached episodes\n", (unsigned long)n);
-      written += n;
-      delay(0);
-      continue;
-    }
     if (code <= 0 || code >= 300) {
       Serial.printf("[POD] feed HTTP %d for %s\n", code, effectiveUrl.c_str());
-      if (haveCache) {
-        const uint32_t n = cacheCopyTo(cPath, out);
-        Serial.printf("[POD] using %lu cached episodes\n", (unsigned long)n);
-        written += n;
-      }
       delay(0);
       continue;
     }
 
     WiFiClient* s = http.getStreamPtr();
-    if (!s) {
-      http.end();
-      if (haveCache) written += cacheCopyTo(cPath, out);
-      continue;
-    }
+    if (!s) { http.end(); continue; }
 
-    // New cache file for this feed (written alongside the playlist, swapped in on success).
-    File cache;
-    if (spiffsHasRoom()) {
-      SPIFFS.remove(cTmp);
-      cache = SPIFFS.open(cTmp, "w");
-      if (cache) {
-        char hdr[256];
-        String et = http.header("ETag");
-        String lmv = http.header("Last-Modified");
-        char etS[128], lmS[64];
-        sanitizeTsvField(et.c_str(), etS, sizeof(etS));
-        sanitizeTsvField(lmv.c_str(), lmS, sizeof(lmS));
-        snprintf(hdr, sizeof(hdr), "#pc1\t%u\t%s\t%s", (unsigned)lim, etS, lmS);
-        cache.println(hdr);
-      }
-    }
+    const uint16_t elim = lim ? lim : 1;
+    PodEp* eps = (PodEp*)podAlloc(sizeof(PodEp) * elim);
+    if (!eps) { http.end(); Serial.println("[POD] OOM for episode buffer"); continue; }
 
     FeedCtx ctx;
-    ctx.out = &out;
-    ctx.cache = &cache;
     ctx.show = show;
-    ctx.lim = lim;
+    ctx.lim = elim;
     ctx.got = 0;
-    ctx.items = 0;
+    ctx.kept = 0;
+    ctx.prevEpoch = 0;
+    ctx.ordered = true;
+    ctx.anyUndated = false;
+    ctx.eps = eps;
     sc->reset(onItem, &ctx);
 
     uint32_t lastRxMs = millis();
@@ -564,11 +560,9 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       sc->feed((const char*)rx, (size_t)n);
       delay(0);
     }
-
     http.end();
-    if (cache) cache.close();
     if (aborted) {
-      SPIFFS.remove(cTmp);
+      free(eps);
       out.close();
       f.close();
       SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
@@ -576,21 +570,18 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       freeBuffers();
       return 0;
     }
-    if (ctx.got > 0) {
-      written += ctx.got;
-      if (SPIFFS.exists(cTmp)) {
-        SPIFFS.remove(cPath);
-        if (!SPIFFS.rename(cTmp, cPath)) SPIFFS.remove(cTmp);
-      }
-    } else {
-      SPIFFS.remove(cTmp);
-      Serial.printf("[POD] no <item> parsed for %s (%s)\n", show, effectiveUrl.c_str());
-      if (haveCache) {
-        const uint32_t n = cacheCopyTo(cPath, out);
-        Serial.printf("[POD] using %lu cached episodes\n", (unsigned long)n);
-        written += n;
-      }
+    for (uint16_t i = 0; i < ctx.kept; i++) {
+      out.print(eps[i].label);
+      out.print('\t');
+      out.print(eps[i].url);
+      out.print('\t');
+      out.println('0');
     }
+    Serial.printf("[POD] %s: %u items read, %u kept, %s\n", show, (unsigned)ctx.got, (unsigned)ctx.kept,
+                  sc->stopped() ? "newest-first, stopped early" : "read whole feed");
+    if (ctx.kept == 0) Serial.printf("[POD] no <item> parsed for %s (%s)\n", show, effectiveUrl.c_str());
+    written += ctx.kept;
+    free(eps);
     delay(0);
   }
 
@@ -598,8 +589,8 @@ uint32_t podcasts_buildEpisodesPlaylist() {
   out.close();
   f.close();
   freeBuffers();
-  // Full pass finished (not cancelled): drop caches of feeds no longer listed.
-  if (s_cacheIdCount < POD_MAX_SOURCES) cachePruneUnused();
+  // Conditional-fetch caches are no longer used: delete any left on SPIFFS.
+  cachePruneUnused();
 
   if (written > 0) {
     // Swap without a "missing file" window (avoids UI briefly seeing playlistLength()==0).
@@ -688,7 +679,7 @@ void podcasts_requestBuild(bool force) {
   if (!force) {
     // Throttle refreshes so switching into Podcast mode isn't always expensive.
     // (Forced builds bypass this gate.)
-    if (!podcasts_isIndexDue(3u * 60u * 60u)) return; // 3 hours
+    if (!podcasts_isIndexDue(5u * 60u)) return; // 5 minutes
 
     // Keep this low-impact: only refresh while you're in Podcast mode and not playing.
     if (config.getMode() != PM_PODCAST) return;

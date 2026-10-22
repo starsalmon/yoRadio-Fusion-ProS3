@@ -523,7 +523,7 @@ void Config::changeMode(int newmode) { // DLNA mod
     const bool willIndexPodcasts =
         (PODCAST_INDEX_ENABLE &&
          oldMode != PM_PODCAST && newmode == PM_PODCAST &&
-         podcasts_isIndexDue(3u * 60u * 60u)); // 3 hours
+         podcasts_isIndexDue(5u * 60u)); // 5 minutes
 
     // If we are leaving Podcast mode, cancel any in-progress RSS build immediately so the
     // UI can switch back to radio/SD without waiting for a long network parse to finish.
@@ -928,7 +928,7 @@ void Config::initPlaylistMode() {
     if (getMode() == PM_PODCAST) {
       // Throttle expensive RSS indexing. Within the interval we just use the
       // cached episode list and index file.
-      bool doIndex = PODCAST_INDEX_ENABLE && podcasts_isIndexDue(3u * 60u * 60u); // 3 hours
+      bool doIndex = PODCAST_INDEX_ENABLE && podcasts_isIndexDue(5u * 60u); // 5 minutes
       // Boot: controls/netserver aren't running yet, so a blocking refresh can't be
       // cancelled. If a cached list exists, use it; the refresh happens on the next
       // entry into Podcast mode.

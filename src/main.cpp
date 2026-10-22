@@ -27,6 +27,7 @@
 #include "battery/battery.h"
 #include "core/podcast_resume.h"
 #include "core/hangdiag.h"
+#include "core/webgain.h"
 
 #ifdef USE_NEXTION
 #include "displays/nextion.h"
@@ -138,6 +139,7 @@ void setup() {
   hangdiag_boot();
 #endif
     EEPROM.begin(EEPROM_SIZE);
+  webgain_init();
 #if IR_PIN != 255
     irQueue = xQueueCreate(4, sizeof(IRCommand));
     config.eepromRead(EEPROM_START_IR, config.ircodes);

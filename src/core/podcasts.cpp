@@ -148,7 +148,8 @@ static bool resolveRedirectUrl(const String& baseUrl, const String& location, St
 }
 
 static int httpGetWithRedirects(HTTPClient& http, String& url, uint8_t maxHops,
-                                const char* ifNoneMatch = nullptr, const char* ifModifiedSince = nullptr) {
+                                const char* ifNoneMatch = nullptr, const char* ifModifiedSince = nullptr,
+                                String* respEtag = nullptr, String* respLm = nullptr) {
   for (uint8_t hop = 0; hop <= maxHops; hop++) {
     if (shouldAbortBuild()) return -3;
     if (!httpBeginForUrl(http, url.c_str())) return -1;
@@ -181,6 +182,10 @@ static int httpGetWithRedirects(HTTPClient& http, String& url, uint8_t maxHops,
       continue;
     }
 
+    // Keep the 304's validators so the caller can check them (some servers send 304 on
+    // If-Modified-Since alone and ignore If-None-Match).
+    if (respEtag) *respEtag = http.header("ETag");
+    if (respLm) *respLm = http.header("Last-Modified");
     http.end();
     return code;
   }
@@ -485,8 +490,24 @@ uint32_t podcasts_buildEpisodesPlaylist() {
 
     HTTPClient http;
     String effectiveUrl(feedUrl);
-    const int code = haveCache ? httpGetWithRedirects(http, effectiveUrl, 5, etag, lastMod)
-                               : httpGetWithRedirects(http, effectiveUrl, 5);
+    String rEtag, rLm;
+    int code = haveCache ? httpGetWithRedirects(http, effectiveUrl, 5, etag, lastMod, &rEtag, &rLm)
+                         : httpGetWithRedirects(http, effectiveUrl, 5);
+    if (code == 304) {
+      // Only trust a 304 whose validators match what we stored for this feed; otherwise
+      // (or a 304 we never asked for) refetch unconditionally so a 200 is parsed.
+      char rE[128], rL[64];
+      sanitizeTsvField(rEtag.c_str(), rE, sizeof(rE));
+      sanitizeTsvField(rLm.c_str(), rL, sizeof(rL));
+      bool ok = haveCache && (etag[0] || lastMod[0]);
+      if (ok && etag[0]) ok = (rE[0] == '\0') || strcmp(rE, etag) == 0;
+      if (ok && !etag[0] && rL[0]) ok = strcmp(rL, lastMod) == 0;
+      if (!ok) {
+        Serial.printf("[POD] untrusted 304 (etag '%s' vs '%s'), refetching\n", rE, etag);
+        effectiveUrl = feedUrl;
+        code = httpGetWithRedirects(http, effectiveUrl, 5);
+      }
+    }
     if (code == -3) {  // cancelled during connect/redirects
       out.close();
       f.close();
@@ -495,7 +516,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       freeBuffers();
       return 0;
     }
-    if (code == 304 && haveCache) {
+    if (code == 304) {
       const uint32_t n = cacheCopyTo(cPath, out);
       Serial.printf("[POD] unchanged (304), %lu cached episodes\n", (unsigned long)n);
       written += n;
@@ -532,10 +553,14 @@ uint32_t podcasts_buildEpisodesPlaylist() {
         char etS[128], lmS[64];
         sanitizeTsvField(et.c_str(), etS, sizeof(etS));
         sanitizeTsvField(lmv.c_str(), lmS, sizeof(lmS));
+        // Over-long validators would be truncated and never match: don't store them.
+        if (et.length() >= sizeof(etS)) etS[0] = '\0';
+        if (lmv.length() >= sizeof(lmS)) lmS[0] = '\0';
         snprintf(hdr, sizeof(hdr), "#pc1\t%u\t%s\t%s", (unsigned)lim, etS, lmS);
         cache.println(hdr);
       }
     }
+    if (!cache) SPIFFS.remove(cPath);  // can't refresh the cache: drop stale validators
 
     FeedCtx ctx;
     ctx.out = &out;
@@ -548,12 +573,13 @@ uint32_t podcasts_buildEpisodesPlaylist() {
 
     uint32_t lastRxMs = millis();
     bool aborted = false;
+    bool timedOut = false;
     // Chunked reads + streaming scanner: each byte is touched once, no String churn.
     while (!sc->stopped() && (s->connected() || s->available())) {
       if (shouldAbortBuild()) { aborted = true; break; }
       const int avail = s->available();
       if (avail <= 0) {
-        if ((uint32_t)(millis() - lastRxMs) > 4000u) break;
+        if ((uint32_t)(millis() - lastRxMs) > 4000u) { timedOut = true; break; }
         delay(1);
         continue;
       }
@@ -578,7 +604,12 @@ uint32_t podcasts_buildEpisodesPlaylist() {
     }
     if (ctx.got > 0) {
       written += ctx.got;
-      if (SPIFFS.exists(cTmp)) {
+      // Save validators only after a complete parse (limit reached or clean end of body).
+      if (timedOut && !sc->stopped()) {
+        SPIFFS.remove(cTmp);
+        SPIFFS.remove(cPath);
+        Serial.printf("[POD] partial read for %s, cache not saved\n", show);
+      } else if (SPIFFS.exists(cTmp)) {
         SPIFFS.remove(cPath);
         if (!SPIFFS.rename(cTmp, cPath)) SPIFFS.remove(cTmp);
       }

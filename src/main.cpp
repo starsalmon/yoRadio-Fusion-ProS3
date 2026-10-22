@@ -26,6 +26,7 @@
 #include "esp_system.h"
 #include "battery/battery.h"
 #include "core/podcast_resume.h"
+#include "core/hangdiag.h"
 
 #ifdef USE_NEXTION
 #include "displays/nextion.h"
@@ -133,6 +134,9 @@ void setup() {
   esp_register_shutdown_handler(yoradio_boost_off_on_restart);   // ESP.restart()/OTA
 #endif
   Serial.begin(115200);
+#ifdef YORADIO_HANG_DIAG
+  hangdiag_boot();
+#endif
     EEPROM.begin(EEPROM_SIZE);
 #if IR_PIN != 255
     irQueue = xQueueCreate(4, sizeof(IRCommand));
@@ -246,6 +250,9 @@ void setup() {
 }
 
 void loop() {
+#ifdef YORADIO_HANG_DIAG
+  hangdiag_hb("loop");
+#endif
   timekeeper.loop1();
   telnet.loop();
   btcompanion_loop();

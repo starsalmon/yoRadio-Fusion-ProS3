@@ -1,4 +1,5 @@
 // Modified in v0.9.710 ("vol_step") by Tamás Várai
+#include "hangdiag.h"
 #include "Arduino.h"
 #include "options.h"
 #include "dsplog.h"
@@ -206,7 +207,13 @@ static void loopDspTask(void * pvParameters){
     static uint32_t s_maxDispUs  = 0;
     static uint32_t s_maxNetUs   = 0;
   #endif
+#ifdef YORADIO_HANG_DIAG
+  hangdiag_dspTaskRegister();
+#endif
   while(true){
+#ifdef YORADIO_HANG_DIAG
+    hangdiag_dspFeed();
+#endif
     uint32_t dispUs = 0;
     uint32_t netUs  = 0;
   #ifndef DUMMYDISPLAY

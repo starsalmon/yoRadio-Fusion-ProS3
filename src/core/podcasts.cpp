@@ -534,7 +534,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       freeBuffers();
       return 0;
     }
-    Serial.printf("[POD] feed HTTP %d size=%d url=%s heap=%u\n", code, http.getSize(), effectiveUrl.c_str(), (unsigned)ESP.getFreeHeap());
+    Serial.printf("[POD] feed HTTP %d size=%d url=%s heap=%u maxIntBlk=%u\n", code, http.getSize(), effectiveUrl.c_str(), (unsigned)ESP.getFreeHeap(), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
     if (code <= 0 || code >= 300) {
       Serial.printf("[POD] feed HTTP %d for %s\n", code, effectiveUrl.c_str());
       delay(0);

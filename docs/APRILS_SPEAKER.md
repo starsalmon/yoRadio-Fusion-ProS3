@@ -11,9 +11,10 @@ not final, so **every pin below is PROPOSED** until it is wired and bench-tested
 | Part | Detail |
 |------|--------|
 | MCU | Unexpected Maker FeatherS3: ESP32-S3, 16 MB QSPI flash, 8 MB QSPI PSRAM, native USB (PlatformIO board `um_feathers3`) |
-| HAT | Pimoroni Pirate Audio 3W Amp: ST7789 240x240, 2x MAX98357A I2S DAC+amp (no MCLK; amp enable BCM25 pin 22 must be high - TBD), buttons A/B/X/Y |
+| HAT | Pimoroni Pirate Audio 3W Amp: ST7789 240x240, 2x MAX98357A I2S DAC+amp (no MCLK; amp enable BCM25 pin 22, driven by FeatherS3 IO44 `AMP_EN` - verify pin 22 before any 5 V), buttons A/B/X/Y |
 | microSD | Separate 3.3 V breakout on the display's SPI bus (SD park design, as on the ProS3) |
-| BT companion | Node ESP32 (NodeMCU-32S), proposed pins below, not wired |
+| BT companion | Node ESP32 (NodeMCU-32S), pins assigned below (not yet bench-tested) |
+| 5 V | Pololu S13V10F5 (#4083) 5 V 1 A buck-boost from FeatherS3 BAT, feeds HAT pins 2/4 (and, proposed, the Node 5V) |
 | Battery | LiPo on the FeatherS3 JST; VBAT sense IO2, VBUS sense IO34 (`src/battery/battery_adc.cpp`) |
 
 FeatherS3 references (Unexpected Maker):
@@ -51,33 +52,38 @@ the same as the ProS3 (app0 at 0x10000, 5 MB per OTA slot). The current image us
 | Button Y | 18 (24); older HATs 38 (20) | **11** | `BTN_MODE` | RTC GPIO; deep-sleep wake (`WAKE_PIN1`) |
 | NeoPixel (onboard) | | 40 | `BUILTIN_NEOPIXEL_PIN` | fixed; needs LDO2 on |
 | Battery | | 2 (VBAT), 34 (VBUS) | `BATTERY_ADC_PIN`, `CHARGE_SENSE_PIN` | fixed |
-| BT UART TX -> Node | | **43** (TX) | `BT_COMPANION_UART_TX` | UART0 pads, free with native USB; same as the ProS3 |
-| BT UART RX <- Node | | **44** (RX) | `BT_COMPANION_UART_RX` | |
-| BT wake -> Node | | **7** | `BT_COMPANION_WAKE_PIN` | free GPIO |
+| BT UART1 TX -> Node RX2 (16) | | **15** | `BT_COMPANION_UART_TX` | vertical STEMMA QT (LDO2 pads; logic only, do not power the Node from it) |
+| BT UART1 RX <- Node TX2 (17) | | **16** | `BT_COMPANION_UART_RX` | also the Node-flash bridge |
+| BT wake -> Node 33 | | **7** | `BT_COMPANION_WAKE_PIN` | free GPIO |
+| Node EN (reset) | | **9** | `BT_COMPANION_NODE_EN_PIN` | open-drain, low = reset |
+| Node IO0 (boot) | | **8** | `BT_COMPANION_NODE_BOOT_PIN` | open-drain, low only to enter the ROM loader |
+| Amp enable, HAT pin 22 (BCM25) | 22 (25) | **44** | `AMP_EN_PIN` = `MUTE_PIN` (`MUTE_VAL LOW`) | low when stopped / asleep, on during BT receive; MOSFET optional |
 
-Avoided: 0 and 3 (strapping), 19/20 (USB), 39/40 (LDO2/RGB), 4 (light sensor), 13 (LED). Spare:
-8/9 (STEMMA QT, LDO1) and 15/16 (second STEMMA, LDO2), e.g. for a future `MUTE_PIN`.
+Avoided: 0 and 3 (strapping), 19/20 (USB), 39/40 (LDO2/RGB), 4 (light sensor), 13 (LED). Spare: 43
+(carries the ROM boot log at reset, so it is not used for anything the Node listens to).
 
 - TFT and SD share the default SPI bus at 20 MHz / 10 MHz (`SD_SHARE_TFT_SPI 1`, no `DSP_HSPI`), the
   same code path as the ProS3; `yoradio_user.cpp` enables LDO2 and drives `SDC_CS`/`TFT_CS` HIGH early.
 - Buttons are active low. The HAT has pull-ups **and** the firmware enables the internal pull-ups.
-- At reset the ROM boot log goes out on IO43 (the companion's RX), as on the ProS3; the companion
-  must tolerate those non-protocol bytes (same situation as the ProS3 + HiGrow).
+- The companion link is on UART1 (15/16), so the S3 ROM boot log on IO43 no longer reaches the Node.
 
-### Power (proposed, needs a decision)
+### Power
 
 | Pi HAT pin | Signal | FeatherS3 |
 |------------|--------|-----------|
 | **17** | 3V3, **feeds the display logic** | 3V3 (LDO1) |
 | 1 | 3V3 | 3V3 (LDO1) |
-| 2 / 4 | 5V (amp rail) | **open question**: Feather `5V` is USB only |
+| 2 / 4 | 5V (amp rail) | Pololu S13V10F5 VOUT (VIN = FeatherS3 BAT) |
 | 6, 9, 14, 20, 25, 30, 34, 39 | GND | GND |
 
 - Feed the HAT's 3V3 from **LDO1** (always on). LDO2 turns off in deep sleep, so HAT pull-ups on LDO2
   would float the buttons and could cause false wakes.
 - The SD breakout can go on **LDO2** (3V3_2), like the ProS3, which keeps the card's inrush off the
   MCU rail.
-- On battery the amp needs 5 V: add a boost converter (or run the amp from VBAT if the HAT allows it).
+- Pololu S13V10F5: 1 A max (S13V15F5/S13V20F5 are pin-compatible upgrades); no enable pin, 10-20 mA idle
+  drain from the battery even in deep sleep - add a switch if needed.
+- Pin 22: Pimoroni documents it as the 3.3 V amp ENABLE input. Verify before putting 5 V on it; if it
+  is really a power pin, switch the 5 V with a MOSFET from IO44.
 - Series resistors (~100 R) on the SD lines, as on the ProS3 PCB, are recommended.
 - Backlight on but blank panel usually means pin 17 is not tied to 3V3.
 
@@ -100,25 +106,40 @@ MQTT; the on-screen battery footer is hidden (`HIDE_BAT 1`, no 240x240 layout ye
 A/B volume direction is swapped by `BTN_VOLUME_INVERT_LR`, the playlist direction by
 `BTN_STATIONS_INVERT_LR`.
 
-### BT companion (proposed, not wired)
-
-The BT code is compiled in but **inert**: `BT_COMPANION_PINS_TODO 1` keeps it off every pin, redirects
-Bluetooth mode to Web, and ignores requests to switch output to BT (X double-press, MQTT
-`output_device`).
+### BT companion
 
 | Signal | FeatherS3 | Node ESP32 (`nodemcu32s_bt_companion`) |
 |--------|-----------|----------------------------------------|
-| UART S3 TX -> Node RX | 43 | 16 |
-| UART S3 RX <- Node TX | 44 | 17 |
+| UART1 S3 TX -> Node RX2 | 15 | 16 |
+| UART1 S3 RX <- Node TX2 | 16 | 17 |
 | Wake S3 -> Node (EXT0, active high) | 7 | 33 |
+| Reset (open-drain) | 9 | EN |
+| Boot select (open-drain) | 8 | IO0 |
 | I2S BCK | 17 (shared with DAC) | 26 |
 | I2S LRCK | 18 (shared) | 25 |
 | I2S data | 14 (shared) | 22 |
 | GND | GND | GND |
 
-Receive name: "April's Speaker". To enable: wire it, check the pins in `boards/aprils_speaker.h`,
-set `BT_COMPANION_PINS_TODO 0`, set the Node pins in the companion's `include/options.h` if they
-differ, then build both. Protocol: [BT_COMPANION.md](BT_COMPANION.md).
+Receive name: "April's Speaker". Only one side drives the shared I2S lines; the Node sets them to
+high-impedance inputs first thing in `setup()` and whenever it is not the active source.
+Protocol: [BT_COMPANION.md](BT_COMPANION.md). Wiring PDF: [aprils-speaker-wiring.pdf](aprils-speaker-wiring.pdf).
+
+### Flashing the Node through the FeatherS3
+
+The S3 can act as a USB <-> UART bridge to the Node's ROM loader (`src/core/node_flash.cpp`):
+
+```bash
+curl "http://<speaker-ip>/set?nodeflash=1"      # or type: nodeflash 1  on the USB console
+# S3 reboots into the bridge (no WiFi/audio), holds Node IO0 low and pulses EN
+esptool --chip esp32 --port /dev/cu.usbmodemXXXX --before no-reset --after no-reset -b 460800 \
+  write-flash 0x10000 .pio/build/nodemcu32s_bt_companion/firmware.bin
+```
+
+- `--before no-reset` is required: esptool's DTR/RTS reset would reset the FeatherS3, not the Node.
+  (esptool 4.x spelling: `--before no_reset --after no_reset write_flash`.)
+- Baud changes are followed automatically (the bridge watches esptool's CHANGE_BAUDRATE command).
+- 30 s after the last traffic (5 min if nothing connects) the S3 resets the Node into its app and
+  restarts normally. If the S3 is reset mid-session it releases the Node into its app on the next boot.
 
 ### Build / upload
 

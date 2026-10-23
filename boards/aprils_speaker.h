@@ -60,7 +60,7 @@
 #define BRIGHTNESS_PIN 10       /* backlight PWM */
 #define I2S_BCLK 17
 #define I2S_LRC  18
-#define I2S_DOUT 14             /* no MCLK needed (MAX98357A). HAT amp enable = BCM25 pin 22, active high: TBD, no GPIO assigned */
+#define I2S_DOUT 14             /* no MCLK needed (MAX98357A) */
 
 /* Pirate Audio buttons (active low; HAT pull-ups). All on RTC GPIOs so any can wake from deep sleep. */
 #define BTN_LEFT    5           /* HAT A */
@@ -81,18 +81,20 @@
 #define SD_SHARE_TFT_SPI 1
 #define SD_FORCE_REINDEX 0   /* set 1 once to force a full card rescan */
 
-/* BT companion (Node ESP32 / NodeMCU-32S running BT-A2DP-Source-HiGrow env nodemcu32s_bt_companion):
- * A2DP receive (phone -> speaker, I2S bus handover like the ProS3) and send (speaker -> BT headphones).
- * UART on the FeatherS3's UART0 pads 43/44 (free: Serial is native USB), same pins as the ProS3.
- * Still INERT: BT_COMPANION_PINS_TODO keeps it off every pin and redirects Bluetooth mode to web.
- * TODO(Cain): once the companion is wired as below, set BT_COMPANION_PINS_TODO 0. */
+/* BT companion (NodeMCU-32S 38-pin running BT-A2DP-Source-HiGrow env nodemcu32s_bt_companion):
+ * A2DP receive (phone -> speaker, I2S bus handover like the ProS3) and send (speaker -> BT amp).
+ * Pins chosen 2026-10-24. UART1 on GPIO15/16 (the vertical STEMMA QT pads), NOT the UART0 pads 43/44:
+ * the S3 ROM prints its boot log on 43, which would spray the Node's RX (and glitch EN/IO0).
+ * Node EN / IO0 are open-drain (driven low or released) so the S3 can reset the Node and flash it
+ * through the FeatherS3 USB port (src/core/node_flash.cpp, /set?nodeflash=1). */
 #define BT_COMPANION_ENABLE 1
-#define BT_COMPANION_PINS_TODO 1
 #define BT_COMPANION_UART_PORT 1
 #define BT_COMPANION_UART_BAUD 115200
-#define BT_COMPANION_UART_TX   43   /* -> Node ESP32 RX GPIO16 (proposed) */
-#define BT_COMPANION_UART_RX   44   /* <- Node ESP32 TX GPIO17 (proposed) */
-#define BT_COMPANION_WAKE_PIN  7    /* -> Node ESP32 WAKE GPIO33 (EXT0, active high) (proposed) */
+#define BT_COMPANION_UART_TX   15   /* -> Node RX2 GPIO16 */
+#define BT_COMPANION_UART_RX   16   /* <- Node TX2 GPIO17 */
+#define BT_COMPANION_WAKE_PIN  7    /* -> Node WAKE GPIO33 (EXT0, active high) */
+#define BT_COMPANION_NODE_EN_PIN   9   /* -> Node EN (reset), open-drain, active low */
+#define BT_COMPANION_NODE_BOOT_PIN 8   /* -> Node IO0 (boot), open-drain, low = download mode */
 #define BT_COMPANION_WAKE_PULSE_MS 600
 #define BT_RX_VOL_GAIN_PCT 100
 #define BT_COMPANION_SINK_NAME "HiFi-IIS"
@@ -120,7 +122,12 @@
 
 /********************************************/
 #define BIAMP_ENABLE 0          /* software DSP bi-amp — off (hardware bi-amp via L/R amp) */
-#define MUTE_PIN  255
+/* AMP_EN: FeatherS3 GPIO44 -> HAT pin 22 (BCM25, Pimoroni: amp enable, 3.3 V logic, active high).
+ * Same amp/boost-enable logic as the ProS3 (MUTE_PIN): low when stopped / deep sleep, high while
+ * playing and during BT receive. Cain may drive a MOSFET from it instead. GPIO44 is an input at
+ * reset (no ROM log on it, unlike 43), so the amp stays off until the firmware enables it. */
+#define AMP_EN_PIN 44
+#define MUTE_PIN  AMP_EN_PIN
 #define MUTE_VAL  LOW
 /********************************************/
 

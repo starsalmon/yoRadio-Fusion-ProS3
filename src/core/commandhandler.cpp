@@ -1,3 +1,4 @@
+#include "node_flash.h"
 #include "webgain.h"
 #include <Arduino.h>
 #include "options.h"
@@ -71,6 +72,8 @@ bool CommandHandler::exec(const char *command, const char *value, uint8_t cid) {
   // Force an SD index rebuild: /set?sdreindex=1, serial/telnet "sdreindex". Runs on the
   // netserver queue (same path as a saved playlist); in other modes it applies on next SD entry.
   if (strEquals(command, "sdreindex")) { config.sdForceReindex = true; netserver.requestOnChange(PLAYLISTSAVED, cid); return true; }
+  // Reboot into the USB <-> Node UART bridge for esptool (docs/APRILS_SPEAKER.md). Needs value 1.
+  if (strEquals(command, "nodeflash")) { if (value && atoi(value) == 1 && nodeflash_supported()) nodeflash_request(); return true; }
   if (strEquals(command, "stop"))     { player.sendCommand({PR_STOP, 0}); return true; }
   if (strEquals(command, "toggle"))   { player.toggle(); return true; }
   if (strEquals(command, "prev"))     { player.prev(); return true; }

@@ -60,6 +60,7 @@ volatile uint16_t g_biampCrossoverHzForAudio = 2500;
 SPIClass  SPI2(HSPI);
 #endif
 
+#include "core/node_flash.h"
 extern __attribute__((weak)) void yoradio_on_setup();
 extern void backlightPluginInit();
 
@@ -135,6 +136,7 @@ void setup() {
   esp_register_shutdown_handler(yoradio_boost_off_on_restart);   // ESP.restart()/OTA
 #endif
   Serial.begin(115200);
+  nodeflash_boot();   // no-op unless /set?nodeflash=1 asked for the Node flash bridge
 #ifdef YORADIO_HANG_DIAG
   hangdiag_boot();
 #endif

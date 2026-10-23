@@ -1,5 +1,5 @@
 /* April's Speaker: Unexpected Maker FeatherS3 (ESP32-S3, 16 MB QSPI flash, 8 MB QSPI PSRAM)
- * + Pimoroni Pirate Audio 3W Amp HAT (ST7789 240x240, PCM5102A I2S DAC + 3 W amp, 4 buttons)
+ * + Pimoroni Pirate Audio 3W Amp HAT (ST7789 240x240, 2x MAX98357A I2S DAC+3 W amp, 4 buttons)
  * + microSD breakout on the display's SPI bus + Node ESP32 BT companion.
  *
  *   pio run -e aprils-speaker                 build
@@ -60,7 +60,7 @@
 #define BRIGHTNESS_PIN 10       /* backlight PWM */
 #define I2S_BCLK 17
 #define I2S_LRC  18
-#define I2S_DOUT 14             /* no MCLK on the PCM5102A HAT */
+#define I2S_DOUT 14             /* no MCLK needed (MAX98357A). HAT amp enable = BCM25 pin 22, active high: TBD, no GPIO assigned */
 
 /* Pirate Audio buttons (active low; HAT pull-ups). All on RTC GPIOs so any can wake from deep sleep. */
 #define BTN_LEFT    5           /* HAT A */

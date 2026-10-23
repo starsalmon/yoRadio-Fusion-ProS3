@@ -11,7 +11,7 @@ not final, so **every pin below is PROPOSED** until it is wired and bench-tested
 | Part | Detail |
 |------|--------|
 | MCU | Unexpected Maker FeatherS3: ESP32-S3, 16 MB QSPI flash, 8 MB QSPI PSRAM, native USB (PlatformIO board `um_feathers3`) |
-| HAT | Pimoroni Pirate Audio 3W Amp: ST7789 240x240, PCM5102A DAC (no MCLK) + 3 W amp, buttons A/B/X/Y |
+| HAT | Pimoroni Pirate Audio 3W Amp: ST7789 240x240, 2x MAX98357A I2S DAC+amp (no MCLK; amp enable BCM25 pin 22 must be high - TBD), buttons A/B/X/Y |
 | microSD | Separate 3.3 V breakout on the display's SPI bus (SD park design, as on the ProS3) |
 | BT companion | Node ESP32 (NodeMCU-32S), proposed pins below, not wired |
 | Battery | LiPo on the FeatherS3 JST; VBAT sense IO2, VBUS sense IO34 (`src/battery/battery_adc.cpp`) |
@@ -145,3 +145,5 @@ Builds from this repo; never flashed from it, and never run on a FeatherS3. Benc
 the shared-bus display lock (instead of April's old `startWrite` mutex), battery readings. Not ported
 (not needed on a PSRAM S3, or would change the ProS3): the no-PSRAM paths, April's boot reorder, the
 cached SD index, the clock-TTS gate and `HIDE_VU`.
+
+Wiring map (PDF): [aprils-speaker-wiring.pdf](aprils-speaker-wiring.pdf)

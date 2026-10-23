@@ -301,6 +301,7 @@ void TextWidget::init(WidgetConfig wconf, uint16_t buffsize, bool uppercase, uin
 }
 
 void TextWidget::setText(const char* txt) {
+  if (!_text || !_oldtext || !txt) return;  // not init()'d yet
   /* FreeSans/DejaVu font esetén az utf8To() megkerülése:
      a GFXfont write(uint16_t) az eredeti UTF-8 kódpontokat várja,
      az utf8To() által produkált glcdfont-specifikus kódok nem értelmezhetők. */
@@ -482,6 +483,7 @@ bool ScrollWidget::_checkIsScrollNeeded() {
 }
 
 void ScrollWidget::setText(const char* txt) {
+  if (!_text || !_oldtext || !txt) return;  // not init()'d yet
   if (_gfxFont) {
     if (_uppercase)
       yoUtf8ToUpper(_text, txt, _buffsize - 1);

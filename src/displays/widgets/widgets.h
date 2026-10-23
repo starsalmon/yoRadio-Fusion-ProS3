@@ -98,7 +98,7 @@ class BitmapWidget: public Widget {
 
 class TextWidget: public Widget {
   public:
-    TextWidget() {}
+    TextWidget() : _text(nullptr), _oldtext(nullptr), _uppercase(false), _buffsize(0) {}
     TextWidget(WidgetConfig wconf, uint16_t buffsize, bool uppercase, uint16_t fgcolor, uint16_t bgcolor) { init(wconf, buffsize, uppercase, fgcolor, bgcolor); }
     ~TextWidget();
     using Widget::init;

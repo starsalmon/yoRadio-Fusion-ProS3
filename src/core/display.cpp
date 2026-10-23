@@ -2400,6 +2400,11 @@ static void formatHms(uint32_t sec, char* out, size_t outSz) {
 }
 
 void Display::_title() {
+  // NEWTITLE can arrive (e.g. BT companion status at ~4 s) while the boot screen is still up
+  // because SD playlist setup is slow on a big card. Title widgets are only init()'d in
+  // _buildPager(); before that their text buffers are garbage -> LoadProhibited bootloop.
+  // _start() posts a fresh title once the pager exists.
+  if (!_pagerBuilt) return;
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   if (config.getMode() == PM_BLUETOOTH) {
     char t[96];

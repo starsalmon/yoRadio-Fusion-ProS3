@@ -708,7 +708,7 @@ void podcasts_requestBuild(bool force) {
   if (!force) {
     // Throttle refreshes so switching into Podcast mode isn't always expensive.
     // (Forced builds bypass this gate.)
-    if (!podcasts_isIndexDue(5u * 60u)) { Serial.println("[POD] requestBuild: skip, throttled"); return; } // 5 minutes
+    if (!podcasts_isIndexDue(3u * 3600u)) { Serial.println("[POD] requestBuild: skip, throttled"); return; } // 3 hours
 
     // Keep this low-impact: only refresh while you're in Podcast mode and not playing.
     if (config.getMode() != PM_PODCAST) { Serial.println("[POD] requestBuild: skip, not podcast mode"); return; }

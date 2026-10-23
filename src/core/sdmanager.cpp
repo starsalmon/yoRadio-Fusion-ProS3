@@ -130,8 +130,17 @@ void SDManager::listSD(File &plSDfile, File &plSDindex, const char* dirname, uin
     uint32_t pos = 0;
     char* filePath;
     while (true) {
-        vTaskDelay(2);
-        taskYIELD();
+        // Give the bus to audio/display every 16 entries (lock is recursive; we hold depth 1
+        // from indexSDPlaylist/signatureMatches) so playback stays smooth during a scan.
+        if ((++_scanEntries & 15) == 0) {
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+          yoradio_sd_spi_release();
+          vTaskDelay(1);
+          yoradio_sd_spi_acquire();
+#else
+          vTaskDelay(1);
+#endif
+        }
         bool isDir;
         String fileName = root.getNextFileName(&isDir);
         if (fileName.isEmpty()) break;
@@ -166,6 +175,8 @@ void SDManager::listSD(File &plSDfile, File &plSDindex, const char* dirname, uin
             if (_endsWith(fnLower, ".mp3") || _endsWith(fnLower, ".m4a") || _endsWith(fnLower, ".aac") ||
                 _endsWith(fnLower, ".wav") || _endsWith(fnLower, ".flac") ||
                 _endsWith(fnLower, ".ogg") || _endsWith(fnLower, ".opus")) {
+                _sigAdd(filePath);
+                if (_sigOnly) { free(filePath); continue; }
                 pos = plSDfile.position();
                 plSDfile.printf("%s\t%s\t0\n", fn, filePath);
                 plSDindex.write((uint8_t*)&pos, 4);
@@ -182,6 +193,40 @@ void SDManager::listSD(File &plSDfile, File &plSDindex, const char* dirname, uin
         free(filePath);
     }
     root.close();
+}
+
+#define INDEX_SIG_PATH "/data/indexsd.sig"
+bool SDManager::_readSig(uint32_t& c, uint32_t& h) {
+  File f = open(INDEX_SIG_PATH, "r");
+  if (!f) return false;
+  String l = f.readStringUntil('\n'); f.close();
+  return sscanf(l.c_str(), "%lu %lx", (unsigned long*)&c, (unsigned long*)&h) == 2;
+}
+void SDManager::_writeSig() {
+  File f = open(INDEX_SIG_PATH, "w", true);
+  if (!f) return;
+  f.printf("%lu %08lx\n", (unsigned long)_sigCount, (unsigned long)_sigHash);
+  f.close();
+}
+bool SDManager::signatureMatches() {
+  uint32_t oc = 0, oh = 0;
+  const bool have = _readSig(oc, oh);
+  const uint32_t t0 = millis();
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+  yoradio_sd_spi_acquire();
+#endif
+  _sigOnly = true; _sigReset();
+  File dummy;
+  listSD(dummy, dummy, "/", SD_MAX_LEVELS);
+  _sigOnly = false;
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+  yoradio_sd_spi_release();
+#endif
+  const bool match = have && oc == _sigCount && oh == _sigHash;
+  Serial.printf("##[SD]#\tsignature: card=%lu/%08lx index=%s%lu/%08lx scan=%lums -> %s\n",
+                (unsigned long)_sigCount, (unsigned long)_sigHash, have ? "" : "(none) ",
+                (unsigned long)oc, (unsigned long)oh, (unsigned long)(millis() - t0), match ? "reuse" : "REINDEX");
+  return match;
 }
 
 void SDManager::indexSDPlaylist() {
@@ -213,11 +258,15 @@ void SDManager::indexSDPlaylist() {
     _indexing = false;
     return;
   }
+  _sigOnly = false; _sigReset();
+  const uint32_t tScan = millis();
   listSD(playlist, index, "/", SD_MAX_LEVELS);
   index.flush();
   index.close();
   playlist.flush();
   playlist.close();
+  _writeSig();
+  Serial.printf("##[SD]#\tindex scan %lums\n", (unsigned long)(millis() - tScan));
   Serial.println();
   Serial.printf("##[SD]#\tindex done tracks=%lu\n", (unsigned long)_sdFCount);
   delay(50);
@@ -225,6 +274,7 @@ void SDManager::indexSDPlaylist() {
   yoradio_sd_spi_release();
 #endif
   _indexing = false;
+  config.playlistChanged();
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI
   if (display.ready() && display.mode() == SDCHANGE) {
     display.putRequest(SDFILEINDEX, (int)_sdFCount);

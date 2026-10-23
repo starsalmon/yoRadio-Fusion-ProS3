@@ -1,3 +1,4 @@
+#include "esp_heap_caps.h"
 #include "../../core/sdlock.h"
 #include "../../core/options.h"
 #undef HIDE_DATE
@@ -2132,46 +2133,79 @@ void PlayListWidget::init(ScrollWidget* current) {
 #endif
 }
 
-void PlayListWidget::_loadPlaylistPage(int pageIndex, int itemsPerPage) {
-  // Single pass under ONE bus-lock hold: count once, read all rows, then the caller draws.
-  // No TFT drawing in here (SD I/O must never run inside a TFT transaction; see sdlock.h).
-  for (int i = 0; i < MAX_PL_PAGE_ITEMS; i++)
-      _plCache[i] = "";
-  if (itemsPerPage > MAX_PL_PAGE_ITEMS) itemsPerPage = MAX_PL_PAGE_ITEMS;
+// ---- Playlist row window cache (PSRAM) ------------------------------------------------
+// Scrolling must not reread SD on every keypress: rows are read sequentially in ONE short
+// bus-lock hold into a PSRAM window of PLW_ROWS rows, and pages/scroll steps are served
+// from RAM until the cursor leaves the window or the list identity changes.
+#define PLW_ROWS 96
+#define PLW_LEN  112
+static char*    s_plw = nullptr;          // PLW_ROWS * PLW_LEN
+static int      s_plwFirst = 0;           // 1-based index of row 0 (0 = empty)
+static int      s_plwCount = 0;
+static int      s_plwTotal = -1;
+static uint32_t s_plwKey = 0xFFFFFFFF;
 
-  uint32_t t0 = millis();
-  SdLockGuard _sdl;
-  const int total = config.playlistLength();
-  if (total == 0) return;
+void plwInvalidate() { s_plwFirst = 0; s_plwCount = 0; s_plwTotal = -1; }
 
-  File playlist = config.SDPLFS()->open(REAL_PLAYL, "r");
-  File index    = config.SDPLFS()->open(REAL_INDEX, "r");
-  if (!playlist || !index) { if (playlist) playlist.close(); if (index) index.close(); return; }
+static uint32_t plwKeyNow() {
+  return ((uint32_t)config.getMode() << 24) ^ (uint32_t)config.playlistGen();
+}
 
-  int startIdx = pageIndex * itemsPerPage;
-  for (int i = 0; i < itemsPerPage; i++) {
-    int globalIdx = startIdx + i;
-    if (globalIdx >= total) break;
-    index.seek(globalIdx * 4, SeekSet);
-    uint32_t posAddr;
-    if (index.readBytes((char*)&posAddr, 4) != 4) break;
-    playlist.seek(posAddr, SeekSet);
-    String line = playlist.readStringUntil('\n');
-    int tabIdx = line.indexOf('\t');
-    if (tabIdx > 0) line = line.substring(0, tabIdx);
-    line.trim();
-    if (config.store.numplaylist && line.length() > 0)
-      _plCache[i] = String(globalIdx + 1) + " " + line;
-    else
-      _plCache[i] = line;
+// Returns total; fills out[i] for 1-based rows first..first+n-1 (empty when out of range).
+static int plwGetRows(int first, int n, String* out) {
+  uint32_t key = plwKeyNow();
+  int total = config.playlistLength();
+  if (key != s_plwKey || total != s_plwTotal) { s_plwKey = key; s_plwTotal = total; s_plwFirst = 0; s_plwCount = 0; }
+  if (total <= 0) { for (int i = 0; i < n; i++) out[i] = ""; return total; }
+  int lo = first < 1 ? 1 : first, hi = first + n - 1; if (hi > total) hi = total;
+  bool hit = s_plwFirst > 0 && lo >= s_plwFirst && hi < s_plwFirst + s_plwCount;
+  if (!hit && lo <= hi) {
+    if (!s_plw) s_plw = (char*)heap_caps_malloc(PLW_ROWS * PLW_LEN, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_plw) s_plw = (char*)malloc(PLW_ROWS * PLW_LEN);
+    if (!s_plw) { for (int i = 0; i < n; i++) out[i] = ""; return total; }
+    int start = lo - (PLW_ROWS - n) / 2; if (start < 1) start = 1;
+    if (start + PLW_ROWS - 1 > total) { start = total - PLW_ROWS + 1; if (start < 1) start = 1; }
+    uint32_t t0 = millis();
+    int got = 0;
+    {
+      SdLockGuard _sdl;
+      File playlist = config.SDPLFS()->open(REAL_PLAYL, "r");
+      File index    = config.SDPLFS()->open(REAL_INDEX, "r");
+      uint32_t pos = 0;
+      if (playlist && index && index.seek((start - 1) * 4, SeekSet) && index.readBytes((char*)&pos, 4) == 4 && playlist.seek(pos, SeekSet)) {
+        while (got < PLW_ROWS && start + got <= total && playlist.available()) {
+          String line = playlist.readStringUntil('\n');
+          int tab = line.indexOf('\t'); if (tab >= 0) line = line.substring(0, tab);
+          line.trim();
+          strlcpy(s_plw + got * PLW_LEN, line.c_str(), PLW_LEN);
+          got++;
+        }
+      }
+      if (index) index.close();
+      if (playlist) playlist.close();
+    }
+    s_plwFirst = got ? start : 0; s_plwCount = got;
+    Serial.printf("[PLMENU] window %d..%d (%d rows) read in %lums\n", start, start + got - 1, got, (unsigned long)(millis() - t0));
   }
-  playlist.close();
-  index.close();
-  uint32_t dt = millis() - t0;
-  if (dt > 200) Serial.printf("[PLMENU] page %d read %d rows in %lums\n", pageIndex, itemsPerPage, (unsigned long)dt);
+  for (int i = 0; i < n; i++) {
+    int g = first + i;
+    if (g < 1 || g > total || s_plwFirst == 0 || g < s_plwFirst || g >= s_plwFirst + s_plwCount) { out[i] = ""; continue; }
+    const char* r = s_plw + (g - s_plwFirst) * PLW_LEN;
+    if (config.store.numplaylist && r[0]) out[i] = String(g) + " " + r; else out[i] = r;
+  }
+  return total;
+}
+
+void PlayListWidget::_loadPlaylistPage(int pageIndex, int itemsPerPage) {
+  // Served from the PSRAM row window; only a window miss touches SD (one short lock hold).
+  if (itemsPerPage > MAX_PL_PAGE_ITEMS) itemsPerPage = MAX_PL_PAGE_ITEMS;
+  for (int i = 0; i < MAX_PL_PAGE_ITEMS; i++) _plCache[i] = "";
+  plwGetRows(pageIndex * itemsPerPage + 1, itemsPerPage, _plCache);
 }
 
 void PlayListWidget::drawPlaylist(uint16_t currentItem) {
+  uint32_t _t0 = millis();
+  struct _T { uint32_t t; ~_T(){ uint32_t d = millis() - t; if (d > 40) Serial.printf("[PLMENU] draw %lums\n", (unsigned long)d); } } _tm{_t0};
 
   // If the active playlist source changed (mode switch, DLNA<->WEB, podcast refresh),
   // clear cached page data so we don't show stale items from the previous list.
@@ -2209,6 +2243,7 @@ void PlayListWidget::drawPlaylist(uint16_t currentItem) {
 }
 
 void PlayListWidget::invalidateCache() {
+  plwInvalidate();
   for (int i = 0; i < MAX_PL_PAGE_ITEMS; i++) _plCache[i] = "";
   _plLoadedPage = -1;
   _plLastGlobalPos = -1;
@@ -2242,8 +2277,10 @@ void PlayListWidget::_drawMovingCursor(uint16_t currentItem) {
                  itemsPerPage * _plItemHeight,
                  config.theme.background);
 
-    for (int i = 0; i < itemsPerPage; i++)
+    for (int i = 0; i < itemsPerPage; i++) {
+      SdLockGuard _row;
       _printMoving(i, _plCache[i].c_str());
+    }
 
   } else {
 
@@ -2367,48 +2404,22 @@ void PlayListWidget::_printScroll(uint8_t pos,
 }
 
 uint8_t PlayListWidget::_fillPlMenu(int from, uint8_t count) {
-    // Phase 1: read all rows in one pass under one bus-lock hold (no drawing).
-    // Phase 2: draw from RAM (each draw takes the bus lock via DspCore::startWrite).
+    // Rows from the PSRAM window (SD only on a window miss), then draw each row atomically
+    // under one bus-lock hold so glyph-level draws don't interleave with audio SD reads.
     if (count > MAX_PL_PAGE_ITEMS) count = MAX_PL_PAGE_ITEMS;
     String rows[MAX_PL_PAGE_ITEMS];
-    uint8_t c = 0;
-    int total = 0;
-    {
-      uint32_t t0 = millis();
-      SdLockGuard _sdl;
-      total = config.playlistLength();
-      if (total > 0) {
-        File playlist = config.SDPLFS()->open(REAL_PLAYL, "r");
-        File index = config.SDPLFS()->open(REAL_INDEX, "r");
-        int ls = from;
-        while (c < count && ls < 1) { rows[c++] = ""; ls++; }
-        if (c < count && playlist && index && ls <= total) {
-          index.seek((ls - 1) * 4, SeekSet);
-          uint32_t pos = 0;
-          if (index.readBytes((char*)&pos, 4) == 4) {
-            playlist.seek(pos, SeekSet);
-            bool pla = true;
-            while (pla && c < count) {
-              pla = playlist.available();
-              String stationName = playlist.readStringUntil('\n');
-              stationName = stationName.substring(0, stationName.indexOf('\t'));
-              if (config.store.numplaylist && stationName.length() > 0) { stationName = String(from + c) + " " + stationName; }
-              rows[c++] = stationName;
-            }
-          }
-        }
-        if (index) index.close();
-        if (playlist) playlist.close();
-      }
-      uint32_t dt = millis() - t0;
-      if (dt > 200) Serial.printf("[PLMENU] fill from %d read %u rows in %lums\n", from, (unsigned)c, (unsigned long)dt);
-    }
-    if (total == 0) {
-      // Clear list area to avoid showing stale content.
+    int total = plwGetRows(from, count, rows);
+    if (total <= 0) {
       dsp.fillRect(0, _plYStart, dsp.width(), _plTtemsCount * _plItemHeight, config.theme.background);
       return 0;
     }
-    for (uint8_t i = 0; i < c; i++) _printScroll(i, rows[i].c_str());
+    uint8_t c = 0;
+    for (; c < count; c++) {
+      int g = from + c;
+      if (g > total) break;
+      SdLockGuard _row;
+      _printScroll(c, rows[c].c_str());
+    }
     return c;
 }
 /**************************

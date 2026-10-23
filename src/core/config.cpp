@@ -769,8 +769,13 @@ void Config::initSDPlaylist() {
 #if SD_FORCE_REINDEX
   forceIndex = true;
 #endif
-  const bool needIndex =
+  if (sdForceReindex) { forceIndex = true; sdForceReindex = false; Serial.println("##[SD]#\treindex forced (sdreindex)"); }
+  bool needIndex =
       forceIndex || !sdman.exists(INDEX_SD_PATH) || !sdman.exists(PLAYLIST_SD_PATH);
+  if (!needIndex && !sdman.signatureMatches()) {
+    Serial.println("##[SD]#\tcard contents changed - reindexing");
+    needIndex = true;
+  }
   if (needIndex) {
     sdman.indexSDPlaylist();
   } else {
@@ -1961,13 +1966,21 @@ void Config::initDLNAPlaylist() {
 #endif
 
 uint16_t Config::playlistLength(){
+  // Short-lived cache (keyed by mode + playlist generation): the menu asks for this several
+  // times per keypress; each uncached call is an SD/FS open under the bus lock.
+  const uint8_t m = (uint8_t)getMode();
+  const uint32_t now = millis();
+  if (_plLenAt && m == _plLenMode && (uint32_t)(now - _plLenAt) < 1500u) return _plLenVal;
   uint16_t out = 0;
-  SdLockGuard _sdl;  // bus lock before FATFS (see sdlock.h); recursive, safe if caller holds it
-  if (SDPLFS()->exists(REAL_INDEX)) {
-    File index = SDPLFS()->open(REAL_INDEX, "r");
-    out = index.size() / 4;
-    index.close();
+  {
+    SdLockGuard _sdl;  // bus lock before FATFS (see sdlock.h); recursive, safe if caller holds it
+    if (SDPLFS()->exists(REAL_INDEX)) {
+      File index = SDPLFS()->open(REAL_INDEX, "r");
+      out = index.size() / 4;
+      index.close();
+    }
   }
+  _plLenVal = out; _plLenMode = m; _plLenAt = millis() | 1;
   return out;
 }
 bool Config::loadStation(uint16_t ls) {

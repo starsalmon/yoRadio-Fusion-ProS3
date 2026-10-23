@@ -435,6 +435,9 @@ class Config {
     void refreshPlayModeDisplay();
     void startBluetoothRxSession();
     uint16_t playlistLength();
+    uint32_t playlistGen() const { return _plGen; }
+    void     playlistChanged() { _plGen++; _plLenAt = 0; }
+    volatile bool sdForceReindex = false;
     uint16_t lastStation(){
 #ifdef USE_SD
       if (getMode() == PM_SDCARD) return store.lastSdStation;
@@ -547,6 +550,11 @@ class Config {
       uint16_t station = random(1, store.countStation);
       return station;
     }
+  private:
+    uint32_t _plGen = 1;
+    uint32_t _plLenAt = 0;
+    uint16_t _plLenVal = 0;
+    uint8_t  _plLenMode = 0xFF;
 };
 
 extern Config config;

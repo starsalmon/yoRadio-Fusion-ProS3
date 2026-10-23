@@ -6507,7 +6507,8 @@ int32_t Audio::audioFileRead(uint8_t* buff, size_t len) {
         while (len > 0) {
             if (m_dataMode == AUDIO_LOCALFILE) {
                 if (sdlock_take(pdMS_TO_TICKS(2000))) {
-                    readed_bytes = m_audiofile.read(buff + offset, len);
+                    // Bound each bus-lock hold (shared TFT/SD SPI) so the display never waits long.
+                    readed_bytes = m_audiofile.read(buff + offset, len > 4096 ? 4096 : len);
                     sdlock_give();
                 } else {
                     readed_bytes = -1;

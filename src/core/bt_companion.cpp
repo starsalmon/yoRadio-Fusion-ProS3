@@ -69,6 +69,7 @@ static bool s_rxMuted = false;
 static uint32_t s_rxMasterAtMs = 0;
 static char s_rxLocalName[64] = BT_COMPANION_RX_LOCAL_NAME;
 static char s_rxTitle[96] = "";
+static char s_rxPeer[64] = "";  // BT RX: remote (phone) name from companion "PEER name="
 static char s_rxArtist[96] = "";
 // Album + play position from the HiGrow ("META album=", "POS <elapsed_ms> <total_ms> <playing>").
 static char s_rxAlbum[96] = "";
@@ -240,7 +241,7 @@ static void rxHandoverAdvance() {
         s_rxConn = -1;
         s_rxAudio = -1;
         s_rxLink = BtCompanionLinkState::OFF;
-        s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
+        s_rxTitle[0] = s_rxArtist[0] = '\0'; s_rxPeer[0] = '\0'; rxClearTrackExtras();
         s_rxStep = RxHandoverStep::None;
         s_rxExitCompleteFlag = true;
         display.putRequest(DRAWVOL);
@@ -253,7 +254,7 @@ static void rxHandoverAdvance() {
         s_rxConn = -1;
         s_rxAudio = -1;
         s_rxLink = BtCompanionLinkState::OFF;
-        s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
+        s_rxTitle[0] = s_rxArtist[0] = '\0'; s_rxPeer[0] = '\0'; rxClearTrackExtras();
         s_rxStep = RxHandoverStep::None;
         s_rxExitCompleteFlag = true;
         display.putRequest(DRAWVOL);
@@ -273,7 +274,7 @@ static void maybeUpdateRxLinkState() {
     const bool isConn  = (next == BtCompanionLinkState::CONNECTED || next == BtCompanionLinkState::AUDIO);
     if (wasConn && !isConn) {
       Serial.printf("[BT2] phone dropped (conn=%d): back to waiting, clearing metadata\n", s_rxConn);
-      s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
+      s_rxTitle[0] = s_rxArtist[0] = '\0'; s_rxPeer[0] = '\0'; rxClearTrackExtras();
       s_rxDropAtMs = millis() | 1u;
     }
     if (isConn) s_rxDropAtMs = 0;
@@ -347,6 +348,16 @@ static void pumpRx() {
         v.trim();
         if (strcmp(v.c_str(), s_rxAlbum) != 0) {
           strlcpy(s_rxAlbum, v.c_str(), sizeof(s_rxAlbum));
+          display.putRequest(NEWTITLE);
+        }
+        continue;
+      }
+      if (out.startsWith("PEER name=")) {
+        String v = out.substring(10);
+        v.trim();
+        if (strcmp(v.c_str(), s_rxPeer) != 0) {
+          strlcpy(s_rxPeer, v.c_str(), sizeof(s_rxPeer));
+          Serial.printf("[BTC] PEER name='%s'\n", s_rxPeer);
           display.putRequest(NEWTITLE);
         }
         continue;
@@ -432,6 +443,9 @@ static void pumpRx() {
         };
         if (out.indexOf("title=") >= 0) readMeta("title=", s_rxTitle, sizeof(s_rxTitle));
         if (out.indexOf("artist=") >= 0) readMeta("artist=", s_rxArtist, sizeof(s_rxArtist));
+        // Android sends "Not Provided" when it has no metadata: treat as empty.
+        if (strcasecmp(s_rxTitle, "Not Provided") == 0) s_rxTitle[0] = '\0';
+        if (strcasecmp(s_rxArtist, "Not Provided") == 0) s_rxArtist[0] = '\0';
         s_lastRxUiMs = millis();
         Serial.printf("[BTC] META stored title='%s' artist='%s'\n", s_rxTitle, s_rxArtist);
         display.putRequest(NEWTITLE);
@@ -685,7 +699,7 @@ static void rxResetHiGrow(const char *why) {
   s_rxAudio = -1;
   s_hgModeRx = false;
   s_hgRxSink = -1;
-  s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
+  s_rxTitle[0] = s_rxArtist[0] = '\0'; s_rxPeer[0] = '\0'; rxClearTrackExtras();
   s_rxDropAtMs = 0;
   s_rxLastResetMs = millis() | 1u;
   s_rxLink = BtCompanionLinkState::SEARCHING;
@@ -715,7 +729,7 @@ void btcompanion_loop() {
         Serial.println("[BTC] HiGrow restarted (mode=tx) - re-handover");
         s_rxConn = -1;
         s_rxAudio = -1;
-        s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
+        s_rxTitle[0] = s_rxArtist[0] = '\0'; s_rxPeer[0] = '\0'; rxClearTrackExtras();
         rxResetHiGrow("HiGrow restarted (mode=tx / bt=0)");
         return;
       }
@@ -794,6 +808,10 @@ const char* btcompanion_rxLocalName() { return s_rxLocalName; }
 void btcompanion_getRxMetadata(char* title, size_t titleLen, char* artist, size_t artistLen) {
   if (title && titleLen) strlcpy(title, s_rxTitle, titleLen);
   if (artist && artistLen) strlcpy(artist, s_rxArtist, artistLen);
+}
+
+void btcompanion_getRxPeerName(char* name, size_t nameLen) {
+  if (name && nameLen) strlcpy(name, s_rxPeer, nameLen);
 }
 
 void btcompanion_getRxAlbum(char* album, size_t albumLen) {
@@ -896,7 +914,7 @@ void btcompanion_enterRxMode(const char* localName) {
   if (!s_rxActive) {
     s_rxConn = -1;
     s_rxAudio = -1;
-    s_rxTitle[0] = s_rxArtist[0] = '\0'; rxClearTrackExtras();
+    s_rxTitle[0] = s_rxArtist[0] = '\0'; s_rxPeer[0] = '\0'; rxClearTrackExtras();
     s_rxLink = BtCompanionLinkState::SEARCHING;
     s_rxActive = true;
     s_rxMuted = false;

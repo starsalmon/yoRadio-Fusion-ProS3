@@ -33,6 +33,7 @@ void btcompanion_enterRxMode(const char* localName);
 void btcompanion_exitRxMode();
 BtCompanionLinkState btcompanion_rxLinkState();
 void btcompanion_getRxMetadata(char* title, size_t titleLen, char* artist, size_t artistLen);
+void btcompanion_getRxPeerName(char* name, size_t nameLen);
 void btcompanion_getRxAlbum(char* album, size_t albumLen);
 // Elapsed/total of the phone's current track (elapsed interpolated while playing).
 // False when there is no track length (some apps don't send one) or no phone connected.

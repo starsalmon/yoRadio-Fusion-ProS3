@@ -2426,6 +2426,15 @@ void Display::_title() {
       case BtCompanionLinkState::SEARCHING: status = "Pair your phone"; break;
       default: status = "Bluetooth"; break;
     }
+    // Connected/playing with a known remote name: "<name> connected" (e.g. "GP7 connected").
+    static char peerLine[96];
+    char peer[64];
+    btcompanion_getRxPeerName(peer, sizeof(peer));
+    const BtCompanionLinkState pls = btcompanion_rxLinkState();
+    if (peer[0] && (pls == BtCompanionLinkState::CONNECTED || pls == BtCompanionLinkState::AUDIO)) {
+      snprintf(peerLine, sizeof(peerLine), "%s connected", peer);
+      status = peerLine;
+    }
     _title1->setText(status);
     if (_title2) _title2->setText("");
     return;

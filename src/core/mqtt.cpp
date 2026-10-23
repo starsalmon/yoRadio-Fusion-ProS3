@@ -1,3 +1,4 @@
+#include "webgain.h"
 #include "options.h"
 #ifdef MQTT_ROOT_TOPIC
 
@@ -301,6 +302,22 @@ static void mqttPublishBalance(bool force = false) {
   char t2[160];
   char buf[16];
   snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "balance");
+  snprintf(buf, sizeof(buf), "%d", cur);
+  mqttClient.publish(t2, 0, true, buf);
+}
+
+static void mqttPublishWebgain(bool force = false) {
+  #if defined(MQTT_DISABLE) && MQTT_DISABLE
+    (void)force;
+    return;
+  #endif
+  if (!mqttClient.connected()) return;
+  static int s_last = 9999;
+  int cur = webgain_get();
+  if (!force && cur == s_last) return;
+  s_last = cur;
+  char t2[160]; char buf[8];
+  snprintf(t2, sizeof(t2), "%s%s", MQTT_ROOT_TOPIC, "webgain");
   snprintf(buf, sizeof(buf), "%d", cur);
   mqttClient.publish(t2, 0, true, buf);
 }
@@ -996,6 +1013,19 @@ static void mqttPublishHADiscovery() {
   {
     char cfg[760];
     snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Web Stream Gain\",\"unique_id\":\"%s_webgain_number\","
+             "\"state_topic\":\"%swebgain\",\"value_template\":\"{{ value|int }}\","
+             "\"command_topic\":\"%scmd/webgain\","
+             "\"min\":0,\"max\":12,\"step\":1,\"mode\":\"slider\",\"unit_of_measurement\":\"dB\","
+             "\"icon\":\"mdi:volume-plus\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "webgain", cfg);
+  }
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
              "{\"name\":\"Audio EQ Treble\",\"unique_id\":\"%s_treble_number\","
              "\"state_topic\":\"%streble\",\"value_template\":\"{{ value|int }}\","
              "\"command_topic\":\"%scmd/treble\","
@@ -1140,6 +1170,9 @@ void onMqttConnect(bool sessionPresent) {
   snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/balance");
   mqttClient.subscribe(topic, 2);
   zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/webgain");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
   snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/treble");
   mqttClient.subscribe(topic, 2);
   zeroBuffer();
@@ -1219,6 +1252,7 @@ void onMqttConnect(bool sessionPresent) {
   mqttPublishBrightnessCurrent(true);
   mqttPublishAlsLuxCurrent(true);
   mqttPublishBalance(true);
+  mqttPublishWebgain(true);
   mqttPublishTone(true);
   mqttPublishOutputDevice(true);
   mqttPublishBtSinkName(true);
@@ -1357,6 +1391,7 @@ void mqttLoop() {
   mqttPublishBrightnessCurrent(false);
   mqttPublishAlsLuxCurrent(false);
   mqttPublishBalance(false);
+  mqttPublishWebgain(false);
   mqttPublishTone(false);
   mqttPublishNeoStatusBrightnessPct(false);
   mqttPublishNeoStatusFollowScreen(false);
@@ -1434,6 +1469,8 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 }
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
+  { char pl[97]; size_t n = len < 96 ? len : 96; memcpy(pl, payload, n); pl[n] = 0;
+    Serial.printf("[MQTT] rx topic=%s retain=%d len=%u payload='%s'\n", topic, (int)properties.retain, (unsigned)len, pl); }
   if (len == 0) return;
 
   // Dedicated command topic: <root>cmd/station_number (HA number)
@@ -1980,6 +2017,19 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       config.setBrightness(true);
       mqttPublishStatus();
 #endif
+      return;
+    }
+  }
+
+  // Dedicated command topic: <root>cmd/webgain (HA number, 0..12 dB)
+  {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/webgain");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 7) ? len : 7;
+      char buf[8]; strncpy(buf, payload, n); buf[n] = '\0';
+      webgain_set(atoi(buf), true);
+      mqttPublishWebgain(true);
       return;
     }
   }

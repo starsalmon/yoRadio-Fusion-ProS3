@@ -929,6 +929,7 @@ void Config::initPlaylistMode() {
       // Throttle expensive RSS indexing. Within the interval we just use the
       // cached episode list and index file.
       bool doIndex = PODCAST_INDEX_ENABLE && podcasts_isIndexDue(5u * 60u); // 5 minutes
+      Serial.printf("[POD] enter podcast mode: bootDone=%d doIndex=%d cachedList=%d\n", (int)_bootDone, (int)doIndex, (int)SPIFFS.exists(PLAYLIST_PODCAST_PATH));
       // Boot: controls/netserver aren't running yet, so a blocking refresh can't be
       // cancelled. If a cached list exists, use it; the refresh happens on the next
       // entry into Podcast mode.
@@ -992,6 +993,7 @@ void Config::initPlaylistMode() {
       initPodcastPlaylist();
 
       uint16_t cs = playlistLength();
+      Serial.printf("[POD] episode list loaded: %u entries (lastPodcastStation=%u)\n", (unsigned)cs, (unsigned)store.lastPodcastStation);
       _lastStation = store.lastPodcastStation;
       if (_lastStation == 0 && cs > 0) _lastStation = 1;
       if (_lastStation > cs) _lastStation = (cs > 0) ? 1 : 0;

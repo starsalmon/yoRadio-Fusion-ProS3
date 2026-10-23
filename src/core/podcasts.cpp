@@ -43,6 +43,12 @@ static uint16_t s_progCur = 0;
 static uint16_t s_progTotal = 0;
 static char s_progShow[96] = {0};
 
+static const char* abortReason() {
+  if (s_cancelBuild) return "cancel requested";
+  if (config.getMode() != PM_PODCAST) return "mode != podcast";
+  if (player.isRunning()) return "player running";
+  return "none";
+}
 static inline bool shouldAbortBuild() {
   // Abort if the user left Podcast mode or playback started (avoid contention and UI races).
   if (s_cancelBuild) return true;
@@ -408,17 +414,24 @@ bool podcasts_isIndexDue(uint32_t minIntervalSeconds) {
   uint32_t lastEpoch = config.store.lastPodcastIndexEpoch;
   if (lastEpoch == 0xFFFFFFFFu) lastEpoch = 0u;
   if (epochLooksValid(now) && epochLooksValid(lastEpoch)) {
-    if (lastEpoch > now) return true;  // stored time in the future: don't let it block
-    return (now - lastEpoch) >= minIntervalSeconds;
+    if (lastEpoch > now) { Serial.printf("[POD] indexDue: YES (stored epoch %lu > now %lu)\n",(unsigned long)lastEpoch,(unsigned long)now); return true; }
+    const bool due = (now - lastEpoch) >= minIntervalSeconds;
+    Serial.printf("[POD] indexDue: %s (epoch: last=%lu now=%lu age=%lus min=%lus)\n", due?"YES":"NO",
+                  (unsigned long)lastEpoch,(unsigned long)now,(unsigned long)(now-lastEpoch),(unsigned long)minIntervalSeconds);
+    return due;
   }
 
   // Fallback: throttle within a single uptime using millis().
   if (s_lastIndexMs != 0u) {
     const uint32_t minMs = minIntervalSeconds * 1000u;
-    return (uint32_t)(millis() - s_lastIndexMs) >= minMs;
+    const uint32_t age = (uint32_t)(millis() - s_lastIndexMs);
+    Serial.printf("[POD] indexDue: %s (millis: age=%lums, now=%lu last=%lu storedEpoch=%lu)\n", age>=minMs?"YES":"NO",
+                  (unsigned long)age,(unsigned long)now,(unsigned long)s_lastIndexMs,(unsigned long)lastEpoch);
+    return age >= minMs;
   }
 
   // No time source yet; allow a build (best-effort).
+  Serial.printf("[POD] indexDue: YES (no prior index this boot; now=%lu storedEpoch=%lu)\n",(unsigned long)now,(unsigned long)lastEpoch);
   return true;
 }
 
@@ -483,6 +496,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       out.close();
       f.close();
       SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+      Serial.printf("[POD] build ABORTED mid-run (%s); old list kept\n", abortReason());
       setProgress(0, 0, "");
       freeBuffers();
       return 0;
@@ -496,7 +510,8 @@ uint32_t podcasts_buildEpisodesPlaylist() {
     char show[96];
     char feedUrl[256];
     uint16_t lim = 0;
-    if (!parsePodcastLine(line, show, sizeof(show), feedUrl, sizeof(feedUrl), lim)) continue;
+    if (!parsePodcastLine(line, show, sizeof(show), feedUrl, sizeof(feedUrl), lim)) { Serial.printf("[POD] csv line UNPARSED: '%s'\n", line); continue; }
+    Serial.printf("[POD] csv: show='%s' url='%s' limit=%u\n", show, feedUrl, (unsigned)lim);
     sources++;
     progressCur++;
     setProgress(progressCur, totalSources, show);
@@ -514,10 +529,12 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       out.close();
       f.close();
       SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+      Serial.printf("[POD] build ABORTED mid-run (%s); old list kept\n", abortReason());
       setProgress(0, 0, "");
       freeBuffers();
       return 0;
     }
+    Serial.printf("[POD] feed HTTP %d size=%d url=%s heap=%u\n", code, http.getSize(), effectiveUrl.c_str(), (unsigned)ESP.getFreeHeap());
     if (code <= 0 || code >= 300) {
       Serial.printf("[POD] feed HTTP %d for %s\n", code, effectiveUrl.c_str());
       delay(0);
@@ -543,6 +560,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
     sc->reset(onItem, &ctx);
 
     uint32_t lastRxMs = millis();
+    uint32_t rxBytes = 0;
     bool aborted = false;
     // Chunked reads + streaming scanner: each byte is touched once, no String churn.
     while (!sc->stopped() && (s->connected() || s->available())) {
@@ -557,6 +575,7 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       const int n = s->read(rx, (size_t)want);
       if (n <= 0) { delay(1); continue; }
       lastRxMs = millis();
+      rxBytes += (uint32_t)n;
       sc->feed((const char*)rx, (size_t)n);
       delay(0);
     }
@@ -566,11 +585,14 @@ uint32_t podcasts_buildEpisodesPlaylist() {
       out.close();
       f.close();
       SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
+      Serial.printf("[POD] build ABORTED mid-run (%s); old list kept\n", abortReason());
       setProgress(0, 0, "");
       freeBuffers();
       return 0;
     }
+    Serial.printf("[POD] %s: %lu bytes received\n", show, (unsigned long)rxBytes);
     for (uint16_t i = 0; i < ctx.kept; i++) {
+      Serial.printf("[POD]   #%u epoch=%lu %.90s\n", (unsigned)(i+1), (unsigned long)eps[i].epoch, eps[i].label);
       out.print(eps[i].label);
       out.print('\t');
       out.print(eps[i].url);
@@ -622,6 +644,9 @@ uint32_t podcasts_buildEpisodesPlaylist() {
     SPIFFS.remove(PLAYLIST_PODCAST_TMP_PATH);
   }
 
+  { File chk = SPIFFS.open(PLAYLIST_PODCAST_PATH, "r");
+    Serial.printf("[POD] %s now %u bytes (written=%lu)\n", PLAYLIST_PODCAST_PATH, chk ? (unsigned)chk.size() : 0u, (unsigned long)written);
+    if (chk) chk.close(); }
   Serial.printf("[POD] built episodes: %lu (sources=%lu)\n",
                 (unsigned long)written, (unsigned long)sources);
   setProgress(totalSources, totalSources, "done");
@@ -645,14 +670,14 @@ static void podcastBuildTask(void*) {
 
   // Even on forced builds, do not fight active playback or mode switches.
   if (shouldAbortBuild()) {
-    Serial.println("[POD] build aborted (mode changed or playback started)");
+    Serial.printf("[POD] build aborted before start: %s\n", abortReason());
     setProgress(0, 0, "");
     s_podTask = nullptr;
     vTaskDelete(nullptr);
     return;
   }
 
-  Serial.println("[POD] build start");
+  Serial.printf("[POD] build start (force=%d heap=%u)\n", (int)force, (unsigned)ESP.getFreeHeap());
   const uint32_t wrote = podcasts_buildEpisodesPlaylist();
   if (wrote > 0) {
     config.indexPodcastPlaylist();
@@ -662,6 +687,9 @@ static void podcastBuildTask(void*) {
     if (epochLooksValid(now)) {
       config.saveValue(&config.store.lastPodcastIndexEpoch, now);
     }
+    Serial.printf("[POD] index rebuilt; playlistLength=%u lastIndexEpoch=%lu\n", (unsigned)config.playlistLength(), (unsigned long)now);
+  } else {
+    Serial.println("[POD] build wrote 0 episodes: playlist/index NOT updated");
     if (display.ready() && config.getMode() == PM_PODCAST && display.mode() == STATIONS) {
       display.putRequest(DRAWPLAYLIST);
     }
@@ -672,20 +700,21 @@ static void podcastBuildTask(void*) {
 }
 
 void podcasts_requestBuild(bool force) {
+  Serial.printf("[POD] requestBuild(force=%d)\n", (int)force);
   if (force) s_forceBuild = true;
-  if (s_podTask) return;
+  if (s_podTask) { Serial.println("[POD] requestBuild: skip, build already running"); return; }
   s_cancelBuild = false;
 
   if (!force) {
     // Throttle refreshes so switching into Podcast mode isn't always expensive.
     // (Forced builds bypass this gate.)
-    if (!podcasts_isIndexDue(5u * 60u)) return; // 5 minutes
+    if (!podcasts_isIndexDue(5u * 60u)) { Serial.println("[POD] requestBuild: skip, throttled"); return; } // 5 minutes
 
     // Keep this low-impact: only refresh while you're in Podcast mode and not playing.
-    if (config.getMode() != PM_PODCAST) return;
-    if (WiFi.status() != WL_CONNECTED) return;
-    if (!display.ready()) return;
-    if (player.isRunning()) return;
+    if (config.getMode() != PM_PODCAST) { Serial.println("[POD] requestBuild: skip, not podcast mode"); return; }
+    if (WiFi.status() != WL_CONNECTED) { Serial.println("[POD] requestBuild: skip, WiFi down"); return; }
+    if (!display.ready()) { Serial.println("[POD] requestBuild: skip, display not ready"); return; }
+    if (player.isRunning()) { Serial.println("[POD] requestBuild: skip, player running"); return; }
   }
 
   // Run on the app side, but separate from MQTT callbacks / UI loop.

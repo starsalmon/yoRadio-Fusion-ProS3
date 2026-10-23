@@ -7007,11 +7007,28 @@ void Audio::processSpectrum() {
     //    m_fft_items.spectrum[3]);
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+// Web-stream gain (yoRadio "webgain", 0..+12 dB, default 0 dB = unchanged). Set from core via g_webGainLinForAudio.
+volatile float g_webGainLinForAudio = 1.0f;
 void Audio::Gain(int32_t* sample) {
     /* important: these multiplications must all be signed ints, or the result will be invalid */
     int32_t* s32 = (int32_t*)sample;
-    s32[LEFTCHANNEL] *= m_audio_items.limiter[LEFTCHANNEL];
-    s32[RIGHTCHANNEL] *= m_audio_items.limiter[RIGHTCHANNEL];
+    const float wg = g_webGainLinForAudio;
+    if (wg <= 1.0001f || m_dataMode == AUDIO_LOCALFILE) {   // original path, bit-identical
+        s32[LEFTCHANNEL] *= m_audio_items.limiter[LEFTCHANNEL];
+        s32[RIGHTCHANNEL] *= m_audio_items.limiter[RIGHTCHANNEL];
+        return;
+    }
+    // Boosted web path with a peak limiter (instant attack, ~0.1 s release) so it never wraps or hard-clips.
+    static float s_gr = 1.0f;
+    constexpr float T = 0.97f * 2147483647.0f;
+    float l = (float)s32[LEFTCHANNEL] * m_audio_items.limiter[LEFTCHANNEL] * wg;
+    float r = (float)s32[RIGHTCHANNEL] * m_audio_items.limiter[RIGHTCHANNEL] * wg;
+    float pk = fmaxf(fabsf(l), fabsf(r));
+    if (pk * s_gr > T) s_gr = T / pk;
+    else s_gr += (1.0f - s_gr) * 0.0002f;
+    l *= s_gr; r *= s_gr;
+    s32[LEFTCHANNEL] = (int32_t)fminf(T, fmaxf(-T, l));
+    s32[RIGHTCHANNEL] = (int32_t)fminf(T, fmaxf(-T, r));
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 uint32_t Audio::inBufferFilled() {

@@ -8,7 +8,7 @@
 class SPIDog {
 public:
   bool begin();
-  bool takeMutex();
+  bool takeMutex(TickType_t timeoutTicks = portMAX_DELAY);
   void giveMutex();
   bool isLocked() const;
 private:

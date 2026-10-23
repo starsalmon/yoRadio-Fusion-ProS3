@@ -10,6 +10,9 @@
 typedef GFXcanvas16 Canvas;
 typedef Adafruit_ILI9341 yoDisplay;
 
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+#define YO_TFT_BUSLOCK_WRITE 1
+#endif
 #include "tools/commongfx.h"
 
 #if __has_include("conf/displayILI9341conf_custom.h")

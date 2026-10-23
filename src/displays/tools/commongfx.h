@@ -58,6 +58,11 @@ class DspCore: public yoDisplay {
       void drawLogo(uint16_t top){}
       void loop(bool force=false){}
     #endif
+    #if defined(YO_TFT_BUSLOCK_WRITE)
+    // Bus lock (spiMutex) BEFORE the SPI transaction, for every Adafruit draw.
+    void startWrite(void) override;
+    void endWrite(void) override;
+    #endif
     void flip();
     void invert();
     void sleep();

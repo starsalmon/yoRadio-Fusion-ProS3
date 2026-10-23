@@ -1,6 +1,7 @@
 #include "dsplog.h"
 #include "options.h"
 #include "config.h"
+#include "sdlock.h"
 #include <SPIFFS.h> /* ------------------myTheme webUI upload needed---------------*/ 
 #include "display.h"
 #include "player.h"
@@ -1961,6 +1962,7 @@ void Config::initDLNAPlaylist() {
 
 uint16_t Config::playlistLength(){
   uint16_t out = 0;
+  SdLockGuard _sdl;  // bus lock before FATFS (see sdlock.h); recursive, safe if caller holds it
   if (SDPLFS()->exists(REAL_INDEX)) {
     File index = SDPLFS()->open(REAL_INDEX, "r");
     out = index.size() / 4;

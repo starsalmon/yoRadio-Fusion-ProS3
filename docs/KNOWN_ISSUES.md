@@ -60,3 +60,15 @@ issues, some are ESP32-S3 specific, and some come from this fork.
 - **Podcast indexing cancellation**: a MODE button press cancels a running refresh (worst case ~4 s while a connection/redirect times out); the previous list is kept and the mode change then runs. Mode changes from the web UI, MQTT or telnet can't cancel it: they're handled by the main loop, which waits for the refresh (by design, to avoid a playlist-swap race).
 - **Boot-time indexing**: booting into Podcast mode uses the existing episode list and defers the refresh to the next entry into Podcast mode. Only a first boot with no list builds one at boot (not cancellable, controls aren't running yet).
 - **ABC feeds** don't send `ETag`/`Last-Modified`, so they're downloaded in full on every refresh (BBC and risky.biz feeds answer `304` when unchanged).
+## SD/TFT lock order (cursor/sd-lock-order)
+
+Single global order on the shared SPI bus (SD_SHARE_TFT_SPI):
+
+1. **Bus lock** `spiMutex` (recursive). Takers: `sdlock_take` (now IS the bus lock), `yoradio_sd_spi_acquire` (sd_diskio AcquireSPI, SDManager::start/indexSDPlaylist, sdpark probe), `TftBusLock` (flip/invert/sleep/wake/refreshRegs/init), and `DspCore::startWrite/endWrite` (every ILI9341 draw).
+2. **FATFS volume mutex** (inside f_open/f_read).
+3. **SPIClass paramLock** (beginTransaction; NON-recursive).
+
+The old playlist stall came from inverted order: the display task read the playlist (`playlistLength()`, `_loadPlaylistPage`, `_fillPlMenu`) without the bus lock, so it went FATFS -> spiMutex (via sd_diskio), while loopTask/audio went spiMutex -> FATFS. Each such read hit CONFIG_FATFS_TIMEOUT_MS = 10 s.
+
+Rules: take the bus lock before any SD op; never do SD I/O between startWrite/endWrite; the playlist page reads all rows in one pass under one lock hold, then draws. Bus-lock waits >200 ms log `[BUSLOCK] <task> waiting >200ms, holder=<task>`; slow page reads log `[PLMENU]`.
+Remaining unlocked SD readers (not on the menu path): `Config::loadStation` and a few callers' own file opens; they are now serialized only via sd_diskio's per-sector bus lock.

@@ -43,6 +43,10 @@ void DspCore::initDisplay() {
 // These can be called from non-display tasks (web/MQTT/config). Hold the shared-bus lock
 // (recursive, so fine inside the display pass) so SD can't interleave with a command.
 struct TftBusLock { TftBusLock(){ sdog.begin(); sdog.takeMutex(); } ~TftBusLock(){ sdog.giveMutex(); } };
+// Lock order: bus lock first, then the SPI transaction (paramLock). Never do SD I/O between
+// startWrite/endWrite (paramLock is non-recursive). See sdlock.h.
+void DspCore::startWrite(void){ sdog.begin(); sdog.takeMutex(); Adafruit_ILI9341::startWrite(); }
+void DspCore::endWrite(void){ Adafruit_ILI9341::endWrite(); sdog.giveMutex(); }
 #else
 struct TftBusLock {};
 #endif

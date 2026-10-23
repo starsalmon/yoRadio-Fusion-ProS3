@@ -1,3 +1,4 @@
+#include "../../core/sdlock.h"
 #include "../../core/options.h"
 #undef HIDE_DATE
 #define HIDE_DATE
@@ -2132,43 +2133,42 @@ void PlayListWidget::init(ScrollWidget* current) {
 }
 
 void PlayListWidget::_loadPlaylistPage(int pageIndex, int itemsPerPage) {
-
+  // Single pass under ONE bus-lock hold: count once, read all rows, then the caller draws.
+  // No TFT drawing in here (SD I/O must never run inside a TFT transaction; see sdlock.h).
   for (int i = 0; i < MAX_PL_PAGE_ITEMS; i++)
       _plCache[i] = "";
+  if (itemsPerPage > MAX_PL_PAGE_ITEMS) itemsPerPage = MAX_PL_PAGE_ITEMS;
 
-  if (config.playlistLength() == 0) return;
+  uint32_t t0 = millis();
+  SdLockGuard _sdl;
+  const int total = config.playlistLength();
+  if (total == 0) return;
 
   File playlist = config.SDPLFS()->open(REAL_PLAYL, "r");
   File index    = config.SDPLFS()->open(REAL_INDEX, "r");
-  if (!playlist || !index) return;
+  if (!playlist || !index) { if (playlist) playlist.close(); if (index) index.close(); return; }
 
   int startIdx = pageIndex * itemsPerPage;
-
   for (int i = 0; i < itemsPerPage; i++) {
-
     int globalIdx = startIdx + i;
-    if (globalIdx >= config.playlistLength()) break;
-
+    if (globalIdx >= total) break;
     index.seek(globalIdx * 4, SeekSet);
-
     uint32_t posAddr;
     if (index.readBytes((char*)&posAddr, 4) != 4) break;
-
     playlist.seek(posAddr, SeekSet);
-
     String line = playlist.readStringUntil('\n');
     int tabIdx = line.indexOf('\t');
     if (tabIdx > 0) line = line.substring(0, tabIdx);
     line.trim();
-
     if (config.store.numplaylist && line.length() > 0)
       _plCache[i] = String(globalIdx + 1) + " " + line;
     else
       _plCache[i] = line;
   }
-
   playlist.close();
   index.close();
+  uint32_t dt = millis() - t0;
+  if (dt > 200) Serial.printf("[PLMENU] page %d read %d rows in %lums\n", pageIndex, itemsPerPage, (unsigned long)dt);
 }
 
 void PlayListWidget::drawPlaylist(uint16_t currentItem) {
@@ -2367,47 +2367,48 @@ void PlayListWidget::_printScroll(uint8_t pos,
 }
 
 uint8_t PlayListWidget::_fillPlMenu(int from, uint8_t count) {
-    int     ls = from;
+    // Phase 1: read all rows in one pass under one bus-lock hold (no drawing).
+    // Phase 2: draw from RAM (each draw takes the bus lock via DspCore::startWrite).
+    if (count > MAX_PL_PAGE_ITEMS) count = MAX_PL_PAGE_ITEMS;
+    String rows[MAX_PL_PAGE_ITEMS];
     uint8_t c = 0;
-    bool    finded = false;
-    if (config.playlistLength() == 0) {
+    int total = 0;
+    {
+      uint32_t t0 = millis();
+      SdLockGuard _sdl;
+      total = config.playlistLength();
+      if (total > 0) {
+        File playlist = config.SDPLFS()->open(REAL_PLAYL, "r");
+        File index = config.SDPLFS()->open(REAL_INDEX, "r");
+        int ls = from;
+        while (c < count && ls < 1) { rows[c++] = ""; ls++; }
+        if (c < count && playlist && index && ls <= total) {
+          index.seek((ls - 1) * 4, SeekSet);
+          uint32_t pos = 0;
+          if (index.readBytes((char*)&pos, 4) == 4) {
+            playlist.seek(pos, SeekSet);
+            bool pla = true;
+            while (pla && c < count) {
+              pla = playlist.available();
+              String stationName = playlist.readStringUntil('\n');
+              stationName = stationName.substring(0, stationName.indexOf('\t'));
+              if (config.store.numplaylist && stationName.length() > 0) { stationName = String(from + c) + " " + stationName; }
+              rows[c++] = stationName;
+            }
+          }
+        }
+        if (index) index.close();
+        if (playlist) playlist.close();
+      }
+      uint32_t dt = millis() - t0;
+      if (dt > 200) Serial.printf("[PLMENU] fill from %d read %u rows in %lums\n", from, (unsigned)c, (unsigned long)dt);
+    }
+    if (total == 0) {
       // Clear list area to avoid showing stale content.
-      dsp.fillRect(0, _plYStart,
-                   dsp.width(),
-                   _plTtemsCount * _plItemHeight,
-                   config.theme.background);
+      dsp.fillRect(0, _plYStart, dsp.width(), _plTtemsCount * _plItemHeight, config.theme.background);
       return 0;
     }
-    File playlist = config.SDPLFS()->open(REAL_PLAYL, "r");
-    File index = config.SDPLFS()->open(REAL_INDEX, "r");
-    while (true) {
-        if (ls < 1) {
-            ls++;
-            _printScroll(c, "");
-            c++;
-            continue;
-        }
-        if (!finded) {
-            index.seek((ls - 1) * 4, SeekSet);
-            uint32_t pos;
-            index.readBytes((char*)&pos, 4);
-            finded = true;
-            index.close();
-            playlist.seek(pos, SeekSet);
-        }
-        bool pla = true;
-        while (pla) {
-            pla = playlist.available();
-            String stationName = playlist.readStringUntil('\n');
-            stationName = stationName.substring(0, stationName.indexOf('\t'));
-            if (config.store.numplaylist && stationName.length() > 0) { stationName = String(from + c) + " " + stationName; }
-            _printScroll(c, stationName.c_str());
-            c++;
-            if (c >= count) { break; }
-        }
-        break;
-    }
-    playlist.close();
+    for (uint8_t i = 0; i < c; i++) _printScroll(i, rows[i].c_str());
     return c;
 }
 /**************************

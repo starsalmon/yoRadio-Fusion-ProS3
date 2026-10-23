@@ -22,6 +22,9 @@
 typedef GFXcanvas16 Canvas;
 typedef Adafruit_ST7789 yoDisplay;
 
+#if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
+#define YO_TFT_BUSLOCK_WRITE 1   /* same SD/TFT lock order as ILI9341 (see docs/KNOWN_ISSUES.md) */
+#endif
 #include "tools/commongfx.h"
 
 #if DSP_MODEL == DSP_ST7789

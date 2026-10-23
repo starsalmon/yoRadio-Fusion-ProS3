@@ -25,6 +25,10 @@ DspCore::DspCore(): Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST) {}
 // (web/MQTT/config) and the init sequence hold the shared-bus lock (recursive), so SD traffic
 // can't interleave with them. Normal drawing relies on SPIClass transaction serialisation.
 struct TftBusLock { TftBusLock(){ sdog.begin(); sdog.takeMutex(); } ~TftBusLock(){ sdog.giveMutex(); } };
+// Lock order: bus lock first, then the SPI transaction (paramLock). Never do SD I/O between
+// startWrite/endWrite (paramLock is non-recursive). See sdlock.h.
+void DspCore::startWrite(void){ sdog.begin(); sdog.takeMutex(); Adafruit_ST7789::startWrite(); }
+void DspCore::endWrite(void){ Adafruit_ST7789::endWrite(); sdog.giveMutex(); }
 #else
 struct TftBusLock {};
 #endif

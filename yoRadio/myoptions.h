@@ -10,7 +10,7 @@
 #define myoptions_h
 
 #define L10N_LANGUAGE EN // HU NL PL RU EN EL Enter your own language here!!
-#define NAMEDAYS_FILE HU // HU, PL, NL
+//#define NAMEDAYS_FILE HU // Optional name-day calendar (HU, PL, CZ, GR, NL, UA, DE)
 #define CLOCK_TTS_LANGUAGE "en" //Default language TTS e.g. pl,en,de,ru,fr,hu
 //#define USDATE   //US Date format
 //#define IMPERIALUNIT
@@ -26,9 +26,9 @@
 #define RF_SWITCH     11 // Switches between internal and external Antenna - HIGH to use external
 #define CHARGE_SENSE_PIN 33   // ProS3 GPIO33 = 5V sense
 
-// PROS3 option: force external antenna at boot (via RF_SWITCH).
+// PROS3 option: use external antenna at boot (via RF_SWITCH).
 // Set to 0 if you want to use the internal antenna.
-#define PROS3_FORCE_EXTERNAL_ANTENNA 1
+#define PROS3_USE_EXTERNAL_ANTENNA 1
 /******************************************/
 
 /******************************************/
@@ -49,6 +49,8 @@
 // We'll initialize it in `src/yoradio_user.cpp` and set it to black at boot to
 // prevent it latching random colors from boot-time pin noise.
 #define BUILTIN_NEOPIXEL_PIN 18
+// Brightness used only while clearing the onboard NeoPixel at boot.
+#define BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS 100
 
 // Optional cap for the ledstrip plugin (separate from LEDSTRIP_BRIGHTNESS).
 // Uncomment if you ever enable `USE_LEDSTRIP_PLUGIN`.

@@ -2,8 +2,18 @@
 #include <SPI.h>
 #include "core/options.h"
 #include "../myoptions.h"
-#include "battery.h"
 #include <Adafruit_NeoPixel.h>
+
+#if __has_include("battery.h")
+  #include "battery.h"
+  #define YORADIO_HAS_CUSTOM_BATTERY 1
+#else
+  #define YORADIO_HAS_CUSTOM_BATTERY 0
+#endif
+
+#ifndef BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS
+  #define BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS 10
+#endif
 
 void yoradio_on_setup() {
     Serial.println(">>> yoradio_on_setup() CALLED <<<");
@@ -16,10 +26,10 @@ void yoradio_on_setup() {
         Serial.println(">>> LDO2 (3V3_AUX) enabled! <<<");
       #endif
 
-      #if defined(RF_SWITCH) && (RF_SWITCH != 255) && defined(PROS3_FORCE_EXTERNAL_ANTENNA) && (PROS3_FORCE_EXTERNAL_ANTENNA)
+      #if defined(RF_SWITCH) && (RF_SWITCH != 255) && defined(PROS3_USE_EXTERNAL_ANTENNA) && (PROS3_USE_EXTERNAL_ANTENNA)
         pinMode(RF_SWITCH, OUTPUT);
         digitalWrite(RF_SWITCH, HIGH); // external antenna
-        Serial.println(">>> Forced external antenna! <<<");
+        Serial.println(">>> External antenna enabled! <<<");
       #endif
     #endif
 
@@ -27,7 +37,7 @@ void yoradio_on_setup() {
     {
         static Adafruit_NeoPixel s_px(1, BUILTIN_NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
         s_px.begin();
-        s_px.setBrightness(10);
+        s_px.setBrightness(BUILTIN_NEOPIXEL_BOOT_BRIGHTNESS);
         s_px.clear();
         s_px.show();
         delay(1);
@@ -35,6 +45,8 @@ void yoradio_on_setup() {
     }
 #endif
 
-    battery_init();
+    #if YORADIO_HAS_CUSTOM_BATTERY
+      battery_init();
+    #endif
 }
 

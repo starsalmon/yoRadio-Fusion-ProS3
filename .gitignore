@@ -29,3 +29,10 @@ CMakeLists.txt
 
 # Local per-machine PlatformIO overrides (upload_port etc.)
 platformio_private.ini
+
+# Local-only: firmware backups, IDF component manifests, merge leftovers, git worktrees
+firmware-backups/
+src/idf_component.yml*
+*.orig
+.DS_Store
+worktrees/

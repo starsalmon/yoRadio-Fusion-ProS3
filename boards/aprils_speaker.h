@@ -45,6 +45,22 @@
 /* Adafruit rotation 0-3. Enclosure needs +90 deg CW from Pimoroni default (rot 1).
  * Full-bleed 240x240, zero glass offset. */
 #define TFT_ROTATION 2
+/* TFT_ROTATION is the BASE rotation: web "flip screen" adds 2, MPU auto-rotate adds quarter turns. */
+/* MPU6050 auto-rotate, all four directions (square panel reuses the 240x240 layout), own bus Wire1.
+ * SDA IO3, SCL IO43, VCC 3V3, GND. IO43 = U0TXD: the console is USB CDC, but the ROM bootloader
+ * still prints its reset banner on it, so SCL toggles for a moment at reset (harmless, the MPU
+ * ignores it; the pin is handed to I2C when Wire1 starts). IO3 = JTAG-source strap, only read
+ * if the eFuse selects it; the module pull-ups are harmless. Buttons A/X/Y/B are remapped so the
+ * role follows the screen corner. Axis/direction calibration needs a bench check. */
+#define ORIENT_ENABLE        1
+#define ORIENT_SDA           3
+#define ORIENT_SCL           43
+#define ORIENT_ALL_FOUR      1
+#define ORIENT_REMAP_BUTTONS 1
+#define ORIENT_AXIS_SWAP     0
+#define ORIENT_INVERT_X      0
+#define ORIENT_INVERT_Y      0
+#define ORIENT_QUARTER_DIR   1
 /*****************************************/
 /* Display + SD on the FeatherS3's default SPI (SCK 36 / MOSI 35 / MISO 37, variant defaults), the
  * same shared-bus path as the ProS3 (SPI.begin() in sdpark_boot, no DSP_HSPI / SPI2). */

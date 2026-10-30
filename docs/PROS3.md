@@ -91,3 +91,14 @@ The TFT and SD card share one SPI bus. What makes that work:
 
 See [Safe flashing](../README.md#safe-flashing) in the top-level README (app only at 0x10000, never
 older than `milestone-2026-10-18-bt-rx-stable`).
+
+## Screen auto-rotate (MPU6050, 180 deg)
+
+MPU6050 on its own I2C bus (Wire1), separate from the MAX17048/BH1750 bus on IO8/IO9, wired to the spare
+header: **SDA IO3, SCL IO0**, VCC 3V3, GND, INT not used. IO14 is *not* used because this firmware drives
+the knob NeoPixel ring on GPIO14 (`NEOSTATUS_PIN`). IO0 is the boot strap: the module's SCL pull-up keeps
+it high (normal boot) and only the ESP drives SCL, so the BOOT button still works. IO3 is the JTAG-source
+strap, only read if the eFuse selects it.
+Flips between the two landscape rotations on top of the web "flip screen" setting (never written by
+auto-rotate). Settings/MQTT/HA as in APRILS_SPEAKER.md ("Screen auto-rotate"), modes Off / Auto 180,
+default Auto 180. Mount calibration: `ORIENT_AXIS_SWAP` / `ORIENT_INVERT_X` / `ORIENT_INVERT_Y` in boards/pros3.h.

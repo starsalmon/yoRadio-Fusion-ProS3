@@ -1,5 +1,6 @@
 #include "node_flash.h"
 #include "webgain.h"
+#include "orient.h"
 #include <Arduino.h>
 #include "options.h"
 #include "commandhandler.h"
@@ -174,6 +175,8 @@ if (strEquals(command, "brightness")) {
   if (strEquals(command, "volume"))  { player.setVol(static_cast<uint8_t>(atoi(value))); return true; }
   if (strEquals(command, "sdpos"))   { config.setSDpos(static_cast<uint32_t>(atoi(value))); return true; }
   if (strEquals(command, "snuffle")) { config.setSnuffle(strcmp(value, "true") == 0); return true; }
+  if (strEquals(command, "rotmode")) { orient_setRotmode((uint8_t)atoi(value), true); return true; }
+  if (strEquals(command, "rotlock")) { orient_setLock(atoi(value) != 0, true); return true; }
   if (strEquals(command, "webgain")) { webgain_set(atoi(value), true); return true; }
   if (strEquals(command, "balance")) { config.setBalance(static_cast<uint8_t>(atoi(value))); return true; }
   if (strEquals(command, "reboot"))  { ESP.restart(); return true; }

@@ -1,4 +1,5 @@
 #include "webgain.h"
+#include "orient.h"
 #include "options.h"
 #ifdef MQTT_ROOT_TOPIC
 
@@ -321,6 +322,22 @@ static void mqttPublishWebgain(bool force = false) {
   snprintf(buf, sizeof(buf), "%d", cur);
   mqttClient.publish(t2, 0, true, buf);
 }
+
+#if defined(ORIENT_ENABLE) && ORIENT_ENABLE
+static const char* rotModeName(uint8_t m){ return m==0 ? "Off" : (m==1 ? "Auto 180" : "Auto All"); }
+static void mqttPublishOrient(bool force = false) {
+  if (!mqttClient.connected()) return;
+  static int s_m = -1, s_l = -1, s_q = -1;
+  const int m = orient_rotmode(), l = orient_lock() ? 1 : 0, q = orient_quarter();
+  char t[160];
+  if (force || m != s_m) { s_m = m; snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "rotmode"); mqttClient.publish(t, 0, true, rotModeName((uint8_t)m)); }
+  if (force || l != s_l) { s_l = l; snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "rotlock"); mqttClient.publish(t, 0, true, l ? "ON" : "OFF"); }
+  if (force || q != s_q) { s_q = q; char b[8]; snprintf(b, sizeof(b), "%d", q * 90);
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "rotation"); mqttClient.publish(t, 0, true, b); }
+}
+#else
+static void mqttPublishOrient(bool force = false) { (void)force; }
+#endif
 
 static void mqttPublishTone(bool force = false) {
   #if defined(MQTT_DISABLE) && MQTT_DISABLE
@@ -1023,6 +1040,42 @@ static void mqttPublishHADiscovery() {
              nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
     pubCfg("number", "webgain", cfg);
   }
+#if defined(ORIENT_ENABLE) && ORIENT_ENABLE
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Screen Auto-Rotate\",\"unique_id\":\"%s_rotmode_select\","
+             "\"state_topic\":\"%srotmode\",\"command_topic\":\"%scmd/rotmode\","
+             "\"options\":%s,\"icon\":\"mdi:screen-rotation\",\"entity_category\":\"config\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC,
+             orient_maxMode() >= 2 ? "[\"Off\",\"Auto 180\",\"Auto All\"]" : "[\"Off\",\"Auto 180\"]",
+             availabilityTopic, dev);
+    pubCfg("select", "rotmode", cfg);
+  }
+  {
+    char cfg[720];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Screen Rotation Lock\",\"unique_id\":\"%s_rotlock_sw\","
+             "\"state_topic\":\"%srotlock\",\"command_topic\":\"%scmd/rotlock\","
+             "\"payload_on\":\"ON\",\"payload_off\":\"OFF\",\"icon\":\"mdi:screen-rotation-lock\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("switch", "rotlock", cfg);
+  }
+  {
+    char cfg[640];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Screen Rotation\",\"unique_id\":\"%s_rotation_sensor\","
+             "\"state_topic\":\"%srotation\",\"unit_of_measurement\":\"\u00b0\",\"icon\":\"mdi:phone-rotate-landscape\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("sensor", "rotation", cfg);
+  }
+#endif
   {
     char cfg[760];
     snprintf(cfg, sizeof(cfg),
@@ -1172,6 +1225,14 @@ void onMqttConnect(bool sessionPresent) {
   zeroBuffer();
   snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/webgain");
   mqttClient.subscribe(topic, 2);
+#if defined(ORIENT_ENABLE) && ORIENT_ENABLE
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/rotmode");
+  mqttClient.subscribe(topic, 2);
+  zeroBuffer();
+  snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/rotlock");
+  mqttClient.subscribe(topic, 2);
+#endif
   zeroBuffer();
   snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/treble");
   mqttClient.subscribe(topic, 2);
@@ -1253,6 +1314,7 @@ void onMqttConnect(bool sessionPresent) {
   mqttPublishAlsLuxCurrent(true);
   mqttPublishBalance(true);
   mqttPublishWebgain(true);
+  mqttPublishOrient(true);
   mqttPublishTone(true);
   mqttPublishOutputDevice(true);
   mqttPublishBtSinkName(true);
@@ -1392,6 +1454,7 @@ void mqttLoop() {
   mqttPublishAlsLuxCurrent(false);
   mqttPublishBalance(false);
   mqttPublishWebgain(false);
+  mqttPublishOrient(false);
   mqttPublishTone(false);
   mqttPublishNeoStatusBrightnessPct(false);
   mqttPublishNeoStatusFollowScreen(false);
@@ -2033,6 +2096,35 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       return;
     }
   }
+
+#if defined(ORIENT_ENABLE) && ORIENT_ENABLE
+  // <root>cmd/rotmode: "Off"/"Auto 180"/"Auto All" or 0/1/2.  <root>cmd/rotlock: ON/OFF or 1/0.
+  {
+    char t[160];
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/rotmode");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 15) ? len : 15;
+      char buf[16]; strncpy(buf, payload, n); buf[n] = '\0';
+      uint8_t m;
+      if (strcasecmp(buf, "off") == 0) m = 0;
+      else if (strcasecmp(buf, "auto 180") == 0) m = 1;
+      else if (strcasecmp(buf, "auto all") == 0) m = 2;
+      else m = (uint8_t)atoi(buf);
+      orient_setRotmode(m, true);
+      mqttPublishOrient(true);
+      return;
+    }
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "cmd/rotlock");
+    if (strcmp(topic, t) == 0) {
+      const size_t n = (len < 7) ? len : 7;
+      char buf[8]; strncpy(buf, payload, n); buf[n] = '\0';
+      const bool on = (strcasecmp(buf, "on") == 0) || (strcasecmp(buf, "true") == 0) || (atoi(buf) != 0);
+      orient_setLock(on, true);
+      mqttPublishOrient(true);
+      return;
+    }
+  }
+#endif
 
   // Dedicated command topic: <root>cmd/balance (HA number, -16..16)
   {

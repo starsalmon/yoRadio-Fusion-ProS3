@@ -38,6 +38,21 @@
 #define BATTERY_SCL   9
 #define BATTERY_INT   10
 
+/******************************************/
+// --- MPU6050 auto screen rotation (180 deg only) on its OWN I2C bus (Wire1) ---
+// Spare header pins: SDA IO3, SCL IO0, VCC 3V3, GND. No INT line.
+// NOT IO14: this firmware drives the knob NeoPixel ring on GPIO14 (NEOSTATUS_PIN below).
+// IO0 is the boot strap: the module's SCL pull-up holds it high = normal boot, and only the
+// master drives SCL, so it cannot force download mode (the BOOT button still works).
+// IO3 is the JTAG-source strap, only read if the eFuse selects it (not on stock ProS3). Mount calibration: ORIENT_AXIS_SWAP / ORIENT_INVERT_X/Y.
+#define ORIENT_ENABLE    1
+#define ORIENT_SDA       3
+#define ORIENT_SCL       0
+#define ORIENT_ALL_FOUR  0
+#define ORIENT_AXIS_SWAP 0
+#define ORIENT_INVERT_X  0
+#define ORIENT_INVERT_Y  0
+
 // Footer battery icon: colorize by % (comment out to use theme color)
 #define FOOTER_BATTERY_COLORIZE 1
 /******************************************/

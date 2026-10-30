@@ -21,6 +21,18 @@
 #ifndef ORIENT_AXIS_SWAP
   #define ORIENT_AXIS_SWAP 0         // mount calibration: swap sensor X/Y
 #endif
+// Screen-frame mapping: which sensor axis (0=X,1=Y,2=Z) is the screen's horizontal (H),
+// vertical (V, +V = gravity when upright) and normal (N). Only H/V (the screen plane) decide the
+// rotation; N (forward/back pitch) only gates "too flat to tell". AXIS_SWAP/INVERT apply after.
+#ifndef ORIENT_H_AXIS
+  #define ORIENT_H_AXIS 0
+#endif
+#ifndef ORIENT_V_AXIS
+  #define ORIENT_V_AXIS 1
+#endif
+#ifndef ORIENT_N_AXIS
+  #define ORIENT_N_AXIS 2
+#endif
 #ifndef ORIENT_INVERT_X
   #define ORIENT_INVERT_X 0
 #endif
@@ -46,12 +58,19 @@ static volatile uint8_t s_quarter = 0;      // applied
 static volatile int8_t  s_want = -1;        // decided by the task, applied by orient_loop
 static uint8_t  s_mode = ORIENT_DEFAULT_MODE;
 static bool     s_lock = false;
+static uint8_t  s_who = 0;
+static volatile float s_raw[3] = {0,0,0}, s_ang = -1;
 
 uint8_t orient_maxMode(){ return ORIENT_ALL_FOUR ? 2 : 1; }
 uint8_t orient_quarter(){ return s_quarter; }
 uint8_t orient_rotmode(){ return s_mode; }
 bool    orient_lock(){ return s_lock; }
 bool    orient_present(){ return s_present; }
+int orient_diag(char* buf, int n){
+  return snprintf(buf, n, "{\"present\":%d,\"addr\":\"0x%02X\",\"who\":\"0x%02X\",\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,\"angle\":%.0f,\"rotation\":%d,\"mode\":%u,\"lock\":%d,\"map\":\"H%dV%dN%d\"}",
+    s_present?1:0, s_addr, s_who, s_raw[0], s_raw[1], s_raw[2], s_ang, s_quarter*90, (unsigned)s_mode, s_lock?1:0,
+    ORIENT_H_AXIS, ORIENT_V_AXIS, ORIENT_N_AXIS);
+}
 
 static void save(){
   Preferences p; if(p.begin("yrxorient", false)){ p.putUChar("rotmode", s_mode); p.putUChar("rotlock", s_lock?1:0); p.end(); }
@@ -74,6 +93,7 @@ static bool probe(){
     s_addr = a; uint8_t who = 0;
     if(!rd(0x75, &who, 1)) continue;
     // 0x68 = MPU6050; 0x70/0x71/0x73/0x98 = MPU6500/9250/6886-style clones with the same accel map.
+    s_who = who;
     if(who==0x68 || who==0x69 || who==0x70 || who==0x71 || who==0x73 || who==0x98){
       Serial.printf("[ORIENT] MPU at 0x%02X WHO_AM_I=0x%02X\n", a, who); return true;
     }
@@ -106,9 +126,9 @@ static void orientTask(void*){
       continue;
     }
     fails = 0;
-    float ax = (int16_t)((b[0]<<8)|b[1]) / 16384.0f;
-    float ay = (int16_t)((b[2]<<8)|b[3]) / 16384.0f;
-    float az = (int16_t)((b[4]<<8)|b[5]) / 16384.0f;
+    float g[3];
+    for(int k=0;k<3;k++){ g[k] = (int16_t)((b[2*k]<<8)|b[2*k+1]) / 16384.0f; s_raw[k] = g[k]; }
+    float ax = g[ORIENT_H_AXIS], ay = g[ORIENT_V_AXIS], az = g[ORIENT_N_AXIS];
 #if ORIENT_AXIS_SWAP
     { float t = ax; ax = ay; ay = t; }
 #endif
@@ -122,9 +142,10 @@ static void orientTask(void*){
     if(s_mode == 0){ if(cur != 0) s_want = 0; cand = 0xFF; continue; }
     if(s_lock){ cand = 0xFF; continue; }
     const float plane = sqrtf(ax*ax + ay*ay);
-    if(fabsf(az) > FLAT_G || plane < MIN_PLANE_G){ cand = 0xFF; continue; }
+    if(fabsf(az) > FLAT_G || plane < MIN_PLANE_G){ s_ang = -1; cand = 0xFF; continue; }
     // Angle of gravity in the screen plane: 0 = "down" along +Y (base orientation).
     float a = atan2f(ax, ay) * 57.29578f; if(a < 0) a += 360.0f;
+    s_ang = a;
     const float curDeg = (float)((cur * 90 * ORIENT_QUARTER_DIR + 360) % 360);
     uint8_t next = cur;
     if(s_mode >= 2){
@@ -191,5 +212,6 @@ bool    orient_lock(){ return false; }
 void    orient_setLock(bool, bool){}
 uint8_t orient_maxMode(){ return 0; }
 bool    orient_present(){ return false; }
+int     orient_diag(char* b, int n){ if(n) b[0]=0; return 0; }
 int     orient_remapButton(int id){ return id; }
 #endif

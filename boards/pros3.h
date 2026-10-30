@@ -49,6 +49,11 @@
 #define ORIENT_SDA       3
 #define ORIENT_SCL       0
 #define ORIENT_ALL_FOUR  0
+// As mounted on the radio PCB: steering-wheel rotation moves sensor X/Z, pitch moves Y,
+// so the screen plane is X (horizontal) / Z (vertical) and Y is the screen normal.
+#define ORIENT_H_AXIS    0
+#define ORIENT_V_AXIS    2
+#define ORIENT_N_AXIS    1
 #define ORIENT_AXIS_SWAP 0
 #define ORIENT_INVERT_X  0
 #define ORIENT_INVERT_Y  0

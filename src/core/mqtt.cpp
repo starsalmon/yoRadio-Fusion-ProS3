@@ -334,6 +334,9 @@ static void mqttPublishOrient(bool force = false) {
   if (force || l != s_l) { s_l = l; snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "rotlock"); mqttClient.publish(t, 0, true, l ? "ON" : "OFF"); }
   if (force || q != s_q) { s_q = q; char b[8]; snprintf(b, sizeof(b), "%d", q * 90);
     snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "rotation"); mqttClient.publish(t, 0, true, b); }
+  static uint32_t s_diagAt = 0;                       // diag JSON every 2 s (no serial needed)
+  if (force || millis() - s_diagAt >= 2000) { s_diagAt = millis(); char d[256]; orient_diag(d, sizeof(d));
+    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "orient"); mqttClient.publish(t, 0, false, d); }
 }
 #else
 static void mqttPublishOrient(bool force = false) { (void)force; }

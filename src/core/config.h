@@ -55,7 +55,7 @@
   #define ESP_ARDUINO_3 1
 #endif
 
-#define CONFIG_VERSION  24
+#define CONFIG_VERSION  25
 
 enum playMode_e : uint8_t {  //DLNA mod
   PM_WEB    = 0,
@@ -303,6 +303,11 @@ struct config_t
   // Lux clamp (x10) for BH1750 mapping (e.g. 10=1.0 lux, 8000=800.0 lux).
   uint16_t  alsLuxMin_x10;
   uint16_t  alsLuxMax_x10;
+
+  // Screensaver visual style (0=clock, 1=fluid, 2=GoL). Animated styles use PSRAM on ILI9341 builds.
+  uint8_t   screensaverStyle;
+  // GoL palette: 0..6 = white/rainbow/heatmap/neon/plasma/fire; 7 = rotate style on auto-reseed.
+  uint8_t   screensaverGolStyle;
 };
 
 #if IR_PIN != 255
@@ -487,6 +492,8 @@ class Config {
     void setScreensaverPlayingEnabled(bool val);
     void setScreensaverPlayingTimeout(uint16_t val);
     void setScreensaverPlayingBlank(bool val);
+    void setScreensaverStyle(uint8_t val);
+    void setScreensaverGolStyle(uint8_t val);
     void setSntpOne(const char *val);
     void setShowweather(bool val);
     void setShowlogos(bool val);

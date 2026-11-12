@@ -1,6 +1,7 @@
 #include "dsplog.h"
 #include "options.h"
 #include "config.h"
+#include "../screensavers/screensaver.h"
 #include "sdlock.h"
 #include <SPIFFS.h> /* ------------------myTheme webUI upload needed---------------*/ 
 #include "display.h"
@@ -394,6 +395,11 @@ void Config::_setupVersion(){
       saveValue(&store.alsGammaX100, (uint8_t)60, false);
       saveValue(&store.alsLuxMin_x10, (uint16_t)10, false);    // 1.0 lux
       saveValue(&store.alsLuxMax_x10, (uint16_t)8000, false);  // 800.0 lux
+      break;
+    }
+    case 24: {
+      saveValue(&store.screensaverStyle, (uint8_t)0, false);
+      saveValue(&store.screensaverGolStyle, (uint8_t)7, false);
       break;
     }
   }
@@ -1288,6 +1294,20 @@ void Config::setScreensaverPlayingBlank(bool val){
   display.putRequest(NEWMODE, PLAYER);
 #endif
 }
+void Config::setScreensaverStyle(uint8_t val){
+  if (val >= SS__COUNT) val = SS_CLOCK;
+  saveValue(&store.screensaverStyle, val);
+#ifndef DSP_LCD
+  display.putRequest(NEWMODE, PLAYER);
+#endif
+}
+void Config::setScreensaverGolStyle(uint8_t val){
+  if (val > 7) val = 7;
+  saveValue(&store.screensaverGolStyle, val);
+#ifndef DSP_LCD
+  display.putRequest(NEWMODE, PLAYER);
+#endif
+}
 // Automatic DST: if TIMEZONE_POSIX is set (myoptions.h), override the fixed-offset TZ that
 // configTime() installs with a POSIX rule string. configTime() still starts SNTP; only TZ changes,
 // so the tzHour/tzMin offset is not applied twice (localtime() uses TZ only).
@@ -1391,6 +1411,8 @@ void Config::resetSystem(const char *val, uint8_t clientId){
     saveValue(&store.screensaverPlayingEnabled, false);
     saveValue(&store.screensaverPlayingTimeout, (uint16_t)5);
     saveValue(&store.screensaverPlayingBlank, false);
+    saveValue(&store.screensaverStyle, (uint8_t)0);
+    saveValue(&store.screensaverGolStyle, (uint8_t)7);
     display.putRequest(NEWMODE, CLEAR); display.putRequest(NEWMODE, PLAYER);
     netserver.requestOnChange(GETSCREEN, clientId);
     return;
@@ -1463,6 +1485,8 @@ void Config::setDefaults() {
   store.alsGammaX100 = 60;
   store.alsLuxMin_x10 = 10;
   store.alsLuxMax_x10 = 8000;
+  store.screensaverStyle = 0;
+  store.screensaverGolStyle = 7;
   store.balance = 0;
   store.trebble = 0;
   store.middle = 0;

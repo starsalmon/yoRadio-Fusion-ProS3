@@ -63,6 +63,25 @@ static volatile float s_raw[3] = {0,0,0}, s_ang = -1;
 
 uint8_t orient_maxMode(){ return ORIENT_ALL_FOUR ? 2 : 1; }
 uint8_t orient_quarter(){ return s_quarter; }
+
+bool orient_gravityScreen(float* gx, float* gy) {
+  if (!gx || !gy) return false;
+  if (!s_present) return false;
+  float ax = s_raw[ORIENT_H_AXIS], ay = s_raw[ORIENT_V_AXIS];
+#if ORIENT_AXIS_SWAP
+  { float t = ax; ax = ay; ay = t; }
+#endif
+#if ORIENT_INVERT_X
+  ax = -ax;
+#endif
+#if ORIENT_INVERT_Y
+  ay = -ay;
+#endif
+  // Accelerometer reports gravity as upward bias; fluid wants downward acceleration.
+  *gx = -ax;
+  *gy = -ay;
+  return true;
+}
 uint8_t orient_rotmode(){ return s_mode; }
 bool    orient_lock(){ return s_lock; }
 bool    orient_present(){ return s_present; }
@@ -213,5 +232,6 @@ void    orient_setLock(bool, bool){}
 uint8_t orient_maxMode(){ return 0; }
 bool    orient_present(){ return false; }
 int     orient_diag(char* b, int n){ if(n) b[0]=0; return 0; }
+bool    orient_gravityScreen(float*, float*){ return false; }
 int     orient_remapButton(int id){ return id; }
 #endif

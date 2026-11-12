@@ -27,6 +27,7 @@
 #endif
 #include "bt_companion.h"
 #include "album_art.h"
+#include "../screensavers/screensaver.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
@@ -921,9 +922,11 @@ if (newmode == _mode ||
     _buildPager();
   }
 
+  const displayMode_e prevMode = _mode;
   _mode = newmode;
   dsp.setScrollId(NULL);
   if (newmode == PLAYER) {
+    if (prevMode == SCREENSAVER || prevMode == SCREENBLANK) screensaver_leave();
     if (config.isScreensaver) {
         if (_clock) _clock->moveTo(getclockMove());
         if (_date)  _date->moveTo(getdateMove());
@@ -979,21 +982,30 @@ if (newmode == _mode ||
     config.isScreensaver = true;
     _pager->setPage( pages[PG_SCREENSAVER]);
     _layoutChange(player.isRunning());
-    if (_clock) {
+    screensaver_enter(newmode);
+    const bool anim = screensaver_isAnimated();
+    if (_clock && !anim) {
       WidgetConfig ccfg = getclockConf();
       _clock->moveTo({ccfg.left, ccfg.top, 0});
       _clock->draw(true);
+    } else if (_clock && anim) {
+      _clock->clear();
     }
     if (_date) {
+      if (anim) _date->clear();
+      else {
         auto dc = getDateConf();
         _date->moveTo({ dc.widget.left, dc.widget.top, (int16_t)dc.width });
+      }
     }
+    if (anim) dsp.fillScreen(0x0000);
     if (newmode == SCREENBLANK) {
       //dsp.clearClock();
       if (_clock) _clock->clear();
       config.setDspOn(false, false);
     }
   }else{
+    if (config.isScreensaver) screensaver_leave();
     config.screensaverTicks=SCREENSAVERSTARTUPDELAY;
     config.screensaverPlayingTicks=SCREENSAVERSTARTUPDELAY;
     config.isScreensaver = false;
@@ -1196,6 +1208,7 @@ void Display::loop() {
 #endif
 
   _pager->loop();
+  screensaver_tick();
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   // BT mode: the logo is the only thing in the station-logo slot. Other widgets
   // (title/clock/footer redraws) can clear it, so re-blit it periodically.
@@ -2648,6 +2661,10 @@ void Display::_time(bool redraw) {
   static int lastSSMinute = -1;
   if (!config.isScreensaver) {
     lastSSMinute = -1;
+  }
+
+  if (config.isScreensaver && screensaver_isAnimated()) {
+    return;
   }
   
   if (config.isScreensaver) {

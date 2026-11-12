@@ -13,4 +13,6 @@ void    orient_setLock(bool on, bool save);
 uint8_t orient_maxMode();            // 1 (180 only) or 2 (all four), per board
 bool    orient_present();
 int     orient_diag(char* buf, int n);   // JSON: present/addr/raw accel/angle/rotation (MQTT <root>orient)            // MPU found and responding
+// Screen-plane gravity (g, down = fluid pull). Uses last MPU sample from the orient task.
+bool    orient_gravityScreen(float* gx, float* gy);
 int     orient_remapButton(int id);  // physical button index -> role index for the current rotation

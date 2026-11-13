@@ -11,6 +11,7 @@
 #include <Preferences.h>
 #include <math.h>
 #include "display.h"
+#include "config.h"
 
 #ifndef ORIENT_SDA
   #error "ORIENT_ENABLE needs ORIENT_SDA / ORIENT_SCL in the board header"
@@ -196,6 +197,9 @@ void orient_init(){
 void orient_loop(){
   static uint32_t playerSince = 0;
   if(display.mode() != PLAYER){ playerSince = 0; return; }   // boot, menus, SD list, playlist, sleep, screensaver
+  // Screen off (dspon=0 keeps mode PLAYER) or panel asleep: no flip/redraw on a sleeping panel.
+  // A pending rotation stays queued and is applied once the screen is back on.
+  if(!config.store.dspon || display.panelAsleep){ playerSince = 0; return; }
   const uint32_t now = millis();
   if(playerSince == 0){ playerSince = now ? now : 1; return; }
   if(now - playerSince < PLAYER_SETTLE_MS) return;

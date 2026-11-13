@@ -2869,9 +2869,12 @@ bool Display::deepsleep(){
   // Flag first: dsp.sleep() takes ~300 ms, and the backlight plugin (another task) must not
   // light the backlight on a sleeping normally-white panel in that window.
   panelAsleep = true;
+#if BRIGHTNESS_PIN!=255
+  analogWrite(BRIGHTNESS_PIN, 0);      // dark before the ~300 ms SLPIN/DISPOFF, not after
+#endif
   dsp.sleep();
 #if BRIGHTNESS_PIN!=255
-  analogWrite(BRIGHTNESS_PIN, 0);
+  analogWrite(BRIGHTNESS_PIN, 0);      // again: a writer that passed its panelAsleep check just before the flag
 #endif
   return true;
 #endif

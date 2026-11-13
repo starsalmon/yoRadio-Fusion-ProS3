@@ -2290,6 +2290,7 @@ void Config::setBrightness(bool dosave){
     return;
   }
   analogWrite(BRIGHTNESS_PIN, map(store.brightness, 0, 100, 0, 255));
+  if (display.panelAsleep) { analogWrite(BRIGHTNESS_PIN, 0); return; }  // raced deepsleep() on the display task
   if(!store.dspon) store.dspon = true;
   if(dosave){
     saveValue(&store.brightness, store.brightness, false, true);
@@ -2317,6 +2318,8 @@ void Config::setBrightnessRaw(uint8_t percent) {
   // Hardware only: do not persist to config/store.
   if (display.panelAsleep) return;  // backlight on + panel asleep = white screen
   analogWrite(BRIGHTNESS_PIN, map(percent, 0, 100, 0, 255));
+  // Called from plugin/ticker tasks: if deepsleep() set the flag while we were writing, undo it.
+  if (display.panelAsleep) analogWrite(BRIGHTNESS_PIN, 0);
 #endif
 }
 

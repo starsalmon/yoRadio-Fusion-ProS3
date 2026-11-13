@@ -334,9 +334,14 @@ static void mqttPublishOrient(bool force = false) {
   if (force || l != s_l) { s_l = l; snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "rotlock"); mqttClient.publish(t, 0, true, l ? "ON" : "OFF"); }
   if (force || q != s_q) { s_q = q; char b[8]; snprintf(b, sizeof(b), "%d", q * 90);
     snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "rotation"); mqttClient.publish(t, 0, true, b); }
-  static uint32_t s_diagAt = 0;                       // diag JSON every 2 s (no serial needed)
-  if (force || millis() - s_diagAt >= 2000) { s_diagAt = millis(); char d[256]; orient_diag(d, sizeof(d));
-    snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "orient"); mqttClient.publish(t, 0, false, d); }
+  // Diag JSON: at most every 2 s, and only when it changed (60 s heartbeat otherwise).
+  static uint32_t s_diagAt = 0; static char s_lastDiag[256] = "";
+  const uint32_t now = millis();
+  if (!force && (uint32_t)(now - s_diagAt) < 2000u) return;
+  char d[256]; orient_diag(d, sizeof(d));
+  if (!force && strcmp(d, s_lastDiag) == 0 && (uint32_t)(now - s_diagAt) < 60000u) return;
+  s_diagAt = now; strlcpy(s_lastDiag, d, sizeof(s_lastDiag));
+  snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "orient"); mqttClient.publish(t, 0, false, d);
 }
 #else
 static void mqttPublishOrient(bool force = false) { (void)force; }

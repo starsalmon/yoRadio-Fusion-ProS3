@@ -68,11 +68,12 @@ void screensaver_tick() {
   }
 }
 
-void screensaver_blit(const uint16_t* fb) {
+void screensaver_blit(const uint16_t* fb, const uint8_t* stripMask) {
   if (!fb) return;
   const int w = dsp.width(), h = dsp.height();
-  const int STRIP = 16;  // 320x16x2 = 10 KB, ~2 ms at 40 MHz per bus hold
-  for (int y = 0; y < h; y += STRIP) {
+  const int STRIP = SS_BLIT_STRIP;  // 320x16x2 = 10 KB, ~2 ms at 40 MHz per bus hold
+  for (int y = 0, s = 0; y < h; y += STRIP, s++) {
+    if (stripMask && !stripMask[s]) continue;
     const int rows = (h - y < STRIP) ? (h - y) : STRIP;
     dsp.startWrite();
     dsp.setAddrWindow(0, y, w, rows);

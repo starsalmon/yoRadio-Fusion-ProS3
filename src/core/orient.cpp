@@ -78,9 +78,18 @@ bool orient_gravityScreen(float* gx, float* gy) {
 #if ORIENT_INVERT_Y
   ay = -ay;
 #endif
-  // Accelerometer reports gravity as upward bias; fluid wants downward acceleration.
-  *gx = -ax;
-  *gy = -ay;
+  // Screen-plane convention (same as orientTask): +ay = gravity toward the panel's bottom edge,
+  // +ax = toward +H. Return gravity in the *displayed* frame, y-up: the panel frame turned by the
+  // applied auto-rotation, so "down" stays physically down after a 180 flip.
+  float x = -ax, y = -ay;
+  switch (s_quarter & 3) {
+    case 2: x = -x; y = -y; break;
+    case 1: { const float t = x; x = (ORIENT_QUARTER_DIR > 0) ?  y : -y; y = (ORIENT_QUARTER_DIR > 0) ? -t :  t; break; }  // 4-way boards only, unverified
+    case 3: { const float t = x; x = (ORIENT_QUARTER_DIR > 0) ? -y :  y; y = (ORIENT_QUARTER_DIR > 0) ?  t : -t; break; }
+    default: break;
+  }
+  *gx = x;
+  *gy = y;
   return true;
 }
 uint8_t orient_rotmode(){ return s_mode; }

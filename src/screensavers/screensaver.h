@@ -23,4 +23,6 @@ uint8_t screensaver_styleClamp(uint8_t v);
 uint8_t screensaver_golStyleClamp(uint8_t v);
 // Push a full-screen RGB565 frame in short row strips, releasing the shared TFT/SD bus lock
 // between strips so SD reads are never blocked for a whole ~30 ms frame.
-void screensaver_blit(const uint16_t* fb);
+// stripMask (optional): one byte per SS_BLIT_STRIP rows; 0 = skip that strip (unchanged on screen).
+#define SS_BLIT_STRIP 16
+void screensaver_blit(const uint16_t* fb, const uint8_t* stripMask = nullptr);

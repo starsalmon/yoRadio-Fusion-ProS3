@@ -7,6 +7,7 @@
 #include "player.h"
 #include "display.h"
 #include "netserver.h"
+#include "network.h"
 #include "config.h"
 #include "controls.h"
 #include "telnet.h"
@@ -567,9 +568,26 @@ void handleSet(AsyncWebServerRequest *request) {
     }
   }
 
-  if (touched) {
+  // Keys this handler doesn't own (screensaverstyle, rotmode, nodeflash, ...) go to the same
+  // command table as /?key=value, serial and telnet. Only when no /set-specific key was given.
+  bool execd = false;
+  if (!touched && !changed && request->params() > 0) {
+#if defined(HTTP_USER) && defined(HTTP_PASS)
+    if (network.status == CONNECTED && !request->authenticate(HTTP_USER, HTTP_PASS)) {
+      return request->requestAuthentication();
+    }
+#endif
+    for (size_t i = 0; i < request->params(); i++) {
+      AsyncWebParameter* p = request->getParam(i);
+      if (p && cmd.exec(p->name().c_str(), p->value().c_str())) execd = true;
+    }
+  }
+
+  if (touched || changed) {
     if (changed) config.eepromWrite(EEPROM_START, config.store);
     request->send(200, "text/plain", changed ? "OK" : "NOCHANGE");
+  } else if (execd) {
+    request->send(200, "text/plain", "OK");
   } else {
     request->send(400, "text/plain", "Missing parameters");
   }

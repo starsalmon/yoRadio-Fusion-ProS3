@@ -1,5 +1,6 @@
 #include "webgain.h"
 #include "orient.h"
+#include "../screensavers/screensaver.h"
 #include "options.h"
 #ifdef MQTT_ROOT_TOPIC
 
@@ -346,6 +347,40 @@ static void mqttPublishOrient(bool force = false) {
 #else
 static void mqttPublishOrient(bool force = false) { (void)force; }
 #endif
+
+// Screensaver: style/palette (select), idle + while-playing enable (switch) and timeouts (number).
+static const char* const kSsStyleNames[SS__COUNT] = { "Clock", "Fluid", "Game of Life" };
+static const char* const kGolStyleNames[SS_GOL_STYLE_COUNT] = { "White", "Rainbow", "Heatmap", "Neon trails", "Plasma", "Fire" };
+static const char* ssStyleName(uint8_t v){ v = screensaver_styleClamp(v); return kSsStyleNames[v]; }
+static const char* golStyleName(uint8_t v){ v = screensaver_golStyleClamp(v); return v < SS_GOL_STYLE_COUNT ? kGolStyleNames[v] : "Random"; }
+static void mqttPublishScreensaver(bool force = false) {
+  if (!mqttClient.connected()) return;
+  static int s_sty = -1, s_gol = -1, s_en = -1, s_to = -1, s_pen = -1, s_pto = -1;
+  const int sty = screensaver_styleClamp(config.store.screensaverStyle);
+  const int gol = screensaver_golStyleClamp(config.store.screensaverGolStyle);
+  const int en = config.store.screensaverEnabled ? 1 : 0, to = config.store.screensaverTimeout;
+  const int pen = config.store.screensaverPlayingEnabled ? 1 : 0, pto = config.store.screensaverPlayingTimeout;
+  char t[160], b[8];
+  if (force || sty != s_sty) { s_sty = sty; snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "screensaverstyle"); mqttClient.publish(t, 0, true, ssStyleName((uint8_t)sty)); }
+  if (force || gol != s_gol) { s_gol = gol; snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "screensavergolstyle"); mqttClient.publish(t, 0, true, golStyleName((uint8_t)gol)); }
+  if (force || en != s_en) { s_en = en; snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "screensaver"); mqttClient.publish(t, 0, true, en ? "ON" : "OFF"); }
+  if (force || to != s_to) { s_to = to; snprintf(b, sizeof(b), "%d", to); snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "screensavertimeout"); mqttClient.publish(t, 0, true, b); }
+  if (force || pen != s_pen) { s_pen = pen; snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "screensaverplaying"); mqttClient.publish(t, 0, true, pen ? "ON" : "OFF"); }
+  if (force || pto != s_pto) { s_pto = pto; snprintf(b, sizeof(b), "%d", pto); snprintf(t, sizeof(t), "%s%s", MQTT_ROOT_TOPIC, "screensaverplayingtimeout"); mqttClient.publish(t, 0, true, b); }
+}
+static int parseSsStyle(const char* s){
+  for (int i = 0; i < SS__COUNT; i++) if (strcasecmp(s, kSsStyleNames[i]) == 0) return i;
+  if (strcasecmp(s, "life") == 0 || strcasecmp(s, "gol") == 0) return SS_GOL;
+  if (s[0] >= '0' && s[0] <= '9') return atoi(s);
+  return -1;
+}
+static int parseGolStyle(const char* s){
+  for (int i = 0; i < SS_GOL_STYLE_COUNT; i++) if (strcasecmp(s, kGolStyleNames[i]) == 0) return i;
+  if (strcasecmp(s, "random") == 0 || strcasecmp(s, "neon") == 0) return strcasecmp(s, "neon") == 0 ? 3 : SS_GOL_STYLE_AUTO;
+  if (s[0] >= '0' && s[0] <= '9') return atoi(s);
+  return -1;
+}
+static bool parseOnOff(const char* s){ return strcasecmp(s, "on") == 0 || strcasecmp(s, "true") == 0 || atoi(s) != 0; }
 
 static void mqttPublishTone(bool force = false) {
   #if defined(MQTT_DISABLE) && MQTT_DISABLE
@@ -1087,6 +1122,73 @@ static void mqttPublishHADiscovery() {
   {
     char cfg[760];
     snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Screensaver Style\",\"unique_id\":\"%s_ssstyle_select\","
+             "\"state_topic\":\"%sscreensaverstyle\",\"command_topic\":\"%scmd/screensaverstyle\","
+             "\"options\":[\"Clock\",\"Fluid\",\"Game of Life\"],\"icon\":\"mdi:monitor-shimmer\",\"entity_category\":\"config\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("select", "screensaverstyle", cfg);
+  }
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Life Colour Style\",\"unique_id\":\"%s_ssgol_select\","
+             "\"state_topic\":\"%sscreensavergolstyle\",\"command_topic\":\"%scmd/screensavergolstyle\","
+             "\"options\":[\"White\",\"Rainbow\",\"Heatmap\",\"Neon trails\",\"Plasma\",\"Fire\",\"Random\"],"
+             "\"icon\":\"mdi:palette\",\"entity_category\":\"config\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("select", "screensavergolstyle", cfg);
+  }
+  {
+    char cfg[720];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Screensaver (Idle)\",\"unique_id\":\"%s_ss_sw\","
+             "\"state_topic\":\"%sscreensaver\",\"command_topic\":\"%scmd/screensaver\","
+             "\"payload_on\":\"ON\",\"payload_off\":\"OFF\",\"icon\":\"mdi:monitor-star\",\"entity_category\":\"config\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("switch", "screensaver", cfg);
+  }
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Screensaver Idle Timeout\",\"unique_id\":\"%s_ssto_number\","
+             "\"state_topic\":\"%sscreensavertimeout\",\"command_topic\":\"%scmd/screensavertimeout\","
+             "\"min\":5,\"max\":3600,\"step\":5,\"mode\":\"box\",\"unit_of_measurement\":\"s\",\"icon\":\"mdi:timer-outline\",\"entity_category\":\"config\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "screensavertimeout", cfg);
+  }
+  {
+    char cfg[720];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Screensaver While Playing\",\"unique_id\":\"%s_ssplay_sw\","
+             "\"state_topic\":\"%sscreensaverplaying\",\"command_topic\":\"%scmd/screensaverplaying\","
+             "\"payload_on\":\"ON\",\"payload_off\":\"OFF\",\"icon\":\"mdi:monitor-star\",\"entity_category\":\"config\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("switch", "screensaverplaying", cfg);
+  }
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
+             "{\"name\":\"Screensaver Playing Timeout\",\"unique_id\":\"%s_sspto_number\","
+             "\"state_topic\":\"%sscreensaverplayingtimeout\",\"command_topic\":\"%scmd/screensaverplayingtimeout\","
+             "\"min\":1,\"max\":1080,\"step\":1,\"mode\":\"box\",\"unit_of_measurement\":\"min\",\"icon\":\"mdi:timer-outline\",\"entity_category\":\"config\","
+             "\"availability_topic\":\"%s\",\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+             "\"device\":%s}",
+             nodeId, MQTT_ROOT_TOPIC, MQTT_ROOT_TOPIC, availabilityTopic, dev);
+    pubCfg("number", "screensaverplayingtimeout", cfg);
+  }
+  {
+    char cfg[760];
+    snprintf(cfg, sizeof(cfg),
              "{\"name\":\"Audio EQ Treble\",\"unique_id\":\"%s_treble_number\","
              "\"state_topic\":\"%streble\",\"value_template\":\"{{ value|int }}\","
              "\"command_topic\":\"%scmd/treble\","
@@ -1233,6 +1335,15 @@ void onMqttConnect(bool sessionPresent) {
   zeroBuffer();
   snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/webgain");
   mqttClient.subscribe(topic, 2);
+  {
+    static const char* const ssCmds[] = { "cmd/screensaverstyle", "cmd/screensavergolstyle", "cmd/screensaver",
+                                          "cmd/screensavertimeout", "cmd/screensaverplaying", "cmd/screensaverplayingtimeout" };
+    for (const char* c : ssCmds) {
+      zeroBuffer();
+      snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, c);
+      mqttClient.subscribe(topic, 2);
+    }
+  }
 #if defined(ORIENT_ENABLE) && ORIENT_ENABLE
   zeroBuffer();
   snprintf(topic, sizeof(topic), "%s%s", MQTT_ROOT_TOPIC, "cmd/rotmode");
@@ -1323,6 +1434,7 @@ void onMqttConnect(bool sessionPresent) {
   mqttPublishBalance(true);
   mqttPublishWebgain(true);
   mqttPublishOrient(true);
+  mqttPublishScreensaver(true);
   mqttPublishTone(true);
   mqttPublishOutputDevice(true);
   mqttPublishBtSinkName(true);
@@ -1463,6 +1575,7 @@ void mqttLoop() {
   mqttPublishBalance(false);
   mqttPublishWebgain(false);
   mqttPublishOrient(false);
+  mqttPublishScreensaver(false);
   mqttPublishTone(false);
   mqttPublishNeoStatusBrightnessPct(false);
   mqttPublishNeoStatusFollowScreen(false);
@@ -2102,6 +2215,32 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       webgain_set(atoi(buf), true);
       mqttPublishWebgain(true);
       return;
+    }
+  }
+
+  // <root>cmd/screensaver*: style "Clock"/"Fluid"/"Game of Life" (or 0/1/2, "life"), palette by name
+  // or 0..5 / 7 (Random), idle/playing enable ON/OFF, idle timeout s, playing timeout min.
+  {
+    static const char* const ssCmds[] = { "cmd/screensaverstyle", "cmd/screensavergolstyle", "cmd/screensaver",
+                                          "cmd/screensavertimeout", "cmd/screensaverplaying", "cmd/screensaverplayingtimeout" };
+    const size_t rl = strlen(MQTT_ROOT_TOPIC);
+    if (strncmp(topic, MQTT_ROOT_TOPIC, rl) == 0) {
+      const char* sub = topic + rl;
+      for (int i = 0; i < 6; i++) {
+        if (strcmp(sub, ssCmds[i]) != 0) continue;
+        const size_t n = (len < 23) ? len : 23;
+        char buf[24]; strncpy(buf, payload, n); buf[n] = '\0';
+        switch (i) {
+          case 0: { int v = parseSsStyle(buf); if (v >= 0) config.setScreensaverStyle((uint8_t)v); break; }
+          case 1: { int v = parseGolStyle(buf); if (v >= 0) config.setScreensaverGolStyle((uint8_t)v); break; }
+          case 2: { const bool on = parseOnOff(buf); if (on != (bool)config.store.screensaverEnabled) config.enableScreensaver(on); break; }
+          case 3: { const int v = atoi(buf); if (v > 0 && v != config.store.screensaverTimeout) config.setScreensaverTimeout((uint16_t)v); break; }
+          case 4: { const bool on = parseOnOff(buf); if (on != (bool)config.store.screensaverPlayingEnabled) config.setScreensaverPlayingEnabled(on); break; }
+          case 5: { const int v = atoi(buf); if (v > 0 && v != config.store.screensaverPlayingTimeout) config.setScreensaverPlayingTimeout((uint16_t)v); break; }
+        }
+        mqttPublishScreensaver(true);
+        return;
+      }
     }
   }
 

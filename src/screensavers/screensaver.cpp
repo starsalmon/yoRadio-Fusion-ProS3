@@ -21,7 +21,7 @@ uint8_t screensaver_styleClamp(uint8_t v) {
 }
 
 uint8_t screensaver_golStyleClamp(uint8_t v) {
-  if (v > SS_GOL_STYLE_AUTO) return SS_GOL_STYLE_AUTO;
+  if (v >= SS_GOL_STYLE_COUNT) return SS_GOL_STYLE_AUTO;
   return v;
 }
 

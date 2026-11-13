@@ -177,7 +177,7 @@ static void maybeReseed() {
   if (!isExtinct(g_grid) && !cycleDetected()) return;
   randomizeGrid();
   clearHistory();
-  const uint8_t cfg = config.store.screensaverGolStyle;
+  const uint8_t cfg = screensaver_golStyleClamp(config.store.screensaverGolStyle);
   if (cfg == SS_GOL_STYLE_AUTO) {
     g_style = random(0, SS_GOL_STYLE_COUNT);
   }

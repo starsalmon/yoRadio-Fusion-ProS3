@@ -1294,19 +1294,21 @@ void Config::setScreensaverPlayingBlank(bool val){
   display.putRequest(NEWMODE, PLAYER);
 #endif
 }
+// Style is read when the saver starts. Changing it never wakes a blank/sleeping screen; if the
+// animated/clock saver is on screen right now, drop back to the player so the next timeout uses it.
 void Config::setScreensaverStyle(uint8_t val){
-  if (val >= SS__COUNT) val = SS_CLOCK;
+  val = screensaver_styleClamp(val);
+  if (val == store.screensaverStyle) return;
   saveValue(&store.screensaverStyle, val);
 #ifndef DSP_LCD
-  display.putRequest(NEWMODE, PLAYER);
+  if (display.mode() == SCREENSAVER) display.putRequest(NEWMODE, PLAYER);
 #endif
 }
+// GoL palette is read every frame, so it applies live; no mode change needed.
 void Config::setScreensaverGolStyle(uint8_t val){
-  if (val > 7) val = 7;
+  val = screensaver_golStyleClamp(val);
+  if (val == store.screensaverGolStyle) return;
   saveValue(&store.screensaverGolStyle, val);
-#ifndef DSP_LCD
-  display.putRequest(NEWMODE, PLAYER);
-#endif
 }
 // Automatic DST: if TIMEZONE_POSIX is set (myoptions.h), override the fixed-offset TZ that
 // configTime() installs with a POSIX rule string. configTime() still starts SNTP; only TZ changes,

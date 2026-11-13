@@ -10,7 +10,8 @@ enum screensaverStyle_e : uint8_t {
   SS__COUNT = 3
 };
 
-// GoL palette (screensaverGolStyle): 0..6 fixed; 7 = pick a random style on auto-reseed.
+// GoL palette (screensaverGolStyle): 0..5 fixed (white, rainbow, heatmap, neon trails, plasma,
+// fire); 7 = random palette, re-picked on each auto-reseed. 6 is accepted as an alias for 7.
 #define SS_GOL_STYLE_AUTO 7
 #define SS_GOL_STYLE_COUNT 6
 

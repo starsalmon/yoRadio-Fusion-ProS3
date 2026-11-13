@@ -1,6 +1,10 @@
+#include "../core/options.h"   // DSP_MODEL etc. (config.h/display.h do not pull it in)
 #include "screensaver.h"
-#include "config.h"
-#include "display.h"
+#include "../core/config.h"
+#include "../core/display.h"
+#include "../displays/dspcore.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 bool ss_fluid_begin();
 void ss_fluid_end();
@@ -61,5 +65,19 @@ void screensaver_tick() {
     case SS_FLUID: ss_fluid_tick(); break;
     case SS_GOL:   ss_gol_tick(); break;
     default: break;
+  }
+}
+
+void screensaver_blit(const uint16_t* fb) {
+  if (!fb) return;
+  const int w = dsp.width(), h = dsp.height();
+  const int STRIP = 16;  // 320x16x2 = 10 KB, ~2 ms at 40 MHz per bus hold
+  for (int y = 0; y < h; y += STRIP) {
+    const int rows = (h - y < STRIP) ? (h - y) : STRIP;
+    dsp.startWrite();
+    dsp.setAddrWindow(0, y, w, rows);
+    dsp.writePixels((uint16_t*)(fb + (size_t)y * w), (uint32_t)w * (uint32_t)rows);
+    dsp.endWrite();
+    taskYIELD();
   }
 }

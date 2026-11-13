@@ -2,7 +2,7 @@
 #include "screensaver.h"
 #include "psram_alloc.h"
 #include "../displays/dspcore.h"
-#include "config.h"
+#include "../core/config.h"
 #include <string.h>
 #include <math.h>
 
@@ -165,12 +165,7 @@ static void renderScaled() {
   }
 }
 
-static void blit() {
-  dsp.startWrite();
-  dsp.setAddrWindow(0, 0, dsp.width(), dsp.height());
-  dsp.writePixels(g_fb, (uint32_t)dsp.width() * (uint32_t)dsp.height());
-  dsp.endWrite();
-}
+static void blit() { screensaver_blit(g_fb); }
 
 static int effectiveStyle() {
   const uint8_t cfg = screensaver_golStyleClamp(config.store.screensaverGolStyle);
@@ -189,6 +184,8 @@ static void maybeReseed() {
 }
 
 }  // namespace
+
+void ss_gol_end();
 
 bool ss_gol_begin() {
   ss_gol_end();

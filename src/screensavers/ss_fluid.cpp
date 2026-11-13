@@ -2,7 +2,7 @@
 #include "screensaver.h"
 #include "psram_alloc.h"
 #include "fluid2d/fluid_solver.h"
-#include "orient.h"
+#include "../core/orient.h"
 #include "../displays/dspcore.h"
 #include <math.h>
 
@@ -61,14 +61,11 @@ static void renderDensity(const fluid2d::GridView& grid) {
   }
 }
 
-static void blit() {
-  dsp.startWrite();
-  dsp.setAddrWindow(0, 0, dsp.width(), dsp.height());
-  dsp.writePixels(g_fb, (uint32_t)dsp.width() * (uint32_t)dsp.height());
-  dsp.endWrite();
-}
+static void blit() { screensaver_blit(g_fb); }
 
 }  // namespace
+
+void ss_fluid_end();
 
 bool ss_fluid_begin() {
   ss_fluid_end();
@@ -101,7 +98,7 @@ bool ss_fluid_begin() {
 }
 
 void ss_fluid_end() {
-  g_solver = fluid2d::FluidSolver();
+  // Solver is non-copyable; initialize() fully re-inits state, and g_ok gates every use.
   yo_psram_free(g_workspace);
   g_workspace = nullptr;
   yo_psram_free(g_fb);

@@ -922,11 +922,19 @@ if (newmode == _mode ||
     _buildPager();
   }
 
+  // Undo the animated-screensaver widget lock. Time-invalid stays locked (_time() owns that).
+  auto _ssUnlockWidgets = [this]() {
+    if (!_ssWidgetsLocked) return;
+    _ssWidgetsLocked = false;
+    if (network.timeinfo.tm_year < 120) return;
+    if (_clock) _clock->unlock();
+    if (_date)  _date->unlock();
+  };
   const displayMode_e prevMode = _mode;
   _mode = newmode;
   dsp.setScrollId(NULL);
   if (newmode == PLAYER) {
-    if (prevMode == SCREENSAVER || prevMode == SCREENBLANK) screensaver_leave();
+    if (prevMode == SCREENSAVER || prevMode == SCREENBLANK) { screensaver_leave(); _ssUnlockWidgets(); }
     if (config.isScreensaver) {
         if (_clock) _clock->moveTo(getclockMove());
         if (_date)  _date->moveTo(getdateMove());
@@ -988,15 +996,16 @@ if (newmode == _mode ||
       WidgetConfig ccfg = getclockConf();
       _clock->moveTo({ccfg.left, ccfg.top, 0});
       _clock->draw(true);
-    } else if (_clock && anim) {
-      _clock->clear();
     }
-    if (_date) {
-      if (anim) _date->clear();
-      else {
-        auto dc = getDateConf();
-        _date->moveTo({ dc.widget.left, dc.widget.top, (int16_t)dc.width });
-      }
+    if (anim) {
+      // Animated saver owns the whole screen: lock (clear + no pager redraws) clock/date
+      // until we leave; _ssUnlockWidgets() restores them.
+      if (_clock) _clock->lock(true);
+      if (_date)  _date->lock(true);
+      _ssWidgetsLocked = true;
+    } else if (_date) {
+      auto dc = getDateConf();
+      _date->moveTo({ dc.widget.left, dc.widget.top, (int16_t)dc.width });
     }
     if (anim) dsp.fillScreen(0x0000);
     if (newmode == SCREENBLANK) {
@@ -1005,7 +1014,7 @@ if (newmode == _mode ||
       config.setDspOn(false, false);
     }
   }else{
-    if (config.isScreensaver) screensaver_leave();
+    if (config.isScreensaver) { screensaver_leave(); _ssUnlockWidgets(); }
     config.screensaverTicks=SCREENSAVERSTARTUPDELAY;
     config.screensaverPlayingTicks=SCREENSAVERSTARTUPDELAY;
     config.isScreensaver = false;

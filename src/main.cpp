@@ -28,6 +28,7 @@
 #include "core/podcast_resume.h"
 #include "core/hangdiag.h"
 #include "core/webgain.h"
+#include "core/orient.h"
 
 #ifdef USE_NEXTION
 #include "displays/nextion.h"
@@ -177,6 +178,7 @@ void setup() {
   sdpark_boot();    // SD card out of SD-native mode before the panel is initialised (see sdpark.h)
 #endif
   display.init();   // main's boot order: display first
+  orient_init();    // MPU6050 auto-rotate (no-op unless ORIENT_ENABLE)
 
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   btcompanion_init();
@@ -280,6 +282,7 @@ void loop() {
   }
 #endif
   processControlsEvents();
+  orient_loop();
   // Runtime audio toggles (avoid doing work every loop unless the value changes).
   {
     static uint8_t s_lastMono = 255;

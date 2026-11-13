@@ -650,7 +650,7 @@ void NetServer::processQueue(){
                                   config.store.telnet,
                                   config.store.watchdog, webgain_get()); 
                                   break;
-      case GETSCREEN:     sprintf (wsBuf, "{\"flip\":%d,\"inv\":%d,\"nump\":%d,\"tsf\":%d,\"tsd\":%d,\"dspon\":%d,\"br\":%d,\"con\":%d,\"scre\":%d,\"scrt\":%d,\"scrb\":%d,\"scrpe\":%d,\"scrpt\":%d,\"scrpb\":%d,\"vuLayout\":%d}", 
+      case GETSCREEN:     sprintf (wsBuf, "{\"flip\":%d,\"inv\":%d,\"nump\":%d,\"tsf\":%d,\"tsd\":%d,\"dspon\":%d,\"br\":%d,\"con\":%d,\"scre\":%d,\"scrt\":%d,\"scrb\":%d,\"scrpe\":%d,\"scrpt\":%d,\"scrpb\":%d,\"scrsty\":%d,\"scrgs\":%d,\"vuLayout\":%d}", 
                                   config.store.flipscreen, 
                                   config.store.invertdisplay, 
                                   config.store.numplaylist, 
@@ -665,6 +665,8 @@ void NetServer::processQueue(){
                                   config.store.screensaverPlayingEnabled,
                                   config.store.screensaverPlayingTimeout,
                                   config.store.screensaverPlayingBlank,
+                                  config.store.screensaverStyle,
+                                  config.store.screensaverGolStyle,
                                   config.store.vuLayout);   /* ------ WEB UI STYLE ----- */
                                   break;
       case GETTIMEZONE:   sprintf (wsBuf, "{\"tzh\":%d,\"tzm\":%d,\"sntp1\":\"%s\",\"sntp2\":\"%s\", \"timeint\":%d,\"timeintrtc\":%d}", 
@@ -876,6 +878,14 @@ void NetServer::onWsMessage(void *arg, uint8_t *data, size_t len, uint8_t client
       }
       if (strcmp(_wscmd, "scrpb") == 0) {
         config.setScreensaverPlayingBlank(atoi(_wsval) != 0);
+        return;
+      }
+      if (strcmp(_wscmd, "scrsty") == 0) {
+        config.setScreensaverStyle((uint8_t)atoi(_wsval));
+        return;
+      }
+      if (strcmp(_wscmd, "scrgs") == 0) {
+        config.setScreensaverGolStyle((uint8_t)atoi(_wsval));
         return;
       }
 

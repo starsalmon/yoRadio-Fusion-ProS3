@@ -2,6 +2,7 @@
 #if DSP_MODEL==DSP_ST7789 || DSP_MODEL==DSP_ST7789_240 || DSP_MODEL==DSP_ST7789_76 || DSP_MODEL==DSP_ST7789_170
 #include "dspcore.h"
 #include "../core/config.h"
+#include "../core/orient.h"
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
 #include "../core/spidog.h"
 #endif
@@ -61,7 +62,8 @@ void DspCore::clearDsp(bool black){ fillScreen(black?0:config.theme.background);
 void DspCore::flip(){
   TftBusLock l;
 #if defined(TFT_ROTATION)
-  setRotation((uint8_t)TFT_ROTATION);
+  // TFT_ROTATION is the base; web flip (+2) and auto-rotate (+quarters) add to it.
+  setRotation((uint8_t)(((uint8_t)TFT_ROTATION + (config.store.flipscreen?2:0) + orient_quarter()) & 3));
 #elif DSP_MODEL==DSP_ST7789 || DSP_MODEL==DSP_ST7789_76 || DSP_MODEL==DSP_ST7789_170
   setRotation(config.store.flipscreen?3:1);
 #elif DSP_MODEL==DSP_ST7789_240

@@ -59,6 +59,7 @@ class Display {
     void _panelRecover();
     void _panelHwReinit();          // TFT_RST pulse + init sequence + full redraw (display task only)
     volatile bool panelAsleep = false;  // ILI9341 in SLPIN/DISPOFF (normally-white panel!)
+    bool _ssWidgetsLocked = false;      // clock/date locked by an animated screensaver
     void setContrast();
     void lock()   { _locked=true; }
     void unlock() { _locked=false; }

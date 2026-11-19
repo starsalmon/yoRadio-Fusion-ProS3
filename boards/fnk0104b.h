@@ -44,6 +44,9 @@
 #endif
 #define YORADIO_ES8311 1
 #define ES8311_MCLK_MULTIPLE 256
+/* Fixed codec DAC level (es8311_voice_volume_set scale: 75 -> REG32 0xBF = 0 dB). yoRadio's
+   volume is applied once, digitally in Audio (as with the plain I2S DACs), not here too. */
+#define ES8311_DAC_VOLUME 75
 
 /* I2S — Freenove FNK0104B/AB pin map */
 #define I2S_MCLK 4
@@ -53,9 +56,11 @@
 /* ES8311 mic data (not used by yoRadio playback path) */
 #define I2S_DIN  6
 
-/* FM8002E amp enable — same pattern as aprils_speaker AMP_EN / ProS3 MUTE_PIN */
+/* GPIO1 (AUDIO_EN) drives the FM8002E SHUTDOWN pin directly (Freenove 2.8" schematic, R26 10K).
+   FM8002E datasheet: SHUTDOWN high = amp off (4.2 uA), low = amp on. So the muted level is HIGH;
+   Freenove's sketches just hold it LOW. Same MUTE_PIN logic as ProS3 / April's Speaker. */
 #define MUTE_PIN 1
-#define MUTE_VAL LOW           /* LOW = muted / amp off at boot; HIGH while playing */
+#define MUTE_VAL HIGH          /* HIGH = FM8002E shut down (boot / idle until first play) */
 #define BIAMP_ENABLE 0
 /******************************************/
 

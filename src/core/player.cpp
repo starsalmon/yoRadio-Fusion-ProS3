@@ -90,7 +90,6 @@ void Player::init() {
         if (!yoradio_es8311_bringup(44100, ES8311_MCLK_MULTIPLE)) {
           Serial.println("##[BOOT]#\tES8311 bringup failed — I2S may be silent");
         }
-        yoradio_es8311_apply_volume(volToI2S(config.store.volume));
       #endif
     #endif
   #else
@@ -341,10 +340,7 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
         }
 #else
         Audio::setVolume(volToI2S(requestP.payload));
-        #endif
-        #if defined(YORADIO_ES8311) && YORADIO_ES8311
-        yoradio_es8311_apply_volume(requestP.payload);
-        #endif
+#endif
         break;
       }
       #ifdef USE_SD
@@ -621,6 +617,14 @@ void Player::setOutputPins(bool isPlaying) {
     }
 #endif
     digitalWrite(MUTE_PIN, _ml);
+#if defined(YORADIO_BOARD_FNK0104B) && YORADIO_BOARD_FNK0104B
+    static int8_t s_lastAmpLvl = -1;
+    if (s_lastAmpLvl != (int8_t)_ml) {
+      s_lastAmpLvl = (int8_t)_ml;
+      Serial.printf("[AMP] GPIO%d=%d -> FM8002E %s (playing=%d)\n", (int)MUTE_PIN, (int)_ml,
+                    _ml == MUTE_VAL ? "SHUTDOWN" : "ON", isPlaying ? 1 : 0);
+    }
+#endif
   }
 }
 

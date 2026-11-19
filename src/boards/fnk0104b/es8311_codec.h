@@ -73,9 +73,6 @@ esp_err_t es8311_sample_frequency_config(es8311_handle_t dev, int mclk_frequency
 /** Codec I2C + register init (Wire must already be started). Returns false on failure (non-fatal). */
 bool yoradio_es8311_bringup(int sample_hz, int mclk_mul);
 
-/** Map yoRadio 0..100 UI volume to codec DAC level. */
-void yoradio_es8311_apply_volume(uint8_t vol_0_100);
-
 /** Reconfigure clock dividers when I2S sample rate changes (best-effort). */
 void yoradio_es8311_on_sample_rate(int sample_hz);
 
@@ -86,7 +83,6 @@ void yoradio_es8311_on_sample_rate(int sample_hz);
 #else
 
 static inline bool yoradio_es8311_bringup(int /*sample_hz*/, int /*mclk_mul*/ = 256) { return true; }
-static inline void yoradio_es8311_apply_volume(uint8_t /*vol*/) {}
 static inline void yoradio_es8311_on_sample_rate(int /*sample_hz*/) {}
 
 #endif

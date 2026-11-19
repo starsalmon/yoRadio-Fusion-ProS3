@@ -30,6 +30,9 @@ typedef struct {
 #ifndef ES8311_MCLK_MULTIPLE
 #define ES8311_MCLK_MULTIPLE 256
 #endif
+#ifndef ES8311_DAC_VOLUME
+#define ES8311_DAC_VOLUME 75
+#endif
 
 static es8311_handle_t g_yoradio_es8311 = nullptr;
 
@@ -474,7 +477,7 @@ static bool es8311_bringup_handle(es8311_handle_t es_handle, int sample_hz, int 
     };
     if (es8311_init(es_handle, &es_clk, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16) != ESP_OK) return false;
     if (es8311_sample_frequency_config(es_handle, mclk_hz, sample_hz) != ESP_OK) return false;
-    if (es8311_voice_volume_set(es_handle, 70, NULL) != ESP_OK) return false;
+    if (es8311_voice_volume_set(es_handle, ES8311_DAC_VOLUME, NULL) != ESP_OK) return false;
     if (es8311_microphone_config(es_handle, false) != ESP_OK) return false;
     return true;
 }
@@ -493,14 +496,13 @@ bool yoradio_es8311_bringup(int sample_hz, int mclk_mul)
         return false;
     }
     g_yoradio_es8311 = h;
-    Serial.printf("[ES8311] ok fs=%d mclk_mul=%d\n", sample_hz, mclk_mul);
+    // Readback of the playback path: 00 power/slave, 01 clocks, 0D/12/13 analog+DAC+HP power,
+    // 31 DAC mute bits (5,6), 32 DAC volume.
+    static const uint8_t regs[] = {0x00, 0x01, 0x0D, 0x12, 0x13, 0x31, 0x32};
+    Serial.printf("[ES8311] ok fs=%d mclk_mul=%d regs:", sample_hz, mclk_mul);
+    for (uint8_t r : regs) { uint8_t v = 0xEE; es8311_read_reg(h, r, &v); Serial.printf(" %02X=%02X", r, v); }
+    Serial.println();
     return true;
-}
-
-void yoradio_es8311_apply_volume(uint8_t vol_0_100)
-{
-    if (!g_yoradio_es8311) return;
-    es8311_voice_volume_set(g_yoradio_es8311, (int)vol_0_100, NULL);
 }
 
 void yoradio_es8311_on_sample_rate(int sample_hz)

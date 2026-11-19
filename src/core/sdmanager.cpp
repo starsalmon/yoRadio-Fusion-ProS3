@@ -1,9 +1,13 @@
 //v0.9.686
 #include "options.h"
-#if SDC_CS!=255
+#if YO_SD_PRESENT
 #include <Arduino.h>
+#if defined(YORADIO_SD_MMC) && YORADIO_SD_MMC
+#include <SD_MMC.h>
+#else
 #include <SPI.h>
 #include <SD.h>
+#endif
 #include "vfs_api.h"
 #include "sd_diskio.h"
 //#define USE_SD
@@ -30,7 +34,11 @@ SPIClass  SDSPI(HSPI);
   #define SDSPISPEED 20000000
 #endif
 
+#if defined(YORADIO_SD_MMC) && YORADIO_SD_MMC
+SDManager sdman;
+#else
 SDManager sdman(FSImplPtr(new VFSImpl()));
+#endif
 
 bool SDManager::start(){
   // Never touch TFT_CS here. The TFT driver owns it from display.init() onwards (it is pulled up
@@ -49,6 +57,17 @@ bool SDManager::start(){
     DSPLOG("SD mount: waited %lu ms for boot logo (drawn=%d)", (unsigned long)(millis() - t0),
            (int)display.bootLogoDrawn());
   }
+  static const uint8_t retryDelayMs[] = {0, 10, 20, 50};
+  int attempt = 0;
+  ready = false;
+#if defined(YORADIO_SD_MMC) && YORADIO_SD_MMC
+  DSPLOG("SD mount begin (SDMMC 4-bit)");
+  setPins(SD_MMC_CLK, SD_MMC_CMD, SD_MMC_D0, SD_MMC_D1, SD_MMC_D2, SD_MMC_D3);
+  for (; attempt < 4 && !ready; attempt++) {
+    if (retryDelayMs[attempt]) vTaskDelay(pdMS_TO_TICKS(retryDelayMs[attempt]));
+    ready = SDMMCFS::begin("/sdcard", false);
+  }
+#else
   DSPLOG("SD mount begin (SPI %lu Hz)", (unsigned long)SDSPISPEED);
   pinMode(SDC_CS, OUTPUT);
   digitalWrite(SDC_CS, HIGH);
@@ -58,15 +77,13 @@ bool SDManager::start(){
   // still serialised by SPIClass, so a TFT transfer never sees SD traffic mid-way.
   yoradio_sd_spi_acquire();
 #endif
-  static const uint8_t retryDelayMs[] = {0, 10, 20, 50};
-  int attempt = 0;
-  ready = false;
   for (; attempt < 4 && !ready; attempt++) {
     if (retryDelayMs[attempt]) vTaskDelay(pdMS_TO_TICKS(retryDelayMs[attempt]));
     ready = begin(SDC_CS, SDREALSPI, SDSPISPEED);
   }
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
   yoradio_sd_spi_release();
+#endif
 #endif
   DSPLOG("SD mount end: ready=%d attempts=%d", (int)ready, attempt);
   return ready;

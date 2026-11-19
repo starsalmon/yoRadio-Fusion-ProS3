@@ -197,7 +197,7 @@ void setup() {
   // Apply mono state at boot.
   player.forceMono(config.store.forceMono != 0);
   network.begin();
-  if(SDC_CS!=255) {
+  if (YO_SD_PRESENT) {
     display.putRequest(WAITFORSD, 0);
     if (config.getMode() == PM_PODCAST) Serial.print("##[BOOT]#\tPodcast index\t");
     else Serial.print("##[BOOT]#\tSD search\t");

@@ -3,6 +3,7 @@
  * Each device has its own header in boards/ and its own PlatformIO env:
  *   boards/pros3.h           [env:yoradio-um_pros3-ili9341]  (default when no board flag is set)
  *   boards/aprils_speaker.h  [env:aprils-speaker]            (-DYORADIO_BOARD_APRILS_SPEAKER=1)
+ *   boards/fnk0104b.h        [env:freenove-fnk0104b]           (-DYORADIO_BOARD_FNK0104B=1)
  *
  * Put device settings in the board header, not here. Shared code includes this file
  * (directly or via src/core/options.h).
@@ -12,6 +13,8 @@
 
 #if defined(YORADIO_BOARD_APRILS_SPEAKER) && YORADIO_BOARD_APRILS_SPEAKER
   #include "boards/aprils_speaker.h"
+#elif defined(YORADIO_BOARD_FNK0104B) && YORADIO_BOARD_FNK0104B
+  #include "boards/fnk0104b.h"
 #else
   #include "boards/pros3.h"
 #endif

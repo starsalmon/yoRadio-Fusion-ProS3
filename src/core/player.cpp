@@ -16,6 +16,7 @@
 #include <time.h> /* ----- Auto On-Off Timer ----- */
 #include "../displays/tools/l10n.h"
 #include "../pluginsManager/pluginsManager.h"
+#include "../boards/fnk0104b/es8311_codec.h"
 #ifdef USE_NEXTION
 #include "../displays/nextion.h"
 #endif
@@ -84,6 +85,12 @@ void Player::init() {
         setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
       #else
         setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT, I2S_MCLK);
+      #endif
+      #if defined(YORADIO_ES8311) && YORADIO_ES8311
+        if (!yoradio_es8311_bringup(44100, ES8311_MCLK_MULTIPLE)) {
+          Serial.println("##[BOOT]#\tES8311 bringup failed — I2S may be silent");
+        }
+        yoradio_es8311_apply_volume(volToI2S(config.store.volume));
       #endif
     #endif
   #else
@@ -334,7 +341,10 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
         }
 #else
         Audio::setVolume(volToI2S(requestP.payload));
-#endif
+        #endif
+        #if defined(YORADIO_ES8311) && YORADIO_ES8311
+        yoradio_es8311_apply_volume(requestP.payload);
+        #endif
         break;
       }
       #ifdef USE_SD
@@ -390,7 +400,7 @@ if (pendingPlayStation >= 0 && millis() >= pendingPlayAt) {
         } else if(requestP.payload == 2) {
           // Switch to SD card
 #ifdef USE_SD
-          if(SDC_CS != 255 && sdman.cardPresent()) {
+          if (YO_SD_PRESENT && sdman.cardPresent()) {
             config.store.playlistSource = PL_SRC_WEB; // SD uses WEB source internally
             config.saveValue(&config.store.playlistSource, (uint8_t)PL_SRC_WEB);
             config.saveValue(&config.store.lastPlayedSource, (uint8_t)PL_SRC_WEB);
@@ -701,7 +711,7 @@ void Player::_play(uint16_t stationId) {
     _podcastResumeHintSec = 0;
     _podcastResumeHintUntilMs = 0;
   }
-  if (config.getMode() == PM_SDCARD && SDC_CS != 255) {
+  if (config.getMode() == PM_SDCARD && YO_SD_PRESENT) {
     // connecttoFS doesn't support start offsets for SD -> use -1 and start from the beginning.
     isConnected = connecttoFS(sdman, config.station.url, -1);
   } else {

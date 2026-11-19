@@ -31,7 +31,13 @@ void DspCore::initDisplay() {
   DSPLOG("TFT initDisplay done");
   Serial.printf("##[BOOT]#\tTFT_SPI_FREQ\t%lu\n", (unsigned long)TFT_SPI_FREQ);
   Serial.flush();
-  
+#if defined(YORADIO_ILI9341_INVERT_ON) && YORADIO_ILI9341_INVERT_ON
+  invertDisplay(true);
+#endif
+#if defined(YORADIO_ILI9341_BGR) && YORADIO_ILI9341_BGR
+  // BGR pixel order for Freenove 2.8" ILI9341 (MADCTL bit 3); rotation refined by flip().
+  { uint8_t mad = 0x08; sendCommand(0x36, &mad, 1); }
+#endif
   invert();
   cp437(true);
   flip();

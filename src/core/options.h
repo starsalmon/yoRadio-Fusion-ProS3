@@ -196,7 +196,13 @@ The connection tables are located here https://github.com/e2002/yoradio#connecti
 #ifndef SD_FORCE_REINDEX
   #define SD_FORCE_REINDEX 0  // set 1 once in myoptions.h to rebuild SD playlist after SPI fixes
 #endif
-#if SDC_CS!=255
+#ifndef YORADIO_SD_MMC
+  #define YORADIO_SD_MMC 0
+#endif
+#ifndef YO_SD_PRESENT
+  #define YO_SD_PRESENT ((SDC_CS != 255) || (YORADIO_SD_MMC != 0))
+#endif
+#if YO_SD_PRESENT
   #define USE_SD
 #endif
 /*        ENCODER                 */

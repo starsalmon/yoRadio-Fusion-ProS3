@@ -1,12 +1,22 @@
 #ifndef sdmanager_h
 #define sdmanager_h
 
+#include "options.h"
+#if defined(YORADIO_SD_MMC) && YORADIO_SD_MMC
+#include <SD_MMC.h>
+class SDManager : public fs::SDMMCFS {
+#else
 class SDManager : public SDFS {
+#endif
   public:
     bool ready;
     bool indexing() const { return _indexing; }
   public:
+#if defined(YORADIO_SD_MMC) && YORADIO_SD_MMC
+    SDManager() : fs::SDMMCFS() {}
+#else
     SDManager(FSImplPtr impl) : SDFS(impl) {}
+#endif
     bool start();
     void stop();
     bool cardPresent();

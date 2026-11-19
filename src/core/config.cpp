@@ -453,7 +453,7 @@ void Config::toggleMode() {
     // Don't rely on sdman.cardPresent() here: before SD is started it can report false
     // even when a card is inserted. Always *try* SD first when SD is wired in; if it
     // fails, changeMode() will fall back to Podcast (when Wi-Fi is available).
-    if (SDC_CS != 255) changeMode(PM_SDCARD);
+    if (YO_SD_PRESENT) changeMode(PM_SDCARD);
     else changeMode(PM_PODCAST);
     return;
   }
@@ -490,7 +490,7 @@ void Config::changeMode(int newmode) { // DLNA mod
     if (newmode == -1) {
         // DLNA cannot be selected from the encoder toggle.
         if (getMode() == PM_WEB) {
-            newmode = (SDC_CS != 255) ? PM_SDCARD : PM_PODCAST;
+            newmode = YO_SD_PRESENT ? PM_SDCARD : PM_PODCAST;
         } else if (getMode() == PM_SDCARD) {
             newmode = PM_PODCAST;
         } else if (getMode() == PM_PODCAST) {
@@ -532,7 +532,7 @@ void Config::changeMode(int newmode) { // DLNA mod
         podcasts_requestCancel();
     }
 
-    if (SDC_CS == 255 && newmode == PM_SDCARD) { return; }
+    if (!YO_SD_PRESENT && newmode == PM_SDCARD) { return; }
     if (newmode == PM_PODCAST && WiFi.status() != WL_CONNECTED) {
         Serial.println("##[ERROR]# Podcast mode requires Wi-Fi");
         return;
@@ -2564,7 +2564,13 @@ void Config::bootInfo() {
   BOOTLOG("encoders:\tl1=%d, b1=%d, r1=%d, pullup=%s, l2=%d, b2=%d, r2=%d, pullup=%s", 
           ENC_BTNL, ENC_BTNB, ENC_BTNR, ENC_INTERNALPULLUP?"true":"false", ENC2_BTNL, ENC2_BTNB, ENC2_BTNR, ENC2_INTERNALPULLUP?"true":"false");
   BOOTLOG("ir:\t\t%d", IR_PIN);
-  if(SDC_CS!=255) BOOTLOG("SD:\t\t%d", SDC_CS);
+  if (YO_SD_PRESENT) {
+#if defined(YORADIO_SD_MMC) && YORADIO_SD_MMC
+    BOOTLOG("SD:\t\tSDMMC");
+#else
+    BOOTLOG("SD:\t\t%d", SDC_CS);
+#endif
+  }
   BOOTLOG("------------------------------------------------");
   BOOTLOG("------------------------------------------------");
   BOOTLOG(

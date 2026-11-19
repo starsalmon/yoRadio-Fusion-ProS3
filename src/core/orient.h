@@ -1,7 +1,8 @@
 #pragma once
 #include <stdint.h>
 // MPU6050 auto screen rotation (ORIENT_ENABLE in the board header; default off -> all stubs).
-// Own I2C bus (Wire1), never the fuel-gauge/ALS bus on Wire. Settings in NVS "yrxorient"
+// Own I2C bus (Wire1), never the fuel-gauge/ALS bus on Wire, unless ORIENT_SHARED_WIRE (FNK0104B:
+// MPU on the touch/codec Wire bus). Settings in NVS "yrxorient"
 // (not the EEPROM store, so no layout change). Auto rotation never writes config.store.flipscreen.
 void    orient_init();               // setup(): loads NVS, starts the sensor task
 void    orient_loop();               // loop(): applies a pending rotation on the player screen only

@@ -19,6 +19,13 @@ STORE YOUR SETTINGS IN THE *** myoptions.h *** FILE.
 #if __has_include("../../mqttoptions.h")
   #include "../../mqttoptions.h"
 #endif
+// One shared (gitignored) mqttoptions.h for every device: a board header can give its device its
+// own root topic (BOARD_MQTT_ROOT_TOPIC) so it never shares state/command topics with the radio.
+// HA unique_ids use the mDNS name (yoradio-<chipid>) and the client id is per-chip already.
+#if defined(MQTT_ROOT_TOPIC) && defined(BOARD_MQTT_ROOT_TOPIC)
+  #undef MQTT_ROOT_TOPIC
+  #define MQTT_ROOT_TOPIC BOARD_MQTT_ROOT_TOPIC
+#endif
 
 // Mode button LED defaults (used outside NeoStatus too).
 // These are intentionally defined here so `myoptions.h` can stay minimal.

@@ -16,6 +16,18 @@
 #ifndef ORIENT_SDA
   #error "ORIENT_ENABLE needs ORIENT_SDA / ORIENT_SCL in the board header"
 #endif
+// ORIENT_SHARED_WIRE 1: the MPU sits on the main Wire bus (touch / codec), which config.cpp
+// has already begun on ORIENT_SDA/ORIENT_SCL. Orient then never begins, re-clocks, changes the
+// timeout of or ends that bus. Wire's per-task transaction lock (beginTransmission ..
+// endTransmission / requestFrom) keeps the 5 Hz reads atomic against the other users.
+#ifndef ORIENT_SHARED_WIRE
+  #define ORIENT_SHARED_WIRE 0
+#endif
+#if ORIENT_SHARED_WIRE
+  #define OWIRE Wire
+#else
+  #define OWIRE Wire1
+#endif
 #ifndef ORIENT_ALL_FOUR
   #define ORIENT_ALL_FOUR 0          // 0: 180 only (two landscape rotations); 1: all four
 #endif
@@ -108,12 +120,12 @@ void orient_setRotmode(uint8_t m, bool sv){ if(m > orient_maxMode()) m = orient_
   Serial.printf("[ORIENT] rotmode %u\n", (unsigned)m); }
 void orient_setLock(bool on, bool sv){ s_lock = on; if(sv) save(); Serial.printf("[ORIENT] rotlock %u\n", (unsigned)on); }
 
-static bool wr(uint8_t reg, uint8_t v){ Wire1.beginTransmission(s_addr); Wire1.write(reg); Wire1.write(v); return Wire1.endTransmission() == 0; }
+static bool wr(uint8_t reg, uint8_t v){ OWIRE.beginTransmission(s_addr); OWIRE.write(reg); OWIRE.write(v); return OWIRE.endTransmission() == 0; }
 static bool rd(uint8_t reg, uint8_t* buf, uint8_t n){
-  Wire1.beginTransmission(s_addr); Wire1.write(reg);
-  if(Wire1.endTransmission(false) != 0) return false;
-  if(Wire1.requestFrom((int)s_addr, (int)n) != n) return false;
-  for(uint8_t i=0;i<n;i++) buf[i] = Wire1.read();
+  OWIRE.beginTransmission(s_addr); OWIRE.write(reg);
+  if(OWIRE.endTransmission(false) != 0) return false;
+  if(OWIRE.requestFrom((int)s_addr, (int)n) != n) return false;
+  for(uint8_t i=0;i<n;i++) buf[i] = OWIRE.read();
   return true;
 }
 static bool probe(){
@@ -142,16 +154,30 @@ static float angDiff(float a, float b){ float d = fmodf(a - b + 540.0f, 360.0f) 
 
 static void orientTask(void*){
   vTaskDelay(pdMS_TO_TICKS(1500));
+#if !ORIENT_SHARED_WIRE
   if(!Wire1.begin(ORIENT_SDA, ORIENT_SCL, ORIENT_I2C_HZ)){ Serial.println("[ORIENT] Wire1.begin failed, auto-rotate off"); vTaskDelete(nullptr); }
   Wire1.setTimeOut(20);
-  if(!probe() || !setupMpu()){ Serial.println("[ORIENT] no MPU6050 on the orient bus, auto-rotate off"); Wire1.end(); vTaskDelete(nullptr); }
+#endif
+  if(!probe() || !setupMpu()){
+    Serial.println("[ORIENT] no MPU6050 on the orient bus, auto-rotate off");
+#if !ORIENT_SHARED_WIRE
+    Wire1.end();
+#endif
+    vTaskDelete(nullptr);
+  }
   s_present = true;
   uint8_t cur = 0, cand = 0xFF; uint32_t candSince = 0, lastRot = 0; int fails = 0;
   for(;;){
     vTaskDelay(pdMS_TO_TICKS(POLL_MS));
     uint8_t b[6];
     if(!rd(0x3B, b, 6)){
-      if(++fails >= 10){ Serial.println("[ORIENT] I2C read failing, auto-rotate off"); s_present = false; Wire1.end(); vTaskDelete(nullptr); }
+      if(++fails >= 10){
+        Serial.println("[ORIENT] I2C read failing, auto-rotate off"); s_present = false;
+#if !ORIENT_SHARED_WIRE
+        Wire1.end();
+#endif
+        vTaskDelete(nullptr);
+      }
       continue;
     }
     fails = 0;
@@ -199,7 +225,8 @@ void orient_init(){
   Preferences p;
   if(p.begin("yrxorient", true)){ s_mode = p.getUChar("rotmode", ORIENT_DEFAULT_MODE); s_lock = p.getUChar("rotlock", 0) != 0; p.end(); }
   if(s_mode > orient_maxMode()) s_mode = orient_maxMode();
-  Serial.printf("[ORIENT] boot: rotmode=%u rotlock=%u SDA=%d SCL=%d\n", (unsigned)s_mode, (unsigned)s_lock, ORIENT_SDA, ORIENT_SCL);
+  Serial.printf("[ORIENT] boot: rotmode=%u rotlock=%u SDA=%d SCL=%d bus=%s\n", (unsigned)s_mode, (unsigned)s_lock, ORIENT_SDA, ORIENT_SCL,
+                ORIENT_SHARED_WIRE ? "Wire (shared)" : "Wire1");
   xTaskCreatePinnedToCore(orientTask, "orient", 3072, nullptr, 1, nullptr, 0);
 }
 

@@ -118,14 +118,30 @@
 /******************************************/
 
 /******************************************/
-/* MPU6050 @ 0x68 (I2C bus above) — auto-rotate not wired yet */
+/* MPU6050 @ 0x68 on the SAME I2C bus as touch + ES8311 (SDA16/SCL15, begun in config.cpp):
+   orient uses Wire (shared), never begins/ends it. Auto-rotate 180 only, like the radio.
+   Mount (on its edge): sensor X = screen normal. GoL (TFT_eSPI rotation 1, y down) measured
+   gravity screenX=+Z, screenY=-Y. yoRadio's base rotation is 3 (flipscreen off), 180 from
+   that, so in orient's frame (H = toward screen right, V = toward screen top, reads +1 g
+   upright): H = +Z, V = +Y, N = X. Wrong left/right = ORIENT_INVERT_X, upside down = _Y. */
 #define MPU6050_I2C_ADDR 0x68
-/* Board frame with screen upright normal: screenX = +Z, screenY = -Y (see docs/FNK0104B.md) */
-#define MPU_ORIENT_SCREEN_X_AXIS 2
-#define MPU_ORIENT_SCREEN_Y_AXIS 1
-#define MPU_ORIENT_SCREEN_X_SIGN  1
-#define MPU_ORIENT_SCREEN_Y_SIGN -1
-/* TODO: hook MPU into flipscreen/orient task when Fusion gains MPU support on main */
+#define ORIENT_ENABLE      1
+#define ORIENT_SHARED_WIRE 1
+#define ORIENT_SDA         TS_SDA
+#define ORIENT_SCL         TS_SCL
+#define ORIENT_ALL_FOUR    0
+#define ORIENT_H_AXIS      2
+#define ORIENT_V_AXIS      1
+#define ORIENT_N_AXIS      0
+#define ORIENT_AXIS_SWAP   0
+#define ORIENT_INVERT_X    0
+#define ORIENT_INVERT_Y    0
+/******************************************/
+
+/******************************************/
+/* MQTT: credentials/host from the shared mqttoptions.h; own root so it never drives or mirrors
+   the radio's topics / HA entities (src/core/options.h applies the override). */
+#define BOARD_MQTT_ROOT_TOPIC "yoradio/fnk0104b/"
 /******************************************/
 
 /******************************************/

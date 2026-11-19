@@ -1,6 +1,7 @@
 #include "dsplog.h"
 #include "options.h"
 #include "config.h"
+#include "../screensavers/screensaver.h"
 #include "sdlock.h"
 #include <SPIFFS.h> /* ------------------myTheme webUI upload needed---------------*/ 
 #include "display.h"
@@ -394,6 +395,11 @@ void Config::_setupVersion(){
       saveValue(&store.alsGammaX100, (uint8_t)60, false);
       saveValue(&store.alsLuxMin_x10, (uint16_t)10, false);    // 1.0 lux
       saveValue(&store.alsLuxMax_x10, (uint16_t)8000, false);  // 800.0 lux
+      break;
+    }
+    case 24: {
+      saveValue(&store.screensaverStyle, (uint8_t)0, false);
+      saveValue(&store.screensaverGolStyle, (uint8_t)7, false);
       break;
     }
   }
@@ -1288,6 +1294,22 @@ void Config::setScreensaverPlayingBlank(bool val){
   display.putRequest(NEWMODE, PLAYER);
 #endif
 }
+// Style is read when the saver starts. Changing it never wakes a blank/sleeping screen; if the
+// animated/clock saver is on screen right now, drop back to the player so the next timeout uses it.
+void Config::setScreensaverStyle(uint8_t val){
+  val = screensaver_styleClamp(val);
+  if (val == store.screensaverStyle) return;
+  saveValue(&store.screensaverStyle, val);
+#ifndef DSP_LCD
+  if (display.mode() == SCREENSAVER) display.putRequest(NEWMODE, PLAYER);
+#endif
+}
+// GoL palette is read every frame, so it applies live; no mode change needed.
+void Config::setScreensaverGolStyle(uint8_t val){
+  val = screensaver_golStyleClamp(val);
+  if (val == store.screensaverGolStyle) return;
+  saveValue(&store.screensaverGolStyle, val);
+}
 // Automatic DST: if TIMEZONE_POSIX is set (myoptions.h), override the fixed-offset TZ that
 // configTime() installs with a POSIX rule string. configTime() still starts SNTP; only TZ changes,
 // so the tzHour/tzMin offset is not applied twice (localtime() uses TZ only).
@@ -1391,6 +1413,8 @@ void Config::resetSystem(const char *val, uint8_t clientId){
     saveValue(&store.screensaverPlayingEnabled, false);
     saveValue(&store.screensaverPlayingTimeout, (uint16_t)5);
     saveValue(&store.screensaverPlayingBlank, false);
+    saveValue(&store.screensaverStyle, (uint8_t)0);
+    saveValue(&store.screensaverGolStyle, (uint8_t)7);
     display.putRequest(NEWMODE, CLEAR); display.putRequest(NEWMODE, PLAYER);
     netserver.requestOnChange(GETSCREEN, clientId);
     return;
@@ -1463,6 +1487,8 @@ void Config::setDefaults() {
   store.alsGammaX100 = 60;
   store.alsLuxMin_x10 = 10;
   store.alsLuxMax_x10 = 8000;
+  store.screensaverStyle = 0;
+  store.screensaverGolStyle = 7;
   store.balance = 0;
   store.trebble = 0;
   store.middle = 0;
@@ -2290,6 +2316,7 @@ void Config::setBrightness(bool dosave){
     return;
   }
   analogWrite(BRIGHTNESS_PIN, map(store.brightness, 0, 100, 0, 255));
+  if (display.panelAsleep) { analogWrite(BRIGHTNESS_PIN, 0); return; }  // raced deepsleep() on the display task
   if(!store.dspon) store.dspon = true;
   if(dosave){
     saveValue(&store.brightness, store.brightness, false, true);
@@ -2317,6 +2344,8 @@ void Config::setBrightnessRaw(uint8_t percent) {
   // Hardware only: do not persist to config/store.
   if (display.panelAsleep) return;  // backlight on + panel asleep = white screen
   analogWrite(BRIGHTNESS_PIN, map(percent, 0, 100, 0, 255));
+  // Called from plugin/ticker tasks: if deepsleep() set the flag while we were writing, undo it.
+  if (display.panelAsleep) analogWrite(BRIGHTNESS_PIN, 0);
 #endif
 }
 

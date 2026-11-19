@@ -27,6 +27,7 @@
 #endif
 #include "bt_companion.h"
 #include "album_art.h"
+#include "../screensavers/screensaver.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
@@ -921,9 +922,19 @@ if (newmode == _mode ||
     _buildPager();
   }
 
+  // Undo the animated-screensaver widget lock. Time-invalid stays locked (_time() owns that).
+  auto _ssUnlockWidgets = [this]() {
+    if (!_ssWidgetsLocked) return;
+    _ssWidgetsLocked = false;
+    if (network.timeinfo.tm_year < 120) return;
+    if (_clock) _clock->unlock();
+    if (_date)  _date->unlock();
+  };
+  const displayMode_e prevMode = _mode;
   _mode = newmode;
   dsp.setScrollId(NULL);
   if (newmode == PLAYER) {
+    if (prevMode == SCREENSAVER || prevMode == SCREENBLANK) { screensaver_leave(); _ssUnlockWidgets(); }
     if (config.isScreensaver) {
         if (_clock) _clock->moveTo(getclockMove());
         if (_date)  _date->moveTo(getdateMove());
@@ -979,21 +990,31 @@ if (newmode == _mode ||
     config.isScreensaver = true;
     _pager->setPage( pages[PG_SCREENSAVER]);
     _layoutChange(player.isRunning());
-    if (_clock) {
+    screensaver_enter(newmode);
+    const bool anim = screensaver_isAnimated();
+    if (_clock && !anim) {
       WidgetConfig ccfg = getclockConf();
       _clock->moveTo({ccfg.left, ccfg.top, 0});
       _clock->draw(true);
     }
-    if (_date) {
-        auto dc = getDateConf();
-        _date->moveTo({ dc.widget.left, dc.widget.top, (int16_t)dc.width });
+    if (anim) {
+      // Animated saver owns the whole screen: lock (clear + no pager redraws) clock/date
+      // until we leave; _ssUnlockWidgets() restores them.
+      if (_clock) _clock->lock(true);
+      if (_date)  _date->lock(true);
+      _ssWidgetsLocked = true;
+    } else if (_date) {
+      auto dc = getDateConf();
+      _date->moveTo({ dc.widget.left, dc.widget.top, (int16_t)dc.width });
     }
+    if (anim) dsp.fillScreen(0x0000);
     if (newmode == SCREENBLANK) {
       //dsp.clearClock();
       if (_clock) _clock->clear();
       config.setDspOn(false, false);
     }
   }else{
+    if (config.isScreensaver) { screensaver_leave(); _ssUnlockWidgets(); }
     config.screensaverTicks=SCREENSAVERSTARTUPDELAY;
     config.screensaverPlayingTicks=SCREENSAVERSTARTUPDELAY;
     config.isScreensaver = false;
@@ -1196,6 +1217,7 @@ void Display::loop() {
 #endif
 
   _pager->loop();
+  screensaver_tick();
 #if defined(BT_COMPANION_ENABLE) && (BT_COMPANION_ENABLE != 0)
   // BT mode: the logo is the only thing in the station-logo slot. Other widgets
   // (title/clock/footer redraws) can clear it, so re-blit it periodically.
@@ -2649,6 +2671,10 @@ void Display::_time(bool redraw) {
   if (!config.isScreensaver) {
     lastSSMinute = -1;
   }
+
+  if (config.isScreensaver && screensaver_isAnimated()) {
+    return;
+  }
   
   if (config.isScreensaver) {
     int m = network.timeinfo.tm_min;
@@ -2852,9 +2878,12 @@ bool Display::deepsleep(){
   // Flag first: dsp.sleep() takes ~300 ms, and the backlight plugin (another task) must not
   // light the backlight on a sleeping normally-white panel in that window.
   panelAsleep = true;
+#if BRIGHTNESS_PIN!=255
+  analogWrite(BRIGHTNESS_PIN, 0);      // dark before the ~300 ms SLPIN/DISPOFF, not after
+#endif
   dsp.sleep();
 #if BRIGHTNESS_PIN!=255
-  analogWrite(BRIGHTNESS_PIN, 0);
+  analogWrite(BRIGHTNESS_PIN, 0);      // again: a writer that passed its panelAsleep check just before the flag
 #endif
   return true;
 #endif

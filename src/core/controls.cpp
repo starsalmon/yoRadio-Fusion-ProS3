@@ -1,3 +1,4 @@
+#include "orient.h"
 // Modified ("vol_step")
 #include "Arduino.h"
 #include "options.h"
@@ -265,16 +266,16 @@ void initControls() {
   {
     if ((i == 0 && BTN_LEFT == 255) || (i == 1 && BTN_CENTER == 255) || (i == 2 && BTN_RIGHT == 255) || (i == 3 && ENC_BTNB == 255) || (i == 4 && BTN_UP == 255) || (i == 5 && BTN_DOWN == 255) || (i == 6 && ENC2_BTNB == 255) || (i == 7 && BTN_MODE == 255)) continue;
     button[i].attachClick([](void* p) {
-      controlsEvtSend(CE_CLICK, (int)p);
+      controlsEvtSend(CE_CLICK, orient_remapButton((int)p));
     }, (void*)i);
     button[i].attachDoubleClick([](void* p) {
-      controlsEvtSend(CE_DBL, (int)p);
+      controlsEvtSend(CE_DBL, orient_remapButton((int)p));
     }, (void*)i);
     button[i].attachLongPressStart([](void* p) {
-      controlsEvtSend(CE_LP_START, (int)p);
+      controlsEvtSend(CE_LP_START, orient_remapButton((int)p));
     }, (void*)i);
     button[i].attachLongPressStop([](void* p) {
-      controlsEvtSend(CE_LP_STOP, (int)p);
+      controlsEvtSend(CE_LP_STOP, orient_remapButton((int)p));
     }, (void*)i);
     button[i].setClickTicks(BTN_CLICK_TICKS);
     button[i].setPressTicks(BTN_PRESS_TICKS);

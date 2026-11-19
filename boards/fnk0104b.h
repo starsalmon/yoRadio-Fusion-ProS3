@@ -21,9 +21,9 @@
 #define TFT_DC   46
 #define TFT_RST  -1
 #define BRIGHTNESS_PIN 45         /* active HIGH */
-/* Helper: panel needs color inversion on; BGR handled in displayILI9341.cpp */
+/* IPS glass needs INVON to look normal; the "invert display" setting toggles relative to that.
+   BGR pixel order is the Adafruit_ILI9341 setRotation() default. */
 #define YORADIO_ILI9341_INVERT_ON 1
-#define YORADIO_ILI9341_BGR 1
 /* Landscape layout (320x240) like ProS3 ILI9341 — rotation from flipscreen / factory default */
 #define TFT_ROTATION 3
 /******************************************/

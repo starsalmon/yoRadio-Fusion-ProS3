@@ -34,11 +34,8 @@ SPIClass  SDSPI(HSPI);
   #define SDSPISPEED 20000000
 #endif
 
-#if defined(YORADIO_SD_MMC) && YORADIO_SD_MMC
-SDManager sdman;
-#else
+// SDFS and SDMMCFS both take a VFSImpl (same as the core's SD / SD_MMC globals).
 SDManager sdman(FSImplPtr(new VFSImpl()));
-#endif
 
 bool SDManager::start(){
   // Never touch TFT_CS here. The TFT driver owns it from display.init() onwards (it is pulled up

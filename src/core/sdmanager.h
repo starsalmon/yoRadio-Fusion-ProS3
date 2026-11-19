@@ -13,7 +13,7 @@ class SDManager : public SDFS {
     bool indexing() const { return _indexing; }
   public:
 #if defined(YORADIO_SD_MMC) && YORADIO_SD_MMC
-    SDManager() : fs::SDMMCFS() {}
+    SDManager(FSImplPtr impl) : fs::SDMMCFS(impl) {}
 #else
     SDManager(FSImplPtr impl) : SDFS(impl) {}
 #endif

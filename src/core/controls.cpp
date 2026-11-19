@@ -1,3 +1,4 @@
+#include "orient.h"
 // Modified ("vol_step")
 #include "Arduino.h"
 #include "options.h"
@@ -223,14 +224,14 @@ decode_results irResults;
 #if ENC_BTNL!=255
 void IRAM_ATTR readEncoderISR()
 {
-  if((SDC_CS==255 && display.mode()==LOST) || display.mode()==UPDATING) return;
+  if((!YO_SD_PRESENT && display.mode()==LOST) || display.mode()==UPDATING) return;
   encoder.readEncoder_ISR();
 }
 #endif
 #if ENC2_BTNL!=255
 void IRAM_ATTR readEncoder2ISR()
 {
-  if((SDC_CS==255 && display.mode()==LOST) || display.mode()==UPDATING) return;
+  if((!YO_SD_PRESENT && display.mode()==LOST) || display.mode()==UPDATING) return;
   encoder2.readEncoder_ISR();
 }
 #endif
@@ -265,16 +266,16 @@ void initControls() {
   {
     if ((i == 0 && BTN_LEFT == 255) || (i == 1 && BTN_CENTER == 255) || (i == 2 && BTN_RIGHT == 255) || (i == 3 && ENC_BTNB == 255) || (i == 4 && BTN_UP == 255) || (i == 5 && BTN_DOWN == 255) || (i == 6 && ENC2_BTNB == 255) || (i == 7 && BTN_MODE == 255)) continue;
     button[i].attachClick([](void* p) {
-      controlsEvtSend(CE_CLICK, (int)p);
+      controlsEvtSend(CE_CLICK, orient_remapButton((int)p));
     }, (void*)i);
     button[i].attachDoubleClick([](void* p) {
-      controlsEvtSend(CE_DBL, (int)p);
+      controlsEvtSend(CE_DBL, orient_remapButton((int)p));
     }, (void*)i);
     button[i].attachLongPressStart([](void* p) {
-      controlsEvtSend(CE_LP_START, (int)p);
+      controlsEvtSend(CE_LP_START, orient_remapButton((int)p));
     }, (void*)i);
     button[i].attachLongPressStop([](void* p) {
-      controlsEvtSend(CE_LP_STOP, (int)p);
+      controlsEvtSend(CE_LP_STOP, orient_remapButton((int)p));
     }, (void*)i);
     button[i].setClickTicks(BTN_CLICK_TICKS);
     button[i].setPressTicks(BTN_PRESS_TICKS);
@@ -296,7 +297,7 @@ void initControls() {
 
 void loopControls() {
   if(display.mode()==UPDATING || display.mode()==SDCHANGE) return;
-  if(SDC_CS==255 && display.mode()==LOST) return;
+  if (!YO_SD_PRESENT && display.mode()==LOST) return;
   if(ctrls_on_loop) ctrls_on_loop();
 #if ENC_BTNL!=255
   encoder1Loop();

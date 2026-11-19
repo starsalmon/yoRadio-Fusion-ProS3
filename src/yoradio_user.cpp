@@ -19,6 +19,9 @@ void yoradio_on_setup() {
 #if defined(ARDUINO_FEATHERS3)
     Serial.println("board: FEATHERS3");
 #endif
+#if defined(YORADIO_BOARD_FNK0104B) && YORADIO_BOARD_FNK0104B
+    Serial.println("board: FNK0104B (Freenove ESP32-S3 Display)");
+#endif
 #if defined(PROS3_USE_EXTERNAL_ANTENNA)
     Serial.printf("PROS3_USE_EXTERNAL_ANTENNA=%d\n", (int)PROS3_USE_EXTERNAL_ANTENNA);
 #endif
@@ -98,5 +101,19 @@ void yoradio_on_setup() {
     #if !defined(BATTERY_ENABLED) || (BATTERY_ENABLED != 0)
       battery_init();
     #endif
+
+#if defined(YORADIO_BOARD_FNK0104B) && YORADIO_BOARD_FNK0104B
+  #if defined(BRIGHTNESS_PIN) && (BRIGHTNESS_PIN != 255)
+    pinMode(BRIGHTNESS_PIN, OUTPUT);
+    digitalWrite(BRIGHTNESS_PIN, HIGH);
+  #endif
+  #if defined(TS_RST) && (TS_RST != 255)
+    pinMode(TS_RST, OUTPUT);
+    digitalWrite(TS_RST, LOW);
+    delay(10);
+    digitalWrite(TS_RST, HIGH);
+    delay(50);
+  #endif
+#endif
 
 }

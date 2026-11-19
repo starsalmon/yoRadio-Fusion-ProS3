@@ -2,6 +2,7 @@
 #if DSP_MODEL==DSP_ILI9341
 #include "dspcore.h"
 #include "../core/config.h"
+#include "../core/orient.h"
 #if defined(SD_SHARE_TFT_SPI) && SD_SHARE_TFT_SPI && SDC_CS != 255
 #include "../core/spidog.h"
 #endif
@@ -31,7 +32,6 @@ void DspCore::initDisplay() {
   DSPLOG("TFT initDisplay done");
   Serial.printf("##[BOOT]#\tTFT_SPI_FREQ\t%lu\n", (unsigned long)TFT_SPI_FREQ);
   Serial.flush();
-  
   invert();
   cp437(true);
   flip();
@@ -50,9 +50,17 @@ void DspCore::endWrite(void){ Adafruit_ILI9341::endWrite(); sdog.giveMutex(); }
 #else
 struct TftBusLock {};
 #endif
+// IPS glass that needs INVON to look normal (Freenove FNK0104B): the user's "invert display"
+// setting is applied relative to the panel's normal state, so it still toggles. Pixel order:
+// Adafruit_ILI9341::setRotation() already sets MADCTL BGR.
+#if defined(YORADIO_ILI9341_INVERT_ON) && YORADIO_ILI9341_INVERT_ON
+static inline bool panelInvert(bool userInvert) { return !userInvert; }
+#else
+static inline bool panelInvert(bool userInvert) { return userInvert; }
+#endif
 void DspCore::clearDsp(bool black){ fillScreen(black?0:config.theme.background); }
-void DspCore::flip(){ TftBusLock l; setRotation(config.store.flipscreen?1:3); }
-void DspCore::invert(){ TftBusLock l; invertDisplay(config.store.invertdisplay); }
+void DspCore::flip(){ TftBusLock l; setRotation(((config.store.flipscreen?1:3) + orient_quarter()) & 3); }
+void DspCore::invert(){ TftBusLock l; invertDisplay(panelInvert(config.store.invertdisplay)); }
 void DspCore::sleep(void){ DSPLOG("TFT SLPIN+DISPOFF"); TftBusLock l; sendCommand(ILI9341_SLPIN); delay(150); sendCommand(ILI9341_DISPOFF); delay(150);}
 void DspCore::wake(void){ DSPLOG("TFT SLPOUT+DISPON"); TftBusLock l; sendCommand(ILI9341_SLPOUT); delay(120); sendCommand(ILI9341_DISPON); delay(20);}
 // Re-assert the registers that, if lost (reset/DISPOFF/SLPIN), leave this normally-white panel white.
@@ -62,7 +70,7 @@ void DspCore::refreshRegs(){
   sendCommand(ILI9341_SLPOUT); delay(5);
   uint8_t pf = 0x55; sendCommand(ILI9341_PIXFMT, &pf, 1);
   setRotation(config.store.flipscreen?1:3);
-  invertDisplay(config.store.invertdisplay);
+  invertDisplay(panelInvert(config.store.invertdisplay));
   sendCommand(ILI9341_DISPON);
 }
 

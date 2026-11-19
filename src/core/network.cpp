@@ -51,13 +51,15 @@ void MyNetwork::WiFiReconnected(WiFiEvent_t event, WiFiEventInfo_t info){
   network.beginReconnect = false;
   player.lockOutput = false;
   delay(100);
-  display.putRequest(NEWMODE, PLAYER);
+  // A blanked screen stays blank across a background WiFi reconnect (NEWMODE PLAYER = full wake).
+  const bool blanked = (display.mode() == SCREENBLANK);
+  if (!blanked) display.putRequest(NEWMODE, PLAYER);
   if(config.getMode()==PM_SDCARD || config.getMode()==PM_BLUETOOTH) {  // offline-capable modes
     network.status=CONNECTED;
     display.putRequest(NEWIP, 0);
     display.putRequest(DSPRSSI, WiFi.RSSI());
   }else{
-    display.putRequest(NEWMODE, PLAYER);
+    if (!blanked) display.putRequest(NEWMODE, PLAYER);
     if (network.lostPlaying) player.sendCommand({PR_PLAY, config.lastStation()});
     display.putRequest(NEWIP, 0);
     display.putRequest(DSPRSSI, WiFi.RSSI());

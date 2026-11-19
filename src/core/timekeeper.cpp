@@ -8,7 +8,7 @@
 #include "bt_companion.h"
 #include "player.h"
 #include "netserver.h"
-#if SDC_CS != 255
+#if YO_SD_PRESENT
 #include "sdmanager.h"
 #endif
 #include "rtcsupport.h"

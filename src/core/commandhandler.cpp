@@ -1,11 +1,13 @@
 #include "node_flash.h"
 #include "webgain.h"
+#include "orient.h"
 #include <Arduino.h>
 #include "options.h"
 #include "commandhandler.h"
 #include "player.h"
 #include "display.h"
 #include "netserver.h"
+#include "network.h"
 #include "config.h"
 #include "controls.h"
 #include "telnet.h"
@@ -149,6 +151,8 @@ if (strEquals(command, "brightness")) {
   if (strEquals(command, "screensaverplayingenabled")){ config.setScreensaverPlayingEnabled(static_cast<bool>(atoi(value))); return true; }
   if (strEquals(command, "screensaverplayingtimeout")){ config.setScreensaverPlayingTimeout(static_cast<uint16_t>(atoi(value))); return true; }
   if (strEquals(command, "screensaverplayingblank"))  { config.setScreensaverPlayingBlank(static_cast<bool>(atoi(value))); return true; }
+  if (strEquals(command, "screensaverstyle"))       { config.setScreensaverStyle((uint8_t)atoi(value)); return true; }
+  if (strEquals(command, "screensavergolstyle"))    { config.setScreensaverGolStyle((uint8_t)atoi(value)); return true; }
   if (strEquals(command, "abuff")){ config.saveValue(&config.store.abuff, static_cast<uint16_t>(atoi(value))); return true; }
   if (strEquals(command, "telnet")){ config.saveValue(&config.store.telnet, static_cast<bool>(atoi(value))); telnet.toggle(); return true; }
   if (strEquals(command, "watchdog")){ config.saveValue(&config.store.watchdog, static_cast<bool>(atoi(value))); return true; }
@@ -174,6 +178,8 @@ if (strEquals(command, "brightness")) {
   if (strEquals(command, "volume"))  { player.setVol(static_cast<uint8_t>(atoi(value))); return true; }
   if (strEquals(command, "sdpos"))   { config.setSDpos(static_cast<uint32_t>(atoi(value))); return true; }
   if (strEquals(command, "snuffle")) { config.setSnuffle(strcmp(value, "true") == 0); return true; }
+  if (strEquals(command, "rotmode")) { orient_setRotmode((uint8_t)atoi(value), true); return true; }
+  if (strEquals(command, "rotlock")) { orient_setLock(atoi(value) != 0, true); return true; }
   if (strEquals(command, "webgain")) { webgain_set(atoi(value), true); return true; }
   if (strEquals(command, "balance")) { config.setBalance(static_cast<uint8_t>(atoi(value))); return true; }
   if (strEquals(command, "reboot"))  { ESP.restart(); return true; }
@@ -562,9 +568,26 @@ void handleSet(AsyncWebServerRequest *request) {
     }
   }
 
-  if (touched) {
+  // Keys this handler doesn't own (screensaverstyle, rotmode, nodeflash, ...) go to the same
+  // command table as /?key=value, serial and telnet. Only when no /set-specific key was given.
+  bool execd = false;
+  if (!touched && !changed && request->params() > 0) {
+#if defined(HTTP_USER) && defined(HTTP_PASS)
+    if (network.status == CONNECTED && !request->authenticate(HTTP_USER, HTTP_PASS)) {
+      return request->requestAuthentication();
+    }
+#endif
+    for (size_t i = 0; i < request->params(); i++) {
+      AsyncWebParameter* p = request->getParam(i);
+      if (p && cmd.exec(p->name().c_str(), p->value().c_str())) execd = true;
+    }
+  }
+
+  if (touched || changed) {
     if (changed) config.eepromWrite(EEPROM_START, config.store);
     request->send(200, "text/plain", changed ? "OK" : "NOCHANGE");
+  } else if (execd) {
+    request->send(200, "text/plain", "OK");
   } else {
     request->send(400, "text/plain", "Missing parameters");
   }

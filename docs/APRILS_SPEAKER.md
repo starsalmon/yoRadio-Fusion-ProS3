@@ -58,9 +58,11 @@ the same as the ProS3 (app0 at 0x10000, 5 MB per OTA slot). The current image us
 | Node EN (reset) | | **9** | `BT_COMPANION_NODE_EN_PIN` | open-drain, low = reset |
 | Node IO0 (boot) | | **8** | `BT_COMPANION_NODE_BOOT_PIN` | open-drain, low only to enter the ROM loader |
 | Amp enable, HAT pin 22 (BCM25) | 22 (25) | **44** | `AMP_EN_PIN` = `MUTE_PIN` (`MUTE_VAL LOW`) | low when stopped / asleep, on during BT receive; MOSFET optional |
+| MPU6050 SDA (auto-rotate) | | **3** | `ORIENT_SDA` | own I2C bus (Wire1); IO3 is the JTAG-source strap, only read if the eFuse selects it, so the module pull-up is harmless |
+| MPU6050 SCL (auto-rotate) | | **43** | `ORIENT_SCL` | U0TXD: console is USB CDC, but the ROM prints its reset banner here, so SCL wiggles briefly at reset (harmless); MPU VCC 3V3 (LDO1), GND, INT/AD0 unconnected |
 
-Avoided: 0 and 3 (strapping), 19/20 (USB), 39/40 (LDO2/RGB), 4 (light sensor), 13 (LED). Spare: 43
-(carries the ROM boot log at reset, so it is not used for anything the Node listens to).
+Avoided: 0 (strapping), 19/20 (USB), 39/40 (LDO2/RGB), 4 (light sensor), 13 (LED). IO3/IO43 now carry
+the MPU6050 (no spare header GPIO left).
 
 - TFT and SD share the default SPI bus at 20 MHz / 10 MHz (`SD_SHARE_TFT_SPI 1`, no `DSP_HSPI`), the
   same code path as the ProS3; `yoradio_user.cpp` enables LDO2 and drives `SDC_CS`/`TFT_CS` HIGH early.
@@ -105,6 +107,24 @@ MQTT; the on-screen battery footer is hidden (`HIDE_BAT 1`, no 240x240 layout ye
 
 A/B volume direction is swapped by `BTN_VOLUME_INVERT_LR`, the playlist direction by
 `BTN_STATIONS_INVERT_LR`.
+
+### Screen auto-rotate (MPU6050)
+
+All four directions; the square 240x240 layout is reused. `TFT_ROTATION` is the base rotation; the web
+"flip screen" setting adds 180 deg and auto-rotate adds quarter turns on top (web flip now works on April).
+Buttons follow the screen: A/X/Y/B are remapped by rotation so the button in each screen corner keeps that
+corner's role (top-left = A's role, etc.). Rotation happens only on the player screen (deferred during boot,
+menus, playlist/SD list, screensaver, sleep), after the new angle holds 1 s, at most every 2 s, and not when
+the panel is lying flat. Auto-rotate never writes `flipscreen`.
+
+- Settings (NVS `yrxorient`): `rotmode` 0 off / 1 auto 180 / 2 auto all (default 2), `rotlock` 0/1 (default 0).
+- MQTT: `<root>cmd/rotmode` ("Off" / "Auto 180" / "Auto All" or 0/1/2), `<root>cmd/rotlock` (ON/OFF);
+  retained state `<root>rotmode`, `<root>rotlock`, `<root>rotation` (degrees).
+- Home Assistant: select "Screen Auto-Rotate", switch "Screen Rotation Lock", sensor "Screen Rotation".
+- HTTP: `/set?rotmode=N`, `/set?rotlock=0|1`.
+- No MPU found -> feature off quietly (logged `[ORIENT]`).
+- Bench calibration (board header, no code): `ORIENT_AXIS_SWAP`, `ORIENT_INVERT_X`, `ORIENT_INVERT_Y` fix
+  the mount; `ORIENT_QUARTER_DIR` (+1/-1) flips the 90 deg direction if the screen turns the wrong way.
 
 ### BT companion
 

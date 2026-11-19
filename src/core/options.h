@@ -19,6 +19,13 @@ STORE YOUR SETTINGS IN THE *** myoptions.h *** FILE.
 #if __has_include("../../mqttoptions.h")
   #include "../../mqttoptions.h"
 #endif
+// One shared (gitignored) mqttoptions.h for every device: a board header can give its device its
+// own root topic (BOARD_MQTT_ROOT_TOPIC) so it never shares state/command topics with the radio.
+// HA unique_ids use the mDNS name (yoradio-<chipid>) and the client id is per-chip already.
+#if defined(MQTT_ROOT_TOPIC) && defined(BOARD_MQTT_ROOT_TOPIC)
+  #undef MQTT_ROOT_TOPIC
+  #define MQTT_ROOT_TOPIC BOARD_MQTT_ROOT_TOPIC
+#endif
 
 // Mode button LED defaults (used outside NeoStatus too).
 // These are intentionally defined here so `myoptions.h` can stay minimal.
@@ -196,7 +203,13 @@ The connection tables are located here https://github.com/e2002/yoradio#connecti
 #ifndef SD_FORCE_REINDEX
   #define SD_FORCE_REINDEX 0  // set 1 once in myoptions.h to rebuild SD playlist after SPI fixes
 #endif
-#if SDC_CS!=255
+#ifndef YORADIO_SD_MMC
+  #define YORADIO_SD_MMC 0
+#endif
+#ifndef YO_SD_PRESENT
+  #define YO_SD_PRESENT ((SDC_CS != 255) || (YORADIO_SD_MMC != 0))
+#endif
+#if YO_SD_PRESENT
   #define USE_SD
 #endif
 /*        ENCODER                 */
